@@ -759,12 +759,19 @@ func (m *Model) body() string {
 	case m.focusMode || (m.narrow && m.claudeFocused):
 		body = m.pane()
 	case m.narrow:
-		body = ui.Render(m.m, m.width, m.height-1, ui.RenderOptions{})
+		body = ui.Render(m.m, m.width, m.height-1, ui.RenderOptions{Focused: true})
 	default:
-		list := ui.Render(m.m, ui.ListWidth, m.height-1, ui.RenderOptions{})
-		// the pane's rule joins the separator: ├ on the rule's row
-		sep := strings.TrimRight("│\n├\n"+strings.Repeat("│\n", max(m.height-3, 0)), "\n")
-		body = lipgloss.JoinHorizontal(lipgloss.Top, list, lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261")).Render(sep), m.pane())
+		// the focused pane is lit: its rule is heavy and blue and the separator's joint points at it;
+		// in Claude the list is also faint
+		list := ui.Render(m.m, ui.ListWidth, m.height-1, ui.RenderOptions{Focused: !m.claudeFocused})
+		join := "┫"
+		if m.claudeFocused {
+			join = "┣"
+			list = restyle(list, "\x1b[2m")
+		}
+		// both rules join the separator on the rule's row
+		sep := strings.TrimRight("┃\n"+join+"\n"+strings.Repeat("┃\n", max(m.height-3, 0)), "\n")
+		body = lipgloss.JoinHorizontal(lipgloss.Top, list, lipgloss.NewStyle().Foreground(lipgloss.Color(focusColor)).Render(sep), m.pane())
 	}
 	return body + "\n" + m.bar()
 }
@@ -772,10 +779,27 @@ func (m *Model) body() string {
 // paneHeader is the rows above the Claude pane: the title line and the rule under it.
 const paneHeader = 2
 
+// ruleColor draws the rules of the pane without the focus; focusColor the focused one and the separator.
+const ruleColor, focusColor = "#3b4261", "#7aa2f7"
+
+// restyle starts every line of s with the SGR sequence sgr and renews it after each reset inside,
+// so it holds across the line's own styling.
+func restyle(s, sgr string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = sgr + strings.ReplaceAll(l, "\x1b[m", "\x1b[m"+sgr) + "\x1b[m"
+	}
+	return strings.Join(lines, "\n")
+}
+
 // pane is the Claude pane: a title line naming the open session and a rule, then the session's
 // screen, or a hint when no session is open.
 func (m *Model) pane() string {
-	rule := lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261")).Render(strings.Repeat("─", m.term.Cols()))
+	ch, color := "─", ruleColor
+	if m.claudeFocused {
+		ch, color = "━", focusColor
+	}
+	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(strings.Repeat(ch, m.term.Cols()))
 	if m.streamNum != 0 {
 		return m.paneTitle() + "\n" + rule + "\n" + m.term.View()
 	}

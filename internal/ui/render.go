@@ -9,11 +9,12 @@ import (
 	"github.com/dinhhuy258/bx/internal/claude"
 )
 
-// RenderOptions controls colours. Plain disables ANSI for golden tests.
 // ListWidth is the width of the list pane next to the Claude pane. app.ListWidth is the same number.
 const ListWidth = 46
 
-type RenderOptions struct{ Plain bool }
+// RenderOptions controls colours. Plain disables ANSI for golden tests. Focused draws the rule
+// under the header heavy and blue, like the Claude pane's when it has the focus.
+type RenderOptions struct{ Plain, Focused bool }
 
 type palette struct {
 	dim, blue, amber, green, red, bold, sel, brand lipgloss.Style
@@ -48,13 +49,20 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 	run, wait := m.Counts()
 	nStories := len(m.P.Stories)
 	head := fit(pal.brand.Render("bx")+" "+pal.bold.Render(m.P.Name), pal.dim.Render(plural(nStories, "story", "stories")), width)
-	lines = append(lines, head)
+	ch, color := "─", "#3b4261"
+	if o.Focused {
+		ch, color = "━", "#7aa2f7"
+	}
+	rule := strings.Repeat(ch, width)
+	if !o.Plain {
+		rule = lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(rule)
+	}
+	lines = append(lines, head, rule)
 	waitText := pal.dim.Render(fmt.Sprintf("◆ %d needs you", wait))
 	if wait > 0 {
 		waitText = pal.amber.Render(fmt.Sprintf("◆ %d needs you", wait))
 	}
 	lines = append(lines, fit(pal.blue.Render(fmt.Sprintf("● %d running", run)), waitText, width))
-	lines = append(lines, "")
 
 	rows := m.Rows()
 	selIdx := m.SelIndex()

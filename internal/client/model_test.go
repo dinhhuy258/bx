@@ -215,6 +215,20 @@ func TestStartupWithManyProjectsShowsThePicker(t *testing.T) {
 	}
 }
 
+func TestFocusedPaneIsLit(t *testing.T) {
+	h := start(t, 120, 30, "waiting")
+	v := h.m.View().Content
+	// the joint points at the focused pane; only the list goes faint
+	if !strings.Contains(v, "┫") || strings.Contains(v, "┣") || strings.Contains(v, "\x1b[2m") {
+		t.Fatalf("list focused:\n%q", v)
+	}
+	h.press("Enter")
+	v = h.m.View().Content
+	if !strings.Contains(v, "┣") || strings.Contains(v, "┫") || !strings.Contains(v, "\x1b[2m") {
+		t.Fatalf("Claude focused:\n%q", v)
+	}
+}
+
 func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
 	h.press("Enter") // the cursor starts on session 1
