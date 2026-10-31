@@ -1,0 +1,29 @@
+bx home-network                      4 stories
+● 2 running                      ◆ 1 needs you
+
+  ▾ chats   main · ~/.bx/projects/home-network
+   ○ [6] What does pmxcfs do?               5m
+      idle
+   ○ [7] Explain the fasttrack rule        40m
+      ⚠ idle · edited 2 files in main
+  ▾ fstrim-cron
+      no sessions · n to start one
+  ▾ guest-vlan-fix                      +42 -7
+›  ● [1] Fix guest DHCP lease time          6m
+      running
+   ◆ [2] Write the test checklist           2m
+      asks: permission prompt
+   ○ [3] Shorter lease for the IoT VLAN     1h
+      idle
+  ▾ ups-nut-alerts                      +31 -2
+   ● [4] Alert when the UPS is on battery  18m
+      running
+  ▸ zigbee-map-docs                    ✓1  +58
+
+
+
+
+
+
+
+

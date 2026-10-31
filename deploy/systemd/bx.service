@@ -1,0 +1,22 @@
+# bx serve as a systemd user service.
+#   install: cp deploy/systemd/bx.service ~/.config/systemd/user/
+#            systemctl --user daemon-reload && systemctl --user enable --now bx
+#            loginctl enable-linger "$USER"     # start at boot, keep running after logout
+#   logs:    journalctl --user -u bx -f       (also ~/.bx/logs/bx.log)
+# KillMode=process: stopping or restarting bx serve leaves the private tmux server and every
+# Claude session running; the next start finds them by name.
+[Unit]
+Description=bx serve: Claude Code sessions in a private tmux server
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/go/bin/bx serve
+Restart=on-failure
+RestartSec=3
+KillMode=process
+Environment=PATH=%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

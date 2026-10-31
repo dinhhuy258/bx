@@ -1,0 +1,70 @@
+package git
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+func initRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("one\n"), 0o644)
+	run("add", "a.txt")
+	run("commit", "-q", "-m", "init")
+	return dir
+}
+
+func TestWorktreeAddDiffRemove(t *testing.T) {
+	repo := initRepo(t)
+	g := New()
+	wt := filepath.Join(t.TempDir(), "worktrees", "proj", "story-1")
+	if err := g.WorktreeAdd(repo, wt, "feat/story-1", "main"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := g.CurrentBranch(wt); b != "feat/story-1" {
+		t.Fatalf("branch = %q", b)
+	}
+	os.WriteFile(filepath.Join(wt, "a.txt"), []byte("one\ntwo\nthree\n"), 0o644)
+	if n, _ := g.DirtyCount(wt); n != 1 {
+		t.Fatalf("dirty = %d", n)
+	}
+	cmd := exec.Command("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "more")
+	cmd.Dir = wt
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	add, del, err := g.ShortStat(wt, "main")
+	if err != nil || add != 2 || del != 0 {
+		t.Fatalf("shortstat = +%d -%d err %v", add, del, err)
+	}
+	if err := g.WorktreeAdd(repo, wt+"-dup", "feat/story-1", "main"); err == nil {
+		t.Fatal("second worktree on the same branch must fail")
+	}
+	if err := g.WorktreeRemove(repo, wt, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Fatal("worktree folder still exists")
+	}
+	if err := g.WorktreePrune(repo); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDefaultBranch(t *testing.T) {
+	repo := initRepo(t)
+	if b, err := New().DefaultBranch(repo); err != nil || b != "main" {
+		t.Fatalf("default = %q err %v", b, err)
+	}
+}
