@@ -27,11 +27,16 @@ type Serve struct {
 	Listen string `toml:"listen"`
 }
 
-// Client holds `bx` client settings: the server URL and the keys that move between the two panes.
+// Client holds `bx` client settings: the server URL and the key that moves between the two panes.
 type Client struct {
-	Server   string `toml:"server"`
-	ToList   string `toml:"to_list"`
-	ToClaude string `toml:"to_claude"`
+	Server string `toml:"server"`
+	Toggle string `toml:"toggle"` // list ⇄ Claude pane
+}
+
+// IsToggle reports whether key switches panes. Terminals without the kitty keyboard protocol
+// send Ctrl-/ as the same byte as Ctrl-_, so a C-/ toggle also matches C-_.
+func (c Client) IsToggle(key string) bool {
+	return key == c.Toggle || (c.Toggle == "C-/" && key == "C-_")
 }
 
 // Keys holds the list binds. A bind is a list of key names; "z M" is a two-key sequence.
@@ -77,7 +82,7 @@ func Default(root string) *Config {
 		List:   List{AutoExpandWaiting: true},
 		Notify: Notify{},
 		Serve:  Serve{Listen: "auto"},
-		Client: Client{ToList: "C-h", ToClaude: "C-l"},
+		Client: Client{Toggle: "C-/"},
 	}
 }
 
@@ -115,9 +120,8 @@ type rawConfig struct {
 		Listen *string `toml:"listen"`
 	} `toml:"serve"`
 	Client struct {
-		Server   *string `toml:"server"`
-		ToList   *string `toml:"to_list"`
-		ToClaude *string `toml:"to_claude"`
+		Server *string `toml:"server"`
+		Toggle *string `toml:"toggle"`
 	} `toml:"client"`
 }
 
@@ -135,11 +139,8 @@ func (r rawConfig) applyTo(c *Config) {
 	if r.Client.Server != nil {
 		c.Client.Server = *r.Client.Server
 	}
-	if r.Client.ToList != nil {
-		c.Client.ToList = *r.Client.ToList
-	}
-	if r.Client.ToClaude != nil {
-		c.Client.ToClaude = *r.Client.ToClaude
+	if r.Client.Toggle != nil {
+		c.Client.Toggle = *r.Client.Toggle
 	}
 }
 

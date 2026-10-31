@@ -95,7 +95,7 @@ func TestKeyBar(t *testing.T) {
 		t.Error(kb)
 	}
 	kb = KeyBar(m, cfg, BarContext{ClaudeFocused: true})
-	if !strings.Contains(kb, "esc interrupt") || !strings.Contains(kb, "^h to list") {
+	if !strings.Contains(kb, "esc interrupt") || !strings.Contains(kb, "^/ to list") {
 		t.Error(kb)
 	}
 	kb = KeyBar(m, cfg, BarContext{Seq: "z"})
@@ -107,8 +107,8 @@ func TestKeyBar(t *testing.T) {
 func TestFocusLine(t *testing.T) {
 	m, _ := sampleModel(Options{AutoExpandWaiting: true})
 	m.SelectSession(1)
-	line := FocusLine(m, "a", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
-	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · a jump · ● 1 running · ^h exit"
+	line := FocusLine(m, "a", "C-/", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
+	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · a jump · ● 1 running · ^/ exit"
 	if line != want {
 		t.Fatalf("\n got %q\nwant %q", line, want)
 	}

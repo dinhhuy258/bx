@@ -13,6 +13,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/dinhhuy258/bx/internal/api"
+	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
@@ -224,6 +225,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case createdMsg:
 		if msg.err != nil {
 			m.setFlash("error: " + msg.err.Error())
+			m.pickerIfNoProject()
 			return m, nil
 		}
 		m.setFlash("added project " + msg.res.Name)
@@ -318,9 +320,9 @@ func (m *Model) closeStream() {
 }
 
 // resizeTerm sizes the Claude pane to the space next to the list (or the whole width in focus
-// mode and narrow mode) and tells the server.
+// mode and narrow mode), below its title line and rule and above the key bar, and tells the server.
 func (m *Model) resizeTerm() {
-	cols, rows := m.width-ui.ListWidth-1, m.height-1
+	cols, rows := m.width-ui.ListWidth-1, m.height-1-paneHeader
 	if m.focusMode || m.narrow {
 		cols = m.width
 	}
@@ -339,6 +341,17 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.picker != nil {
 		return m, m.pickerKey(key, k.Text)
 	}
+	// before the m == nil check: adding the first project prompts with no project open
+	if m.prompt.Active() {
+		kind := m.prompt.Kind
+		switch m.prompt.Key(key, k.Text) {
+		case ui.PromptSubmit:
+			return m, m.submit(kind, strings.TrimSpace(m.prompt.Input), m.prompt.Target)
+		case ui.PromptCancel:
+			m.pickerIfNoProject()
+		}
+		return m, nil
+	}
 	if m.m == nil {
 		if key == "C-c" {
 			return m, m.quit()
@@ -346,20 +359,13 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.claudeFocused {
-		if key == m.cfg.Client.ToList {
+		if m.cfg.Client.IsToggle(key) {
 			m.claudeFocused, m.focusMode = false, false
 			m.resizeTerm()
 			return m, nil
 		}
 		if m.conn != nil {
 			m.term.SendKey(k)
-		}
-		return m, nil
-	}
-	if m.prompt.Active() {
-		kind := m.prompt.Kind
-		if m.prompt.Key(key, k.Text) == ui.PromptSubmit {
-			return m, m.submit(kind, strings.TrimSpace(m.prompt.Input), m.prompt.Target)
 		}
 		return m, nil
 	}
@@ -374,8 +380,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == "C-c" {
 		return m, m.quit()
 	}
-	if key == m.cfg.Client.ToClaude {
-		return m, m.enterClaude()
+	if m.cfg.Client.IsToggle(key) {
+		return m, m.backToClaude()
 	}
 	action := m.cfg.Keys.ListAction(key)
 	if action == "" && m.cfg.Keys.IsPrefixOfSequence(key) {
@@ -453,6 +459,17 @@ func (m *Model) enterClaude() tea.Cmd {
 	m.claudeFocused = true
 	m.resizeTerm()
 	return m.showSession(num)
+}
+
+// backToClaude gives the keys back to the session already in the Claude pane. With no session
+// open it does nothing: the toggle never opens the session under the cursor (Enter does).
+func (m *Model) backToClaude() tea.Cmd {
+	if m.streamNum == 0 {
+		return nil
+	}
+	m.claudeFocused = true
+	m.resizeTerm()
+	return m.connect() // nil unless the stream dropped
 }
 
 // jumpWaiting goes to the next session that needs an answer: in this project first, then in
@@ -567,16 +584,28 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			return m.poll()
 		}
 	case ui.PromptAddFolder:
-		if text != "" {
-			m.setFlash("adding " + text + "…")
-			return m.create(api.NewProject{Kind: "folder", Path: text})
+		if text == "" {
+			m.pickerIfNoProject()
+			return nil
 		}
+		m.setFlash("adding " + text + "…")
+		return m.create(api.NewProject{Kind: "folder", Path: text})
 	case ui.PromptNewProject:
-		if text != "" {
-			return m.create(api.NewProject{Kind: "new", Name: text})
+		if text == "" {
+			m.pickerIfNoProject()
+			return nil
 		}
+		return m.create(api.NewProject{Kind: "new", Name: text})
 	}
 	return nil
+}
+
+// pickerIfNoProject reopens the project picker when no project is open, so a cancelled or
+// failed add does not leave an empty screen.
+func (m *Model) pickerIfNoProject() {
+	if m.project == "" {
+		m.openProjectPicker()
+	}
 }
 
 func (m *Model) openPrompt(kind ui.PromptKind, target, label, initial string) {
@@ -613,7 +642,7 @@ func (m *Model) View() tea.View {
 			if !m.focusMode && !m.narrow {
 				off = ui.ListWidth + 1
 			}
-			v.Cursor = tea.NewCursor(off+x, y)
+			v.Cursor = tea.NewCursor(off+x, y+paneHeader)
 		}
 	}
 	return v
@@ -623,6 +652,8 @@ func (m *Model) body() string {
 	switch {
 	case m.picker != nil:
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
+	case m.m == nil && m.prompt.Active():
+		return "bx · " + m.prompt.Line() + "\n" + m.flash
 	case m.m == nil && m.project == "":
 		return "bx · connecting…\n" + m.flash
 	case m.m == nil:
@@ -638,19 +669,59 @@ func (m *Model) body() string {
 		body = ui.Render(m.m, m.width, m.height-1, ui.RenderOptions{})
 	default:
 		list := ui.Render(m.m, ui.ListWidth, m.height-1, ui.RenderOptions{})
-		sep := strings.TrimRight(strings.Repeat("│\n", m.height-1), "\n")
+		// the pane's rule joins the separator: ├ on the rule's row
+		sep := strings.TrimRight("│\n├\n"+strings.Repeat("│\n", max(m.height-3, 0)), "\n")
 		body = lipgloss.JoinHorizontal(lipgloss.Top, list, lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261")).Render(sep), m.pane())
 	}
 	return body + "\n" + m.bar()
 }
 
-// pane is the Claude pane: the session's screen, or a hint when no session is open.
+// paneHeader is the rows above the Claude pane: the title line and the rule under it.
+const paneHeader = 2
+
+// pane is the Claude pane: a title line naming the open session and a rule, then the session's
+// screen, or a hint when no session is open.
 func (m *Model) pane() string {
+	rule := lipgloss.NewStyle().Foreground(lipgloss.Color("#3b4261")).Render(strings.Repeat("─", m.term.Cols()))
 	if m.streamNum != 0 {
-		return m.term.View()
+		return m.paneTitle() + "\n" + rule + "\n" + m.term.View()
 	}
 	hint := "\n  No session open.\n  Enter on a session shows it here; c starts a chat."
-	return lipgloss.NewStyle().Width(m.term.Cols()).Height(m.term.Rows()).Foreground(lipgloss.Color("#565f89")).Render(hint)
+	return strings.Repeat(" ", m.term.Cols()) + "\n" + rule + "\n" + lipgloss.NewStyle().Width(m.term.Cols()).Height(m.term.Rows()).Foreground(lipgloss.Color("#565f89")).Render(hint)
+}
+
+// paneTitle is the line above the Claude pane: " project › group › [2] title ··· ○ idle ". It names
+// the session the pane shows, since the list cursor may be elsewhere. It keeps the terminal's
+// background, like Claude; the rule under it (see pane) sets it apart.
+func (m *Model) paneTitle() string {
+	cols, num := m.term.Cols(), m.streamNum
+	s := m.m.P.Sessions[num]
+	if s == nil {
+		return strings.Repeat(" ", cols)
+	}
+	group := s.Story
+	if group == "" {
+		group = "chats"
+	}
+	state, color := "○ idle", "#565f89"
+	switch {
+	case s.Done:
+		state, color = "✓ done", "#9ece6a"
+	case m.m.Gone(num):
+		state = "gone"
+	case m.m.State(num) == claude.Waiting:
+		state, color = "◆ asks", "#e0af68"
+	case m.m.State(num) == claude.Running:
+		state, color = "● running", "#7aa2f7"
+	}
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
+	path := lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6"))
+	left := " " + path.Render(m.project) + dim.Render(" › ") + path.Render(group) + dim.Render(" › ") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#c0caf5")).Bold(true).Render(fmt.Sprintf("[%d] %s", num, s.Title))
+	right := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(state) + " "
+	// a narrow pane cuts the left side and keeps the state
+	left = ansi.Truncate(left, max(cols-ansi.StringWidth(right)-1, 0), "…")
+	return left + strings.Repeat(" ", max(cols-ansi.StringWidth(left)-ansi.StringWidth(right), 0)) + right
 }
 
 // bar is the bottom line: prompt, flash, focus line or key bar.
@@ -670,9 +741,9 @@ func (m *Model) bar() string {
 				waiting = append(waiting, ui.WaitingElsewhere{Project: p.Name, Num: n})
 			}
 		}
-		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "waiting"), run, waiting)
+		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "waiting"), m.cfg.Client.Toggle, run, waiting)
 	default:
-		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Seq: m.seq, Flash: m.flash, Narrow: m.narrow})
+		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.streamNum, Seq: m.seq, Flash: m.flash, Narrow: m.narrow})
 	}
 	// cut the text to one line: Width would wrap it and push the bar off the screen
 	text = ansi.Truncate(" "+text, max(m.width, 1), "…")
@@ -681,7 +752,7 @@ func (m *Model) bar() string {
 
 func keymapText(cfg *config.Config) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "  %-12s %s\n  %-12s %s\n\n", config.Pretty(cfg.Client.ToClaude), "into the Claude pane", config.Pretty(cfg.Client.ToList), "back to the list")
+	fmt.Fprintf(&b, "  %-12s %s\n\n", config.Pretty(cfg.Client.Toggle), "list ⇄ Claude pane")
 	actions := make([]string, 0, len(cfg.Keys.List))
 	for a := range cfg.Keys.List {
 		actions = append(actions, a)

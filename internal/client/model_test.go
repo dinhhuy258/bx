@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/coder/websocket"
 
 	"github.com/dinhhuy258/bx/internal/api"
@@ -20,11 +21,12 @@ import (
 
 // fakeBackend serves fixed projects and snapshots and records every action.
 type fakeBackend struct {
-	projects []api.ProjectSummary
-	snaps    map[string]api.Snapshot
-	actions  []string
-	dirty    int // stories/close without force is refused with this many files
-	created  []api.NewProject
+	projects  []api.ProjectSummary
+	snaps     map[string]api.Snapshot
+	actions   []string
+	dirty     int // stories/close without force is refused with this many files
+	created   []api.NewProject
+	createErr error
 }
 
 func (f *fakeBackend) Projects(context.Context) ([]api.ProjectSummary, error) { return f.projects, nil }
@@ -62,6 +64,9 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 
 func (f *fakeBackend) CreateProject(_ context.Context, p api.NewProject) (api.Result, error) {
 	f.created = append(f.created, p)
+	if f.createErr != nil {
+		return api.Result{}, f.createErr
+	}
 	return api.Result{Name: "lab"}, nil
 }
 
@@ -154,10 +159,10 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 		case "Down":
 			msg = tea.KeyPressMsg{Code: tea.KeyDown}
-		case "C-h":
-			msg = tea.KeyPressMsg{Code: 'h', Mod: tea.ModCtrl}
-		case "C-l":
-			msg = tea.KeyPressMsg{Code: 'l', Mod: tea.ModCtrl}
+		case "C-/":
+			msg = tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}
+		case "C-_": // what a legacy terminal sends for Ctrl-/
+			msg = tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}
 		default:
 			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
 		}
@@ -204,8 +209,8 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	if strings.Join(h.opened, "|") != "home-network 1" || !h.m.claudeFocused {
 		t.Fatalf("opened=%q focused=%v", h.opened, h.m.claudeFocused)
 	}
-	if !strings.Contains(h.m.View().Content, "CLAUDE SAYS HI") {
-		t.Fatal(h.m.View().Content)
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "CLAUDE SAYS HI") || !strings.Contains(v, " home-network › s1 › [1] Add lease time") || !strings.Contains(v, "◆ asks") {
+		t.Fatal(v)
 	}
 	if c := h.m.View().Cursor; c == nil || c.Position.X < ui.ListWidth {
 		t.Fatalf("cursor should be in the Claude pane: %+v", c)
@@ -219,17 +224,31 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("key was not forwarded")
 	}
-	h.press("C-h")
+	h.press("C-/")
 	if h.m.claudeFocused {
-		t.Fatal("C-h must return to the list")
+		t.Fatal("C-/ must return to the list")
 	}
-	h.press("C-l")
+	h.press("C-_")
 	if !h.m.claudeFocused || len(h.opened) != 1 {
-		t.Fatalf("C-l on the open session must not reconnect: %q", h.opened)
+		t.Fatalf("C-/ (sent as C-_) on the open session must not reconnect: %q", h.opened)
 	}
 	h.update(tea.WindowSizeMsg{Width: 140, Height: 40})
-	if got := h.conns[0].resized; len(got) == 0 || got[len(got)-1] != [2]int{140 - ui.ListWidth - 1, 39} {
+	if got := h.conns[0].resized; len(got) == 0 || got[len(got)-1] != [2]int{140 - ui.ListWidth - 1, 37} {
 		t.Fatalf("resize not sent: %v", got)
+	}
+}
+
+func TestToggleReturnsToTheOpenSessionOnly(t *testing.T) {
+	h := start(t, 160, 30, "waiting")
+	h.press("C-/")
+	if h.m.claudeFocused || len(h.opened) != 0 {
+		t.Fatalf("with no session open the toggle does nothing: focused=%v opened=%q", h.m.claudeFocused, h.opened)
+	}
+	h.press("Enter", "C-/") // open session 1, back to the list
+	h.press("k")            // cursor to the chats row, away from session 1
+	h.press("C-/")
+	if !h.m.claudeFocused || h.m.streamNum != 1 || len(h.opened) != 1 {
+		t.Fatalf("toggle should go back to session 1 without opening another: focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.streamNum, h.opened)
 	}
 }
 
@@ -243,7 +262,7 @@ func TestPromptsCallTheBackend(t *testing.T) {
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a new chat should open and focus: %q", h.opened)
 	}
-	h.press("C-h", "y") // back to the list; y answers the waiting session 1
+	h.press("C-/", "y") // back to the list; y answers the waiting session 1
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories guest|home-network sessions hi|home-network yes 1" {
 		t.Fatalf("actions = %q", got)
 	}
@@ -325,6 +344,40 @@ func TestAddFolderFromThePicker(t *testing.T) {
 	}
 }
 
+func TestAddFirstFolderWithNoProjects(t *testing.T) {
+	h := start(t, 120, 30) // no projects: the picker opens
+	h.be.snaps["lab"] = snapshot("lab", "running")
+	h.typeText("existing")
+	h.press("Enter")
+	h.typeText("/srv/lab")
+	if v := h.m.View().Content; !strings.Contains(v, "/srv/lab") {
+		t.Fatalf("the prompt should show what is typed:\n%s", v)
+	}
+	h.press("Enter")
+	if len(h.be.created) != 1 || h.be.created[0] != (api.NewProject{Kind: "folder", Path: "/srv/lab"}) {
+		t.Fatalf("%+v", h.be.created)
+	}
+	if h.m.project != "lab" || !strings.Contains(h.m.View().Content, "Add lease time") {
+		t.Fatalf("project=%q\n%s", h.m.project, h.m.View().Content)
+	}
+}
+
+func TestCancelledOrFailedFirstAddReopensThePicker(t *testing.T) {
+	h := start(t, 120, 30)
+	h.typeText("existing")
+	h.press("Enter", "Esc")
+	if h.m.picker == nil {
+		t.Fatalf("Esc should reopen the picker:\n%s", h.m.View().Content)
+	}
+	h.be.createErr = errors.New("not a git repository")
+	h.press("Enter") // the cursor is back on the first entry, + Add existing folder
+	h.typeText("/srv/nope")
+	h.press("Enter")
+	if v := h.m.View().Content; h.m.picker == nil || !strings.Contains(v, "not a git repository") {
+		t.Fatalf("a failed add should reopen the picker with the error:\n%s", v)
+	}
+}
+
 func TestCloneFromThePicker(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("o")
@@ -346,8 +399,9 @@ func TestNarrowShowsOnePaneAtATime(t *testing.T) {
 		t.Fatalf("narrow list view:\n%s", v)
 	}
 	h.press("Enter")
-	v = h.m.View().Content
-	if !strings.Contains(v, "CLAUDE SAYS HI") || strings.Contains(v, "Add lease time") || h.m.term.Cols() != 80 {
+	v = ansi.Strip(h.m.View().Content)
+	// the list (its "◆ 1 needs you" header) is hidden; the pane's title line names the session
+	if !strings.Contains(v, "CLAUDE SAYS HI") || strings.Contains(v, "◆ 1 needs you") || !strings.Contains(v, "[1] Add lease time") || h.m.term.Cols() != 80 {
 		t.Fatalf("narrow Claude view (%d cols):\n%s", h.m.term.Cols(), v)
 	}
 }

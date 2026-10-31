@@ -11,6 +11,7 @@ import (
 type BarContext struct {
 	ClaudeFocused bool
 	FocusMode     bool
+	Session       int    // the session in the Claude pane; 0 = none
 	Seq           string // pending first key of a sequence, "" when none
 	Flash         string // message shown instead of the keys
 	Narrow        bool   // window too small for two panes: one pane at a time
@@ -39,12 +40,13 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		return ""
 	}
 	var parts []string
+	toggle := config.Pretty(cfg.Client.Toggle)
 	if ctx.ClaudeFocused {
-		back := "^h to list"
+		back := toggle + " to list"
 		if ctx.FocusMode {
-			back = "^h exit focus, to list"
+			back = toggle + " exit focus, to list"
 		}
-		if n, _ := m.SelectedSession(); n != 0 && m.StateText(n) != "" && strings.HasPrefix(m.StateText(n), "asks:") {
+		if n := ctx.Session; n != 0 && strings.HasPrefix(m.StateText(n), "asks:") {
 			parts = []string{"CLAUDE", "1-3 choose", "↑↓ move", "⏎ confirm", "esc no", back}
 		} else {
 			parts = []string{"CLAUDE", "type to write · Claude queues it while it works", "⏎ send", "esc interrupt", back}
@@ -81,7 +83,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"))
 	if ctx.Narrow {
 		// one pane at a time: say how to come back
-		parts = append(parts, "^h back")
+		parts = append(parts, toggle+" back")
 	}
 	return join(parts)
 }
@@ -93,7 +95,7 @@ type WaitingElsewhere struct {
 }
 
 // FocusLine is the single status line shown in focus mode.
-func FocusLine(m *Model, waitingKey string, runningElsewhere int, waiting []WaitingElsewhere) string {
+func FocusLine(m *Model, waitingKey, toggleKey string, runningElsewhere int, waiting []WaitingElsewhere) string {
 	num, s := m.SelectedSession()
 	left := m.P.Name
 	if s != nil {
@@ -107,7 +109,7 @@ func FocusLine(m *Model, waitingKey string, runningElsewhere int, waiting []Wait
 		}
 		right = append(right, w+" · "+config.Pretty(waitingKey)+" jump")
 	}
-	right = append(right, fmt.Sprintf("● %d running", runningElsewhere), "^h exit")
+	right = append(right, fmt.Sprintf("● %d running", runningElsewhere), config.Pretty(toggleKey)+" exit")
 	return left + "    " + strings.Join(right, " · ")
 }
 

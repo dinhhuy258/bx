@@ -122,7 +122,7 @@ func TestRootFromEnv(t *testing.T) {
 
 func TestServeAndClientSections(t *testing.T) {
 	root := t.TempDir()
-	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\nto_claude = \"C-j\"\n"
+	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\ntoggle = \"C-g\"\n"
 	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -133,11 +133,14 @@ func TestServeAndClientSections(t *testing.T) {
 	if c.Serve.Listen != "100.100.1.2:7357" {
 		t.Fatalf("serve.listen = %q", c.Serve.Listen)
 	}
-	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.ToList != "C-h" || c.Client.ToClaude != "C-j" {
+	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.Toggle != "C-g" {
 		t.Fatalf("client = %+v", c.Client)
 	}
 	d := Default(root)
-	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.ToList != "C-h" || d.Client.ToClaude != "C-l" {
+	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.Toggle != "C-/" {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
+	}
+	if !d.Client.IsToggle("C-/") || !d.Client.IsToggle("C-_") || d.Client.IsToggle("C-h") || c.Client.IsToggle("C-_") {
+		t.Fatal("C-/ toggle should also match C-_ (legacy terminals); other toggles match only themselves")
 	}
 }
