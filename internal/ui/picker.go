@@ -70,6 +70,12 @@ func (p *Picker) Key(key, text string) PickResult {
 	return PickKeep
 }
 
+// Paste adds pasted text to the filter.
+func (p *Picker) Paste(text string) {
+	p.filter += oneLine(text)
+	p.cursor = 0
+}
+
 // Choice is the highlighted item, or "" when nothing matches.
 func (p *Picker) Choice() string {
 	v := p.visible()

@@ -266,7 +266,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.wheel(msg)
 		return m, nil
 	case tea.PasteMsg: // ⌘V: the terminal sends the clipboard as a paste, not as keys
-		if m.claudeFocused && m.conn != nil && !m.copying {
+		switch {
+		case m.prompt.Active():
+			m.prompt.Paste(msg.Content)
+		case m.picker != nil:
+			m.picker.Paste(msg.Content)
+		case m.claudeFocused && m.conn != nil && !m.copying:
 			m.live()
 			m.term.Paste(msg.Content)
 		}

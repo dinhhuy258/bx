@@ -469,7 +469,7 @@ func TestAddFolderFromThePicker(t *testing.T) {
 	h.press("o")
 	h.typeText("existing")
 	h.press("Enter")
-	h.typeText("/srv/lab")
+	h.update(tea.PasteMsg{Content: "/srv/lab\r\n"}) // ⌘V, with the newline a copied path often has
 	h.press("Enter")
 	if len(h.be.created) != 1 || h.be.created[0] != (api.NewProject{Kind: "folder", Path: "/srv/lab"}) {
 		t.Fatalf("%+v", h.be.created)
@@ -516,7 +516,7 @@ func TestCancelledOrFailedFirstAddReopensThePicker(t *testing.T) {
 func TestCloneFromThePicker(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("o")
-	h.typeText("clone")
+	h.update(tea.PasteMsg{Content: "clone"}) // a paste filters the picker
 	h.press("Enter")
 	if !strings.Contains(h.m.View().Content, "me/other") {
 		t.Fatal(h.m.View().Content)

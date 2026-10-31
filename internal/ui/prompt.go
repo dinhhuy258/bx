@@ -1,5 +1,7 @@
 package ui
 
+import "strings"
+
 // PromptKind says what the one-line input in the key bar is for.
 type PromptKind int
 
@@ -72,6 +74,12 @@ func (p *Prompt) Key(key, text string) PromptResult {
 	}
 	return PromptKeep
 }
+
+// Paste adds pasted text to the input, on one line.
+func (p *Prompt) Paste(text string) { p.Input += oneLine(text) }
+
+// oneLine drops the line breaks of pasted text, so a copied path with a trailing newline fits.
+func oneLine(s string) string { return strings.NewReplacer("\r", "", "\n", "").Replace(s) }
 
 // Line is the key bar text while the prompt is open.
 func (p *Prompt) Line() string { return p.Label + ": " + p.Input + "▏  ⏎ ok · esc cancel" }
