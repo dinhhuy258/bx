@@ -83,7 +83,7 @@ func TestNewSessionStartsItsOwnTmuxSession(t *testing.T) {
 	if err != nil || num != 1 {
 		t.Fatalf("%d %v", num, err)
 	}
-	want := "new-session -d -s bx-home-network-1 -c " + a.Cfg.WorktreeDir("home-network", "s1") + " -P -F #{session_id} claude --session-id fixed-uuid -n 'Check syntax'"
+	want := "new-session -d -s bx-home-network-1 -c " + a.Cfg.WorktreeDir("home-network", "s1") + " -P -F #{session_id} claude --session-id fixed-uuid"
 	if calls(f) != want {
 		t.Fatalf("calls:\n%s", calls(f))
 	}

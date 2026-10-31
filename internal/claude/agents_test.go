@@ -41,12 +41,12 @@ func TestDecodeAgentsRejectsGarbage(t *testing.T) {
 }
 
 func TestStartArgs(t *testing.T) {
-	got := StartArgs("abc-uuid", "Fix lease", false)
-	want := []string{"claude", "--session-id", "abc-uuid", "-n", "Fix lease"}
+	got := StartArgs("abc-uuid", false)
+	want := []string{"claude", "--session-id", "abc-uuid"}
 	if !equal(got, want) {
 		t.Errorf("start = %v", got)
 	}
-	got = StartArgs("abc-uuid", "", true)
+	got = StartArgs("abc-uuid", true)
 	want = []string{"claude", "--resume", "abc-uuid"}
 	if !equal(got, want) {
 		t.Errorf("resume = %v", got)

@@ -125,7 +125,7 @@ func TestActionsGoThroughApp(t *testing.T) {
 	if code != 200 || res.Num != 2 {
 		t.Fatalf("%d %+v", code, res)
 	}
-	want := "new-session -d -s bx-home-network-2 -c " + s.Cfg.WorktreeDir("home-network", "s1") + " -P -F #{session_id} claude --session-id fixed-uuid -n 'Check syntax'"
+	want := "new-session -d -s bx-home-network-2 -c " + s.Cfg.WorktreeDir("home-network", "s1") + " -P -F #{session_id} claude --session-id fixed-uuid"
 	if !strings.Contains(calls(f), want) {
 		t.Fatalf("calls:\n%s", calls(f))
 	}

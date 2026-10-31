@@ -95,13 +95,10 @@ func Duplicates(agents []Agent) map[string]bool {
 }
 
 // StartArgs builds the command for a new or resumed session. Run it in the target folder.
-func StartArgs(uuid, title string, resume bool) []string {
+// No -n: bx shows the title in its own pane header, and Claude would repeat it on the input box.
+func StartArgs(uuid string, resume bool) []string {
 	if resume {
 		return []string{"claude", "--resume", uuid}
 	}
-	args := []string{"claude", "--session-id", uuid}
-	if title != "" {
-		args = append(args, "-n", title)
-	}
-	return args
+	return []string{"claude", "--session-id", uuid}
 }

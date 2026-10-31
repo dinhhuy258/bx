@@ -77,7 +77,7 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 	}
 	id := a.UUID()
 	num := p.AddSession(&state.Session{Story: story, UUID: id, Title: title, Created: time.Now()})
-	if err := a.launch(p, num, claude.StartArgs(id, title, false)); err != nil {
+	if err := a.launch(p, num, claude.StartArgs(id, false)); err != nil {
 		delete(p.Sessions, num)
 		p.NextNum--
 		return 0, err
@@ -104,7 +104,7 @@ func (a *App) Resume(p *state.Project, num int) error {
 	if _, ok := live[num]; ok {
 		return fmt.Errorf("session [%d] is still running", num)
 	}
-	if err := a.launch(p, num, claude.StartArgs(s.UUID, "", true)); err != nil {
+	if err := a.launch(p, num, claude.StartArgs(s.UUID, true)); err != nil {
 		return err
 	}
 	s.Done = false
@@ -132,7 +132,7 @@ func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) (int, 
 		if _, elsewhere := agents[s.UUID]; elsewhere {
 			continue
 		}
-		if err := a.launch(p, n, claude.StartArgs(s.UUID, "", true)); err != nil {
+		if err := a.launch(p, n, claude.StartArgs(s.UUID, true)); err != nil {
 			return resumed, err
 		}
 		resumed++
