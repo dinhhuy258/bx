@@ -102,7 +102,10 @@ func calls(f *tmux.Fake) string {
 }
 
 func TestProjectsAndSnapshot(t *testing.T) {
-	_, _, ts := newServer(t)
+	s, _, ts := newServer(t)
+	if err := os.WriteFile(filepath.Join(s.Cfg.WorktreeDir("home-network", "s1"), "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	list, code := get[[]api.ProjectSummary](t, ts, "/api/projects")
 	if code != 200 || len(list) != 1 || list[0].Name != "home-network" || list[0].Waiting != 1 || len(list[0].WaitingSessions) != 1 || list[0].WaitingSessions[0] != 1 {
 		t.Fatalf("%d %+v", code, list)
@@ -111,8 +114,8 @@ func TestProjectsAndSnapshot(t *testing.T) {
 	if code != 200 || snap.Project.Sessions[1].Title != "Add lease time" || snap.Live.Agents["u1"].State() != claude.Waiting || snap.Live.Branch == "" {
 		t.Fatalf("%d %+v", code, snap)
 	}
-	if _, ok := snap.Live.Diff["s1"]; !ok {
-		t.Fatalf("no diff for s1: %+v", snap.Live.Diff)
+	if d, ok := snap.Live.Diff["s1"]; !ok || d.Dirty != 1 {
+		t.Fatalf("diff for s1 should count its untracked file: %+v", snap.Live.Diff)
 	}
 	if _, code := get[api.Snapshot](t, ts, "/api/projects/nope"); code != 404 {
 		t.Fatalf("unknown project: %d", code)

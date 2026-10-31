@@ -194,7 +194,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 }
 
 // collect builds the live view of a project: agents, branch and dirty count of the project
-// folder, and the diff of every story against the default branch.
+// folder, and the diff and dirty count of every story worktree.
 func (s *Server) collect(p *state.Project) ui.Live {
 	l := ui.Live{Now: time.Now()}
 	if agents, err := s.liveAgents(); err != nil {
@@ -242,9 +242,15 @@ func (s *Server) diff(p *state.Project) map[string]ui.Diff {
 	base, _ := s.App.Git.DefaultBranch(p.Path)
 	d := map[string]ui.Diff{}
 	for name := range p.Stories {
-		if add, del, err := s.App.Git.ShortStat(s.App.Dir(p, name), base); err == nil {
-			d[name] = ui.Diff{Add: add, Del: del}
+		dir := s.App.Dir(p, name)
+		var sd ui.Diff
+		if add, del, err := s.App.Git.ShortStat(dir, base); err == nil {
+			sd.Add, sd.Del = add, del
 		}
+		if n, err := s.App.Git.DirtyCount(dir); err == nil {
+			sd.Dirty = n
+		}
+		d[name] = sd
 	}
 	s.mu.Lock()
 	s.diffs[p.Name] = diffCache{at: time.Now(), diff: d}

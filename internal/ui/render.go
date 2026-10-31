@@ -98,7 +98,7 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 		}
 		lines = append(lines, fit(cursor+"  "+dot+" "+title, right, width))
 		st := m.StateText(r.Num)
-		if m.State(r.Num) == claude.Waiting || strings.HasPrefix(st, "⚠") {
+		if m.State(r.Num) == claude.Waiting {
 			st = pal.amber.Render(st)
 		}
 		lines = append(lines, truncate("      "+st, width))
@@ -121,11 +121,15 @@ func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected
 		arrow = "▾"
 	}
 	name := "chats"
-	right := pal.dim.Render(m.branch() + " · " + shortPath(m.P.Path))
+	// Each group row is one folder: chats run in the project folder, a story in its worktree.
+	right := pal.dim.Render(m.branch()+" · ") + changed(m.Live.DirtyFiles, pal, " · ") + pal.dim.Render(shortPath(m.P.Path))
 	if r.Story != "" {
 		name = r.Story
 		d := m.Live.Diff[r.Story]
 		var parts []string
+		if d.Dirty > 0 {
+			parts = append(parts, changed(d.Dirty, pal, ""))
+		}
 		if d.Add > 0 {
 			parts = append(parts, pal.green.Render(fmt.Sprintf("+%d", d.Add)))
 		}
@@ -141,6 +145,14 @@ func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected
 	}
 	left := cursor + " " + pal.dim.Render(arrow) + " " + pal.bold.Render(name)
 	return fit(left, right, width)
+}
+
+// changed is the amber "N changed" for uncommitted files in a folder, empty when clean.
+func changed(n int, pal palette, sep string) string {
+	if n == 0 {
+		return ""
+	}
+	return pal.amber.Render(fmt.Sprintf("%d changed", n)) + pal.dim.Render(sep)
 }
 
 // shortPath replaces the home directory with ~.

@@ -1,14 +1,14 @@
 bx home-network                      4 stories
 ● 2 running                      ◆ 1 needs you
 
-  ▾ chats   main · ~/.bx/projects/home-network
+  ▾ chats main · 2 changed · ~/.bx/projects/h…
    ○ [6] What does pmxcfs do?               5m
       idle
    ○ [7] Explain the fasttrack rule        40m
-      ⚠ idle · edited 2 files in main
+      idle
   ▾ fstrim-cron
       no sessions · n to start one
-  ▾ guest-vlan-fix                      +42 -7
+  ▾ guest-vlan-fix            3 changed +42 -7
 ›  ● [1] Fix guest DHCP lease time          6m
       running
    ◆ [2] Write the test checklist           2m

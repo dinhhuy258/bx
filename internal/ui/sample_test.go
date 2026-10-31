@@ -35,7 +35,7 @@ func sampleHomeNetwork() (*state.Project, Live) {
 			"u6": {SessionID: "u6", Status: "idle"},
 			"u7": {SessionID: "u7", Status: "idle"},
 		},
-		Diff:       map[string]Diff{"guest-vlan-fix": {42, 7}, "ups-nut-alerts": {31, 2}, "zigbee-map-docs": {58, 0}},
+		Diff:       map[string]Diff{"guest-vlan-fix": {Add: 42, Del: 7, Dirty: 3}, "ups-nut-alerts": {Add: 31, Del: 2}, "zigbee-map-docs": {Add: 58}},
 		DirtyFiles: 2,
 		Branch:     "main",
 	}

@@ -92,7 +92,7 @@ func TestStateText(t *testing.T) {
 		3: "idle",
 		5: "done",
 		6: "idle",
-		7: "⚠ idle · edited 2 files in main",
+		7: "idle",
 	}
 	for num, want := range cases {
 		if got := m.StateText(num); got != want {

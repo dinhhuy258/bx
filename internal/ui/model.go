@@ -12,10 +12,11 @@ import (
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
-// Diff is +added -deleted lines of a story against main.
+// Diff is +added -deleted lines of a story against main, and its uncommitted files.
 type Diff struct {
-	Add int `json:"add"`
-	Del int `json:"del"`
+	Add   int `json:"add"`
+	Del   int `json:"del"`
+	Dirty int `json:"dirty,omitempty"` // git status --porcelain in the story worktree
 }
 
 // Live is everything derived on each tick and never stored.
@@ -320,11 +321,7 @@ func (m *Model) StateText(num int) string {
 	case claude.Running:
 		text = "running"
 	default:
-		if m.dirtyChat() == num && m.Live.DirtyFiles > 0 {
-			text = fmt.Sprintf("⚠ idle · edited %s in %s", plural(m.Live.DirtyFiles, "file", "files"), m.branch())
-		} else {
-			text = "idle"
-		}
+		text = "idle"
 	}
 	if m.Live.Dups[s.UUID] {
 		text += " · duplicate"
@@ -333,19 +330,6 @@ func (m *Model) StateText(num int) string {
 		text += " ?"
 	}
 	return text
-}
-
-// dirtyChat is the chat that carries the "edited N files" warning. Dirty files are
-// per project folder, not per chat, so the warning goes on one chat only: the
-// highest-numbered idle chat.
-func (m *Model) dirtyChat() int {
-	last := 0
-	for _, n := range m.P.SessionsOf("") {
-		if s := m.P.Sessions[n]; !s.Done && m.State(n) != claude.Running && m.State(n) != claude.Waiting && n > last {
-			last = n
-		}
-	}
-	return last
 }
 
 func (m *Model) branch() string {
