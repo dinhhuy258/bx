@@ -57,9 +57,6 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 	lines = append(lines, "")
 
 	rows := m.Rows()
-	if nStories == 0 {
-		rows = rows[:1] // chats only
-	}
 	selIdx := m.SelIndex()
 	for i, r := range rows {
 		cursor := " "

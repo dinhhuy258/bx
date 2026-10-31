@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/state"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -45,6 +46,24 @@ func TestRenderEmptyProject(t *testing.T) {
 	out := Render(m, 46, 20, RenderOptions{Plain: true})
 	if !strings.Contains(out, "No stories yet.") || !strings.Contains(out, "no chats · c to start one") {
 		t.Fatalf("empty render:\n%s", out)
+	}
+}
+
+func TestRenderChatsWithoutStories(t *testing.T) {
+	p, live := sampleHomeNetwork()
+	for k := range p.Stories {
+		delete(p.Stories, k)
+	}
+	for k := range p.Sessions {
+		delete(p.Sessions, k)
+	}
+	p.AddSession(&state.Session{UUID: "c1", Title: "first chat", Created: live.Now})
+	p.AddSession(&state.Session{UUID: "c2", Title: "second chat", Created: live.Now})
+	m := NewModel(p, Options{})
+	m.SetLive(live)
+	out := Render(m, 46, 20, RenderOptions{Plain: true})
+	if !strings.Contains(out, "first chat") || !strings.Contains(out, "second chat") || !strings.Contains(out, "No stories yet.") {
+		t.Fatalf("chats should be listed with no stories:\n%s", out)
 	}
 }
 
