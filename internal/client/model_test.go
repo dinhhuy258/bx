@@ -107,6 +107,7 @@ type harness struct {
 	be     *fakeBackend
 	opened []string // "project num"
 	conns  []*fakeConn
+	tmux   []string // tmux pane moves: "L" or "R"
 }
 
 // start builds a client over projects (each with session 1 in story s1) and runs Init.
@@ -125,6 +126,7 @@ func start(t *testing.T, w, h int, statuses ...string) *harness {
 	hs := &harness{be: be}
 	hs.m = NewModel(config.Default(t.TempDir()), be, "")
 	hs.m.tick = func() tea.Cmd { return nil }
+	hs.m.tmux = func(dir string) tea.Cmd { hs.tmux = append(hs.tmux, dir); return nil }
 	hs.m.SetStreamer(func(_ context.Context, project string, num, cols, rows int, term *Term, _ func(tea.Msg)) (Conn, error) {
 		hs.opened = append(hs.opened, fmt.Sprintf("%s %d", project, num))
 		term.Feed([]byte("CLAUDE SAYS HI"))
@@ -171,10 +173,8 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyDown}
 		case "PgUp":
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
-		case "C-/":
-			msg = tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}
-		case "C-_": // what a legacy terminal sends for Ctrl-/
-			msg = tea.KeyPressMsg{Code: '_', Mod: tea.ModCtrl}
+		case "C-h", "C-l":
+			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModCtrl}
 		default:
 			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
 		}
@@ -250,13 +250,13 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("key was not forwarded")
 	}
-	h.press("C-/")
+	h.press("C-h")
 	if h.m.claudeFocused {
-		t.Fatal("C-/ must return to the list")
+		t.Fatal("C-h must return to the list")
 	}
-	h.press("C-_")
+	h.press("C-l")
 	if !h.m.claudeFocused || len(h.opened) != 1 {
-		t.Fatalf("C-/ (sent as C-_) on the open session must not reconnect: %q", h.opened)
+		t.Fatalf("C-l on the open session must not reconnect: %q", h.opened)
 	}
 	h.update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	if got := h.conns[0].resized; len(got) == 0 || got[len(got)-1] != [2]int{140 - ui.ListWidth - 1, 37} {
@@ -288,7 +288,7 @@ func TestWheelAndPgUpScrollTheClaudePane(t *testing.T) {
 	}
 	h.press("y") // already live: no extra frame
 	<-h.m.term.Input()
-	h.press("C-/", "PgUp")
+	h.press("C-h", "PgUp")
 	if got, want := fmt.Sprint(c.scrolled), fmt.Sprint([]int{-wheelLines, wheelLines, 0, -h.m.term.Rows() / 2}); got != want {
 		t.Fatalf("scroll frames %s, want %s", got, want)
 	}
@@ -317,7 +317,7 @@ func TestPasteGoesToClaude(t *testing.T) {
 	if got := input(); got != "\x1b[200~hi\x1b[201~" {
 		t.Fatalf("bracketed paste forwarded as %q", got)
 	}
-	h.press("C-/")
+	h.press("C-h")
 	h.update(tea.PasteMsg{Content: "list"})
 	h.update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt}) // M-c: copy-mode
 	h.update(tea.PasteMsg{Content: "copy-mode"})
@@ -328,7 +328,7 @@ func TestPasteGoesToClaude(t *testing.T) {
 
 func TestCopyModeSendsKeysToTmuxAndCopies(t *testing.T) {
 	h := start(t, 120, 30, "idle")
-	h.press("Enter", "C-/") // a session open, keys back on the list
+	h.press("Enter", "C-h") // a session open, keys back on the list
 	c := h.conns[0]
 	h.update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt})
 	if c.copies != 1 || !h.m.copying || !h.m.claudeFocused {
@@ -359,17 +359,31 @@ func TestCopyModeSendsKeysToTmuxAndCopies(t *testing.T) {
 	}
 }
 
-func TestToggleReturnsToTheOpenSessionOnly(t *testing.T) {
+func TestPaneRightReturnsToTheOpenSessionOnly(t *testing.T) {
 	h := start(t, 160, 30, "waiting")
-	h.press("C-/")
-	if h.m.claudeFocused || len(h.opened) != 0 {
-		t.Fatalf("with no session open the toggle does nothing: focused=%v opened=%q", h.m.claudeFocused, h.opened)
+	h.press("C-l")
+	if h.m.claudeFocused || len(h.opened) != 0 || strings.Join(h.tmux, "") != "R" {
+		t.Fatalf("with no session open C-l goes on to tmux: focused=%v opened=%q tmux=%q", h.m.claudeFocused, h.opened, h.tmux)
 	}
-	h.press("Enter", "C-/") // open session 1, back to the list
+	h.press("Enter", "C-h") // open session 1, back to the list
 	h.press("k")            // cursor to the chats row, away from session 1
-	h.press("C-/")
+	h.press("C-l")
 	if !h.m.claudeFocused || h.m.streamNum != 1 || len(h.opened) != 1 {
-		t.Fatalf("toggle should go back to session 1 without opening another: focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.streamNum, h.opened)
+		t.Fatalf("C-l should go back to session 1 without opening another: focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.streamNum, h.opened)
+	}
+}
+
+func TestPaneKeysPastTheEdgeGoToTmux(t *testing.T) {
+	h := start(t, 160, 30, "waiting")
+	h.press("C-h") // already in the list: the tmux pane on the left
+	h.press("Enter", "C-l", "C-l")
+	if !h.m.claudeFocused || strings.Join(h.tmux, "") != "LRR" {
+		t.Fatalf("focused=%v tmux=%q", h.m.claudeFocused, h.tmux)
+	}
+	select {
+	case b := <-h.m.term.Input():
+		t.Fatalf("C-l reached Claude: %q", b)
+	default:
 	}
 }
 
@@ -383,7 +397,7 @@ func TestPromptsCallTheBackend(t *testing.T) {
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a new chat should open and focus: %q", h.opened)
 	}
-	h.press("C-/", "y") // back to the list; y answers the waiting session 1
+	h.press("C-h", "y") // back to the list; y answers the waiting session 1
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories guest|home-network sessions hi|home-network yes 1" {
 		t.Fatalf("actions = %q", got)
 	}

@@ -40,11 +40,10 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		return ""
 	}
 	var parts []string
-	toggle := config.Pretty(cfg.Client.Toggle)
 	if ctx.ClaudeFocused {
-		back := toggle + " to list"
+		back := k(cfg.Client.PaneLeft, "to list")
 		if ctx.FocusMode {
-			back = toggle + " exit focus, to list"
+			back = k(cfg.Client.PaneLeft, "exit focus, to list")
 		}
 		if n := ctx.Session; n != 0 && strings.HasPrefix(m.StateText(n), "asks:") {
 			parts = []string{"CLAUDE", "1-3 choose", "↑↓ move", "⏎ confirm", "esc no", back}
@@ -83,7 +82,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"))
 	if ctx.Narrow {
 		// one pane at a time: say how to come back
-		parts = append(parts, toggle+" back")
+		parts = append(parts, k(cfg.Client.PaneRight, "back"))
 	}
 	return join(parts)
 }
@@ -95,7 +94,7 @@ type WaitingElsewhere struct {
 }
 
 // FocusLine is the single status line shown in focus mode.
-func FocusLine(m *Model, waitingKey, toggleKey string, runningElsewhere int, waiting []WaitingElsewhere) string {
+func FocusLine(m *Model, waitingKey, exitKey string, runningElsewhere int, waiting []WaitingElsewhere) string {
 	num, s := m.SelectedSession()
 	left := m.P.Name
 	if s != nil {
@@ -109,7 +108,7 @@ func FocusLine(m *Model, waitingKey, toggleKey string, runningElsewhere int, wai
 		}
 		right = append(right, w+" · "+config.Pretty(waitingKey)+" jump")
 	}
-	right = append(right, fmt.Sprintf("● %d running", runningElsewhere), config.Pretty(toggleKey)+" exit")
+	right = append(right, fmt.Sprintf("● %d running", runningElsewhere), config.Pretty(exitKey)+" exit")
 	return left + "    " + strings.Join(right, " · ")
 }
 

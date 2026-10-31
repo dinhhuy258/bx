@@ -3,6 +3,8 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -88,6 +90,7 @@ type Model struct {
 	open Streamer
 	send func(tea.Msg)
 	tick func() tea.Cmd
+	tmux func(dir string) tea.Cmd // moves to the tmux pane beside bx; see tmuxSelect
 
 	projects []api.ProjectSummary
 	models   map[string]*ui.Model // per project, so folds and cursor survive a switch
@@ -124,7 +127,7 @@ type Model struct {
 // NewModel builds the client. project is the one to open first ("" = the only one, or ask).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -134,6 +137,20 @@ func (m *Model) SetStreamer(s Streamer) { m.open = s }
 func (m *Model) SetSender(send func(tea.Msg)) { m.send = send }
 
 func (m *Model) Init() tea.Cmd { return tea.Batch(m.loadProjects(), m.tick()) }
+
+// tmuxSelect moves to the tmux pane on side dir ("L" or "R") of bx, if there is one: past the
+// edge of bx, PaneLeft and PaneRight act like vim-tmux-navigator. Outside tmux it does nothing.
+func tmuxSelect(dir string) tea.Cmd {
+	pane := os.Getenv("TMUX_PANE")
+	if os.Getenv("TMUX") == "" || pane == "" {
+		return nil
+	}
+	edge := map[string]string{"L": "#{pane_at_left}", "R": "#{pane_at_right}"}[dir]
+	return func() tea.Msg {
+		_ = exec.Command("tmux", "if-shell", "-F", "-t", pane, edge, "", "select-pane -t "+pane+" -"+dir).Run()
+		return nil
+	}
+}
 
 func tick() tea.Cmd {
 	return tea.Tick(1500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -385,10 +402,13 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.claudeFocused {
-		if m.cfg.Client.IsToggle(key) {
+		switch key {
+		case m.cfg.Client.PaneLeft:
 			m.claudeFocused, m.focusMode = false, false
 			m.resizeTerm()
 			return m, nil
+		case m.cfg.Client.PaneRight:
+			return m, m.tmux("R")
 		}
 		if m.conn != nil {
 			m.live()
@@ -407,7 +427,13 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == "C-c" {
 		return m, m.quit()
 	}
-	if m.cfg.Client.IsToggle(key) {
+	switch key {
+	case m.cfg.Client.PaneLeft:
+		return m, m.tmux("L")
+	case m.cfg.Client.PaneRight:
+		if m.streamNum == 0 { // nothing in the Claude pane: on to the tmux pane
+			return m, m.tmux("R")
+		}
 		return m, m.backToClaude()
 	}
 	action := m.cfg.Keys.ListAction(key)
@@ -551,12 +577,9 @@ func (m *Model) enterClaude() tea.Cmd {
 	return m.showSession(num)
 }
 
-// backToClaude gives the keys back to the session already in the Claude pane. With no session
-// open it does nothing: the toggle never opens the session under the cursor (Enter does).
+// backToClaude gives the keys back to the session already in the Claude pane. PaneRight never
+// opens the session under the cursor (Enter does).
 func (m *Model) backToClaude() tea.Cmd {
-	if m.streamNum == 0 {
-		return nil
-	}
 	m.claudeFocused = true
 	m.resizeTerm()
 	return m.connect() // nil unless the stream dropped
@@ -861,7 +884,7 @@ func (m *Model) bar() string {
 				waiting = append(waiting, ui.WaitingElsewhere{Project: p.Name, Num: n})
 			}
 		}
-		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "waiting"), m.cfg.Client.Toggle, run, waiting)
+		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "waiting"), m.cfg.Client.PaneLeft, run, waiting)
 	default:
 		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.streamNum, Seq: m.seq, Flash: m.flash, Narrow: m.narrow})
 	}
@@ -872,7 +895,8 @@ func (m *Model) bar() string {
 
 func keymapText(cfg *config.Config) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "  %-12s %s\n", config.Pretty(cfg.Client.Toggle), "list ⇄ Claude pane")
+	fmt.Fprintf(&b, "  %-12s %s\n", config.Pretty(cfg.Client.PaneLeft), "to the list; past it, the tmux pane on the left")
+	fmt.Fprintf(&b, "  %-12s %s\n", config.Pretty(cfg.Client.PaneRight), "to the Claude pane; past it, the tmux pane on the right")
 	fmt.Fprintf(&b, "  %-12s %s\n\n", config.Pretty(cfg.Client.CopyMode), "copy-mode: vi keys, v select, y copy, q quit")
 	actions := make([]string, 0, len(cfg.Keys.List))
 	for a := range cfg.Keys.List {

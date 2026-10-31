@@ -23,11 +23,11 @@ func TestKeyBarNarrowHint(t *testing.T) {
 	if !strings.Contains(bar, "⏎ Claude") {
 		t.Fatal(bar)
 	}
-	if !strings.Contains(bar, "^/ back") {
+	if !strings.Contains(bar, "^l back") {
 		t.Fatal(bar)
 	}
 	wide := KeyBar(m, config.Default("/x"), BarContext{})
-	if strings.Contains(wide, "^/ back") {
+	if strings.Contains(wide, "^l back") {
 		t.Fatal(wide)
 	}
 }
