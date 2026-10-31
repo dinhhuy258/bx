@@ -88,6 +88,14 @@ func (t *Term) TakeCopied() []string {
 // SendKey encodes a key press for the program on the other side.
 func (t *Term) SendKey(k tea.KeyPressMsg) { t.emu.SendKey(uv.KeyPressEvent(uv.Key(tea.Key(k)))) }
 
+// Paste sends pasted text, bracketed when the program asked for bracketed paste (a mode Feed
+// sets, hence the lock).
+func (t *Term) Paste(text string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.emu.Paste(text)
+}
+
 // View renders the screen as rows lines of styled text.
 func (t *Term) View() string {
 	t.mu.Lock()

@@ -280,6 +280,38 @@ func TestWheelAndPgUpScrollTheClaudePane(t *testing.T) {
 	}
 }
 
+func TestPasteGoesToClaude(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter")
+	input := func() string {
+		var got []byte
+		for {
+			select {
+			case b := <-h.m.term.Input():
+				got = append(got, b...)
+			case <-time.After(100 * time.Millisecond):
+				return string(got)
+			}
+		}
+	}
+	h.update(tea.PasteMsg{Content: "one\ntwo"})
+	if got := input(); got != "one\ntwo" {
+		t.Fatalf("paste forwarded as %q", got)
+	}
+	h.m.term.Feed([]byte("\x1b[?2004h")) // Claude asks for bracketed paste
+	h.update(tea.PasteMsg{Content: "hi"})
+	if got := input(); got != "\x1b[200~hi\x1b[201~" {
+		t.Fatalf("bracketed paste forwarded as %q", got)
+	}
+	h.press("C-/")
+	h.update(tea.PasteMsg{Content: "list"})
+	h.update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt}) // M-c: copy-mode
+	h.update(tea.PasteMsg{Content: "copy-mode"})
+	if got := input(); got != "" {
+		t.Fatalf("a paste on the list or in copy-mode must not reach Claude, got %q", got)
+	}
+}
+
 func TestCopyModeSendsKeysToTmuxAndCopies(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.press("Enter", "C-/") // a session open, keys back on the list

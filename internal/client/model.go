@@ -248,6 +248,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseWheelMsg:
 		m.wheel(msg)
 		return m, nil
+	case tea.PasteMsg: // ⌘V: the terminal sends the clipboard as a paste, not as keys
+		if m.claudeFocused && m.conn != nil && !m.copying {
+			m.live()
+			m.term.Paste(msg.Content)
+		}
+		return m, nil
 	}
 	return m, nil
 }
