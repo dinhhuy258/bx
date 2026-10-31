@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"sync"
 
@@ -22,11 +24,14 @@ type Term struct {
 	input chan []byte
 	cols  int
 	rows  int
+
+	copied []string // clipboard text from OSC 52 not yet taken
 }
 
 // NewTerm builds an emulator of cols x rows and starts the input reader.
 func NewTerm(cols, rows int) *Term {
 	t := &Term{emu: vt.NewEmulator(cols, rows), input: make(chan []byte, 64), cols: cols, rows: rows}
+	t.emu.RegisterOscHandler(52, t.osc52)
 	go t.readInput()
 	return t
 }
@@ -56,6 +61,28 @@ func (t *Term) Feed(b []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	_, _ = t.emu.Write(b)
+}
+
+// osc52 keeps the text a program puts on the clipboard ("52;c;<base64>"); tmux sends one on a
+// copy-mode yank. It runs inside Feed, under mu.
+func (t *Term) osc52(data []byte) bool {
+	parts := bytes.SplitN(data, []byte{';'}, 3)
+	if len(parts) != 3 {
+		return false
+	}
+	if b, err := base64.StdEncoding.DecodeString(string(parts[2])); err == nil && len(b) > 0 {
+		t.copied = append(t.copied, string(b)) // "?" (a query) is never answered
+	}
+	return true
+}
+
+// TakeCopied returns the clipboard text received since the last call.
+func (t *Term) TakeCopied() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	c := t.copied
+	t.copied = nil
+	return c
 }
 
 // SendKey encodes a key press for the program on the other side.
@@ -110,6 +137,8 @@ type (
 		conn Conn
 		err  error
 	}
+	clipboardMsg string              // text copied in tmux copy-mode
+	copyEndMsg   struct{ conn Conn } // the stream's pane left copy-mode
 )
 
 // Connect dials one session's stream and starts the pumps: one streamOutputMsg per burst of
@@ -141,7 +170,15 @@ func (s *Stream) readLoop(ctx context.Context, send func(tea.Msg)) {
 		switch typ {
 		case websocket.MessageBinary:
 			s.term.Feed(data)
+			for _, text := range s.term.TakeCopied() {
+				send(clipboardMsg(text))
+			}
 			send(streamOutputMsg{})
+		case websocket.MessageText:
+			var ctl api.Control
+			if json.Unmarshal(data, &ctl) == nil && ctl.Type == "copy_end" {
+				send(copyEndMsg{s})
+			}
 		}
 	}
 }
@@ -164,7 +201,22 @@ func (s *Stream) writeLoop(ctx context.Context) {
 
 // Resize tells the server the new size.
 func (s *Stream) Resize(ctx context.Context, cols, rows int) error {
-	b, _ := json.Marshal(api.Control{Type: "resize", Cols: cols, Rows: rows})
+	return s.control(ctx, api.Control{Type: "resize", Cols: cols, Rows: rows})
+}
+
+// Scroll moves the session's view through its history (see api.Control).
+func (s *Stream) Scroll(ctx context.Context, lines int) error {
+	return s.control(ctx, api.Control{Type: "scroll", Lines: lines})
+}
+
+// CopyMode puts the session in tmux copy-mode.
+func (s *Stream) CopyMode(ctx context.Context) error {
+	return s.control(ctx, api.Control{Type: "copy"})
+}
+
+// control sends a text frame to the server.
+func (s *Stream) control(ctx context.Context, ctl api.Control) error {
+	b, _ := json.Marshal(ctl)
 	return s.conn.Write(ctx, websocket.MessageText, b)
 }
 

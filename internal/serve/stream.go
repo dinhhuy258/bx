@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/creack/pty"
@@ -19,9 +21,10 @@ type stream struct{ cancel context.CancelFunc }
 
 // stream serves GET /api/projects/{name}/sessions/{num}/stream: a pty running
 // `tmux attach` to the session, bridged to a WebSocket. Binary frames are terminal bytes both
-// ways; a text frame from the client resizes. When the session ends (Claude exited, story
-// closed) the socket closes normally with reason "session ended", and the client does not
-// reconnect. Several clients may watch one session; tmux sizes it to the latest.
+// ways; a text frame from the client resizes, scrolls or enters copy-mode (see Tmux.Scroll),
+// and a "copy_end" frame from the server tells the client that tmux left copy-mode. When the
+// session ends (Claude exited, story closed) the socket closes normally with reason
+// "session ended", and the client does not reconnect. Several clients may watch one session; tmux sizes it to the latest.
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	num, err := strconv.Atoi(r.PathValue("num"))
 	if err != nil {
@@ -37,6 +40,9 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpError(w, statusOf(err), err)
 		return
+	}
+	if err := s.App.Tmux.PrepareCopy(); err != nil {
+		s.Log("stream %s [%d]: copy-mode setup: %v", p.Name, num, err)
 	}
 	cmd, err := s.App.Tmux.AttachCommand(sid)
 	if err != nil {
@@ -89,6 +95,22 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+	var copying atomic.Bool // the client is in copy-mode
+	var check *time.Timer
+	checkMode := func() { // a little after a key: tmux handles it asynchronously
+		if !copying.Load() {
+			return
+		}
+		if check != nil {
+			check.Stop()
+		}
+		check = time.AfterFunc(modeCheckDelay, func() {
+			if in, err := s.App.Tmux.InMode(sid); err == nil && !in && copying.CompareAndSwap(true, false) {
+				b, _ := json.Marshal(api.Control{Type: "copy_end"})
+				_ = c.Write(ctx, websocket.MessageText, b)
+			}
+		})
+	}
 	go func() { // socket → pty
 		defer cancel()
 		for {
@@ -101,10 +123,27 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 				if _, err := f.Write(data); err != nil {
 					return
 				}
+				checkMode()
 			case websocket.MessageText:
 				var ctl api.Control
-				if json.Unmarshal(data, &ctl) == nil && ctl.Type == "resize" && ctl.Cols > 0 && ctl.Rows > 0 {
+				if json.Unmarshal(data, &ctl) != nil {
+					continue
+				}
+				switch {
+				case ctl.Type == "resize" && ctl.Cols > 0 && ctl.Rows > 0:
 					_ = pty.Setsize(f, &pty.Winsize{Cols: uint16(dim(strconv.Itoa(ctl.Cols), 80)), Rows: uint16(dim(strconv.Itoa(ctl.Rows), 24))})
+				case ctl.Type == "scroll":
+					// before the next frame is read, so a key sent after "back to live" reaches Claude
+					if err := s.App.Tmux.Scroll(sid, ctl.Lines); err != nil {
+						s.Log("stream %s [%d]: scroll: %v", p.Name, num, err)
+					}
+					checkMode()
+				case ctl.Type == "copy":
+					if err := s.App.Tmux.CopyMode(sid); err != nil {
+						s.Log("stream %s [%d]: copy-mode: %v", p.Name, num, err)
+					} else {
+						copying.Store(true)
+					}
 				}
 			}
 		}
@@ -123,6 +162,9 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		c.Close(websocket.StatusNormalClosure, "bye")
 	}
 }
+
+// modeCheckDelay is how long after a key in copy-mode the server asks tmux whether it left.
+const modeCheckDelay = 50 * time.Millisecond
 
 // dim parses a terminal dimension and clamps it to something tmux accepts.
 func dim(s string, def int) int {

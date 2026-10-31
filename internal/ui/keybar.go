@@ -20,7 +20,7 @@ type BarContext struct {
 var labels = map[string]string{
 	"focus": "focus mode", "waiting": "jump to waiting", "projects": "projects",
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
-	"fold_all": "fold all", "yes": "yes", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
+	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "yes": "yes", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
 	"rename": "rename", "resume": "resume", "close_story": "close story",
 }
 

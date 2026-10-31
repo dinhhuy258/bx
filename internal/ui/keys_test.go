@@ -20,6 +20,10 @@ func TestKeyName(t *testing.T) {
 		{tea.KeyPressMsg{Code: tea.KeyEscape}, "Esc"},
 		{tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}, "Space"},
 		{tea.KeyPressMsg{Code: 'h', Mod: tea.ModCtrl}, "C-h"},
+		{tea.KeyPressMsg{Code: tea.KeyPgUp}, "PgUp"},
+		{tea.KeyPressMsg{Code: tea.KeyPgDown}, "PgDn"},
+		{tea.KeyPressMsg{Code: 'u', Mod: tea.ModAlt}, "M-u"},
+		{tea.KeyPressMsg{Code: 'd', Mod: tea.ModAlt | tea.ModCtrl}, "M-C-d"},
 	}
 	for _, c := range cases {
 		if got := KeyName(c.msg); got != c.want {

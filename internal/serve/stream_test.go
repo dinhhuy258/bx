@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -107,6 +108,57 @@ func TestRealStream(t *testing.T) {
 	id, err := a.Target(p, 1)
 	if err != nil {
 		t.Fatal(err)
+	}
+	inMode := func(want string) {
+		t.Helper()
+		for i := 0; ; i++ {
+			out, _ := r.Command("display-message", "-p", "-t", id, "#{pane_in_mode}").Output()
+			if strings.TrimSpace(string(out)) == want {
+				return
+			}
+			if i == 50 {
+				t.Fatalf("pane_in_mode = %q, want %s", out, want)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	for _, step := range []struct {
+		lines int
+		want  string
+	}{{-1, "1"}, {0, "0"}} {
+		ctl, _ := json.Marshal(api.Control{Type: "scroll", Lines: step.lines})
+		if err := c.Write(ctx, websocket.MessageText, ctl); err != nil {
+			t.Fatal(err)
+		}
+		inMode(step.want)
+	}
+	// copy-mode: select the echoed line, yank it; tmux sends it as OSC 52 and the server
+	// reports that copy-mode ended
+	ctl, _ = json.Marshal(api.Control{Type: "copy"})
+	if err := c.Write(ctx, websocket.MessageText, ctl); err != nil {
+		t.Fatal(err)
+	}
+	inMode("1")
+	for _, k := range []string{"k", "0", "v", "$", "h", "y"} { // back to back: not taken for a paste
+		if err := c.Write(ctx, websocket.MessageBinary, []byte(k)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := "\x1b]52;;" + base64.StdEncoding.EncodeToString([]byte("hello-bx"))
+	var screen []byte
+	for gotMode := false; !gotMode || !strings.Contains(string(screen), want); {
+		typ, data, err := c.Read(ctx)
+		if err != nil {
+			t.Fatalf("no OSC 52 %q / mode frame: %v\n%q", want, err, screen)
+		}
+		if typ == websocket.MessageBinary {
+			screen = append(screen, data...)
+			continue
+		}
+		var m api.Control
+		if json.Unmarshal(data, &m) == nil && m.Type == "copy_end" {
+			gotMode = true
+		}
 	}
 	if err := a.Tmux.KillSession(id); err != nil {
 		t.Fatal(err)

@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,6 +48,59 @@ func TestNewSessionAndSessions(t *testing.T) {
 	want := "new-session -d -s bx-p-1 -c /w -P -F #{session_id} claude --session-id u|list-sessions -F #{session_id}\t#{session_name}|send-keys -t $4 Enter|kill-session -t $4"
 	if strings.Join(calls, "|") != want {
 		t.Fatalf("calls:\n%s", strings.Join(calls, "\n"))
+	}
+}
+
+func TestScroll(t *testing.T) {
+	f := &Fake{}
+	tm := New(f)
+	for _, n := range []int{-3, 3, 0} {
+		if err := tm.Scroll("$4", n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var calls []string
+	for _, c := range f.Calls {
+		calls = append(calls, strings.Join(c, " "))
+	}
+	want := "copy-mode -e -t $4|send-keys -t $4 -X -N 3 scroll-up|send-keys -t $4 -X -N 3 scroll-down|send-keys -t $4 -X cancel"
+	if strings.Join(calls, "|") != want {
+		t.Fatalf("calls:\n%s", strings.Join(calls, "\n"))
+	}
+	// leaving copy-mode when not in it is fine; entering it must work
+	f.Err = errors.New("not in a mode")
+	if tm.Scroll("$4", 0) != nil || tm.Scroll("$4", 3) != nil || tm.Scroll("$4", -3) == nil {
+		t.Fatal("only scrolling back reports errors")
+	}
+}
+
+func TestCopyMode(t *testing.T) {
+	f := &Fake{Replies: map[string]string{"display-message -p -t $4 #{pane_in_mode}": "1\n"}}
+	tm := New(f)
+	if err := tm.PrepareCopy(); err != nil {
+		t.Fatal(err)
+	}
+	if err := tm.CopyMode("$4"); err != nil {
+		t.Fatal(err)
+	}
+	if in, err := tm.InMode("$4"); err != nil || !in {
+		t.Fatalf("in=%v err=%v", in, err)
+	}
+	var calls []string
+	for _, c := range f.Calls {
+		calls = append(calls, strings.Join(c, " "))
+	}
+	got := strings.Join(calls, "\n")
+	for _, want := range []string{
+		"set-option -g mode-keys vi", "set-option -g assume-paste-time 0", "set-option -s set-clipboard on",
+		"set-option -s terminal-features[90] xterm-256color:clipboard",
+		"bind-key -T copy-mode-vi v send-keys -X begin-selection",
+		"bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel",
+		"copy-mode -t $4",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
 	}
 }
 

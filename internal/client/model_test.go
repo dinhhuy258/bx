@@ -75,12 +75,22 @@ func (f *fakeBackend) Repos(context.Context) ([]string, error) {
 }
 
 type fakeConn struct {
-	resized [][2]int
-	closed  bool
+	resized  [][2]int
+	scrolled []int
+	copies   int
+	closed   bool
 }
 
 func (c *fakeConn) Resize(_ context.Context, cols, rows int) error {
 	c.resized = append(c.resized, [2]int{cols, rows})
+	return nil
+}
+func (c *fakeConn) Scroll(_ context.Context, lines int) error {
+	c.scrolled = append(c.scrolled, lines)
+	return nil
+}
+func (c *fakeConn) CopyMode(context.Context) error {
+	c.copies++
 	return nil
 }
 func (c *fakeConn) Close() { c.closed = true }
@@ -159,6 +169,8 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 		case "Down":
 			msg = tea.KeyPressMsg{Code: tea.KeyDown}
+		case "PgUp":
+			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 		case "C-/":
 			msg = tea.KeyPressMsg{Code: '/', Mod: tea.ModCtrl}
 		case "C-_": // what a legacy terminal sends for Ctrl-/
@@ -235,6 +247,69 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	h.update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	if got := h.conns[0].resized; len(got) == 0 || got[len(got)-1] != [2]int{140 - ui.ListWidth - 1, 37} {
 		t.Fatalf("resize not sent: %v", got)
+	}
+}
+
+func TestWheelAndPgUpScrollTheClaudePane(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	if h.m.View().MouseMode != tea.MouseModeNone {
+		t.Fatal("no session open: the mouse stays with the terminal")
+	}
+	h.press("Enter")
+	if h.m.View().MouseMode != tea.MouseModeCellMotion {
+		t.Fatal("a session is open: the wheel should be captured")
+	}
+	c := h.conns[0]
+	h.update(tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp}) // over the list
+	h.update(tea.MouseWheelMsg{X: ui.ListWidth + 5, Y: 5, Button: tea.MouseWheelUp})
+	h.update(tea.MouseWheelMsg{X: ui.ListWidth + 5, Y: 5, Button: tea.MouseWheelDown})
+	h.press("x") // back to live first, then the key
+	select {
+	case b := <-h.m.term.Input():
+		if string(b) != "x" {
+			t.Fatalf("forwarded %q", b)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("key was not forwarded")
+	}
+	h.press("y") // already live: no extra frame
+	<-h.m.term.Input()
+	h.press("C-/", "PgUp")
+	if got, want := fmt.Sprint(c.scrolled), fmt.Sprint([]int{-wheelLines, wheelLines, 0, -h.m.term.Rows() / 2}); got != want {
+		t.Fatalf("scroll frames %s, want %s", got, want)
+	}
+}
+
+func TestCopyModeSendsKeysToTmuxAndCopies(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter", "C-/") // a session open, keys back on the list
+	c := h.conns[0]
+	h.update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt})
+	if c.copies != 1 || !h.m.copying || !h.m.claudeFocused {
+		t.Fatalf("copies=%d copying=%v focused=%v", c.copies, h.m.copying, h.m.claudeFocused)
+	}
+	if !strings.Contains(h.m.View().Content, "COPY") {
+		t.Fatal("the pane title should say COPY")
+	}
+	h.update(tea.MouseWheelMsg{X: ui.ListWidth + 5, Y: 5, Button: tea.MouseWheelUp})
+	h.press("k") // to tmux, without leaving copy-mode first
+	if b := <-h.m.term.Input(); string(b) != "k" {
+		t.Fatalf("forwarded %q", b)
+	}
+	if fmt.Sprint(c.scrolled) != fmt.Sprint([]int{-wheelLines}) {
+		t.Fatalf("copy-mode must not snap back to live: %v", c.scrolled)
+	}
+	h.update(copyEndMsg{conn: &fakeConn{}}) // from an old stream
+	if !h.m.copying {
+		t.Fatal("a stale mode frame must be ignored")
+	}
+	h.update(copyEndMsg{conn: c})
+	if h.m.copying || strings.Contains(h.m.View().Content, "COPY") {
+		t.Fatal("tmux left copy-mode")
+	}
+	_, cmd := h.m.Update(clipboardMsg("héllo"))
+	if cmd == nil || !strings.Contains(h.m.flash, "copied 5 chars") {
+		t.Fatalf("flash=%q cmd=%v", h.m.flash, cmd)
 	}
 }
 

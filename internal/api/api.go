@@ -48,7 +48,8 @@ type Result struct {
 
 // Control is a text frame from the client. Binary frames are terminal bytes in both directions.
 type Control struct {
-	Type string `json:"type"` // "resize"
-	Cols int    `json:"cols,omitempty"`
-	Rows int    `json:"rows,omitempty"`
+	Type  string `json:"type"` // client: "resize", "scroll" or "copy" (enter copy-mode); server: "copy_end"
+	Cols  int    `json:"cols,omitempty"`
+	Rows  int    `json:"rows,omitempty"`
+	Lines int    `json:"lines,omitempty"` // scroll: <0 back into history, >0 toward live, 0 back to live
 }

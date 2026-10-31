@@ -27,10 +27,11 @@ type Serve struct {
 	Listen string `toml:"listen"`
 }
 
-// Client holds `bx` client settings: the server URL and the key that moves between the two panes.
+// Client holds `bx` client settings: the server URL and the keys that work from both panes.
 type Client struct {
-	Server string `toml:"server"`
-	Toggle string `toml:"toggle"` // list ⇄ Claude pane
+	Server   string `toml:"server"`
+	Toggle   string `toml:"toggle"`    // list ⇄ Claude pane
+	CopyMode string `toml:"copy_mode"` // tmux copy-mode with vi keys; a yank goes to the clipboard
 }
 
 // IsToggle reports whether key switches panes. Terminals without the kitty keyboard protocol
@@ -76,13 +77,13 @@ func Default(root string) *Config {
 				"yes": {"y"}, "new_chat": {"c"}, "new_session": {"n"}, "new_story": {"w"},
 				"lazygit": {"d"}, "nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"},
-				"waiting": {"a"}, "projects": {"o"},
+				"waiting": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 			},
 		},
 		List:   List{AutoExpandWaiting: true},
 		Notify: Notify{},
 		Serve:  Serve{Listen: "auto"},
-		Client: Client{Toggle: "C-/"},
+		Client: Client{Toggle: "C-/", CopyMode: "M-c"},
 	}
 }
 
@@ -120,8 +121,9 @@ type rawConfig struct {
 		Listen *string `toml:"listen"`
 	} `toml:"serve"`
 	Client struct {
-		Server *string `toml:"server"`
-		Toggle *string `toml:"toggle"`
+		Server   *string `toml:"server"`
+		Toggle   *string `toml:"toggle"`
+		CopyMode *string `toml:"copy_mode"`
 	} `toml:"client"`
 }
 
@@ -141,6 +143,9 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 	if r.Client.Toggle != nil {
 		c.Client.Toggle = *r.Client.Toggle
+	}
+	if r.Client.CopyMode != nil {
+		c.Client.CopyMode = *r.Client.CopyMode
 	}
 }
 

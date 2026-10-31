@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -30,6 +31,8 @@ type Backend interface {
 // Conn is one open session stream.
 type Conn interface {
 	Resize(ctx context.Context, cols, rows int) error
+	Scroll(ctx context.Context, lines int) error
+	CopyMode(ctx context.Context) error
 	Close()
 }
 
@@ -106,6 +109,8 @@ type Model struct {
 	narrow        bool
 	claudeFocused bool
 	focusMode     bool // Claude pane fills the width
+	scrolled      bool // the Claude pane may be back in history; the next key returns to live first
+	copying       bool // the Claude pane is in tmux copy-mode: keys go to tmux until it leaves
 	prompt        ui.Prompt
 	closeDirty    int // uncommitted files of the story in a force prompt
 	seq           string
@@ -232,6 +237,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.switchProject(msg.res.Name), m.loadProjects())
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
+	case copyEndMsg:
+		if msg.conn == m.conn {
+			m.copying = false
+		}
+		return m, nil
+	case clipboardMsg:
+		m.setFlash(fmt.Sprintf("copied %d chars", utf8.RuneCountInString(string(msg))))
+		return m, tea.SetClipboard(string(msg))
+	case tea.MouseWheelMsg:
+		m.wheel(msg)
+		return m, nil
 	}
 	return m, nil
 }
@@ -313,7 +329,7 @@ func (m *Model) closeStream() {
 	if m.conn != nil {
 		m.conn.Close()
 	}
-	m.conn, m.connecting, m.streamNum = nil, false, 0
+	m.conn, m.connecting, m.streamNum, m.scrolled, m.copying = nil, false, 0, false, false
 	cols, rows := m.term.Cols(), m.term.Rows()
 	m.term.Close()
 	m.term = NewTerm(cols, rows)
@@ -358,6 +374,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if key == m.cfg.Client.CopyMode && key != "" { // from both panes
+		m.copyMode()
+		return m, nil
+	}
 	if m.claudeFocused {
 		if m.cfg.Client.IsToggle(key) {
 			m.claudeFocused, m.focusMode = false, false
@@ -365,6 +385,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.conn != nil {
+			m.live()
 			m.term.SendKey(k)
 		}
 		return m, nil
@@ -442,8 +463,71 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.setFlash(action + " is not available yet")
 	case "keymap":
 		m.showKeys = true
+	case "scroll_up":
+		m.scroll(-max(m.term.Rows()/2, 1))
+	case "scroll_down":
+		m.scroll(max(m.term.Rows()/2, 1))
 	}
 	return m, nil
+}
+
+// copyMode puts the open session in tmux copy-mode and gives the Claude pane the keys, which
+// then go to tmux (vi keys, v selects, y copies) until the server reports that it left.
+func (m *Model) copyMode() {
+	if m.conn == nil {
+		return
+	}
+	if err := m.conn.CopyMode(m.ctx); err != nil {
+		m.setFlash("copy-mode: " + err.Error())
+		return
+	}
+	m.copying, m.scrolled = true, false
+	if !m.claudeFocused {
+		m.claudeFocused = true
+		m.resizeTerm()
+	}
+}
+
+// wheelLines is how far one wheel notch scrolls the Claude pane.
+const wheelLines = 3
+
+// wheel scrolls the Claude pane when the pointer is over it.
+func (m *Model) wheel(msg tea.MouseWheelMsg) {
+	if m.m == nil || m.picker != nil || m.showKeys || msg.Y < paneHeader {
+		return
+	}
+	switch {
+	case m.focusMode || (m.narrow && m.claudeFocused):
+	case m.narrow || msg.X <= ui.ListWidth:
+		return // over the list
+	}
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		m.scroll(-wheelLines)
+	case tea.MouseWheelDown:
+		m.scroll(wheelLines)
+	}
+}
+
+// scroll moves the open session's view through its history: tmux copy-mode on the server
+// draws it into the stream. lines < 0 goes back, > 0 toward live.
+func (m *Model) scroll(lines int) {
+	if m.conn == nil {
+		return
+	}
+	if lines < 0 && !m.copying {
+		m.scrolled = true
+	}
+	_ = m.conn.Scroll(m.ctx, lines)
+}
+
+// live returns the Claude pane to the live screen before a key goes to Claude, so copy-mode
+// never eats what is typed. scrolled is never set in copy-mode, where the keys are for tmux.
+func (m *Model) live() {
+	if m.scrolled {
+		m.scrolled = false
+		_ = m.conn.Scroll(m.ctx, 0)
+	}
 }
 
 // enterClaude shows the selected session in the Claude pane and gives it the keys.
@@ -636,6 +720,9 @@ func (m *Model) quit() tea.Cmd {
 func (m *Model) View() tea.View {
 	v := tea.NewView(m.body())
 	v.AltScreen = true
+	if m.streamNum != 0 {
+		v.MouseMode = tea.MouseModeCellMotion // the wheel scrolls the Claude pane
+	}
 	if m.claudeFocused && m.picker == nil && m.m != nil && !m.showKeys {
 		if x, y := m.term.Cursor(); x >= 0 {
 			off := 0
@@ -719,6 +806,9 @@ func (m *Model) paneTitle() string {
 	left := " " + path.Render(m.project) + dim.Render(" › ") + path.Render(group) + dim.Render(" › ") +
 		lipgloss.NewStyle().Foreground(lipgloss.Color("#c0caf5")).Bold(true).Render(fmt.Sprintf("[%d] %s", num, s.Title))
 	right := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(state) + " "
+	if m.copying {
+		right = lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(lipgloss.Color("#e0af68")).Render(" COPY ") + " " + right
+	}
 	// a narrow pane cuts the left side and keeps the state
 	left = ansi.Truncate(left, max(cols-ansi.StringWidth(right)-1, 0), "…")
 	return left + strings.Repeat(" ", max(cols-ansi.StringWidth(left)-ansi.StringWidth(right), 0)) + right
@@ -752,7 +842,8 @@ func (m *Model) bar() string {
 
 func keymapText(cfg *config.Config) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "  %-12s %s\n\n", config.Pretty(cfg.Client.Toggle), "list ⇄ Claude pane")
+	fmt.Fprintf(&b, "  %-12s %s\n", config.Pretty(cfg.Client.Toggle), "list ⇄ Claude pane")
+	fmt.Fprintf(&b, "  %-12s %s\n\n", config.Pretty(cfg.Client.CopyMode), "copy-mode: vi keys, v select, y copy, q quit")
 	actions := make([]string, 0, len(cfg.Keys.List))
 	for a := range cfg.Keys.List {
 		actions = append(actions, a)

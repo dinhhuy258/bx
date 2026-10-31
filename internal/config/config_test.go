@@ -21,6 +21,9 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if got := c.Keys.List["down"]; len(got) != 2 || got[0] != "j" || got[1] != "Down" {
 		t.Errorf("down = %v", got)
 	}
+	if up, down := c.Keys.List["scroll_up"], c.Keys.List["scroll_down"]; len(up) != 1 || up[0] != "PgUp" || len(down) != 1 || down[0] != "PgDn" {
+		t.Errorf("scroll = %v %v", up, down)
+	}
 	if c.Keys.List["fold_all"][0] != "Z" {
 		t.Errorf("fold_all = %v", c.Keys.List["fold_all"])
 	}
@@ -122,7 +125,7 @@ func TestRootFromEnv(t *testing.T) {
 
 func TestServeAndClientSections(t *testing.T) {
 	root := t.TempDir()
-	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\ntoggle = \"C-g\"\n"
+	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\ntoggle = \"C-g\"\ncopy_mode = \"\"\n"
 	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -133,11 +136,11 @@ func TestServeAndClientSections(t *testing.T) {
 	if c.Serve.Listen != "100.100.1.2:7357" {
 		t.Fatalf("serve.listen = %q", c.Serve.Listen)
 	}
-	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.Toggle != "C-g" {
+	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.Toggle != "C-g" || c.Client.CopyMode != "" {
 		t.Fatalf("client = %+v", c.Client)
 	}
 	d := Default(root)
-	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.Toggle != "C-/" {
+	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.Toggle != "C-/" || d.Client.CopyMode != "M-c" {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
 	}
 	if !d.Client.IsToggle("C-/") || !d.Client.IsToggle("C-_") || d.Client.IsToggle("C-h") || c.Client.IsToggle("C-_") {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -104,6 +105,60 @@ func (t *Tmux) KillSession(sid string) error {
 func (t *Tmux) SendKeys(target string, keys ...string) error {
 	_, err := t.x.Run(append([]string{"send-keys", "-t", target}, keys...)...)
 	return err
+}
+
+// Scroll moves a session's view through its history with copy-mode: lines < 0 goes back,
+// lines > 0 goes toward the live screen, 0 leaves copy-mode. copy-mode -e leaves by itself on
+// reaching the bottom, so moving down or leaving when not in copy-mode is not an error.
+func (t *Tmux) Scroll(sid string, lines int) error {
+	switch {
+	case lines < 0:
+		if _, err := t.x.Run("copy-mode", "-e", "-t", sid); err != nil {
+			return err
+		}
+		_, err := t.x.Run("send-keys", "-t", sid, "-X", "-N", strconv.Itoa(-lines), "scroll-up")
+		return err
+	case lines > 0:
+		_, _ = t.x.Run("send-keys", "-t", sid, "-X", "-N", strconv.Itoa(lines), "scroll-down")
+	default:
+		_, _ = t.x.Run("send-keys", "-t", sid, "-X", "cancel")
+	}
+	return nil
+}
+
+// PrepareCopy sets up copy-mode on bx's server: vi keys, v/y as in vim, and a yank sent to the
+// attached clients as OSC 52 so it reaches the clipboard of the machine running bx. It runs
+// before every attach (terminal-features are read when a client attaches) and is idempotent,
+// so an existing tmux.conf needs no change.
+func (t *Tmux) PrepareCopy() error {
+	for _, args := range [][]string{
+		{"set-option", "-g", "mode-keys", "vi"},
+		// keys from the network often arrive together; tmux would take them for a paste and
+		// skip the copy-mode bindings
+		{"set-option", "-g", "assume-paste-time", "0"},
+		{"set-option", "-s", "set-clipboard", "on"},
+		{"set-option", "-s", "terminal-features[90]", "xterm-256color:clipboard"},
+		{"bind-key", "-T", "copy-mode-vi", "v", "send-keys", "-X", "begin-selection"},
+		{"bind-key", "-T", "copy-mode-vi", "y", "send-keys", "-X", "copy-pipe-and-cancel"},
+		{"bind-key", "-T", "copy-mode-vi", "C-v", "send-keys", "-X", "rectangle-toggle"},
+	} {
+		if _, err := t.x.Run(args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CopyMode puts a session in copy-mode; it stays there until q, y or Enter.
+func (t *Tmux) CopyMode(sid string) error {
+	_, err := t.x.Run("copy-mode", "-t", sid)
+	return err
+}
+
+// InMode reports whether a session's pane is in a mode such as copy-mode.
+func (t *Tmux) InMode(sid string) (bool, error) {
+	out, err := t.run("display-message", "-p", "-t", sid, "#{pane_in_mode}")
+	return out == "1", err
 }
 
 // AttachCommand returns `tmux -u attach-session -t sid`, to be run inside a pty.

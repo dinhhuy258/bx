@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -38,5 +39,20 @@ func TestTermRendersBytesAndEncodesKeys(t *testing.T) {
 	tm.Resize(20, 3)
 	if tm.Cols() != 20 || tm.Rows() != 3 || strings.Count(tm.View(), "\n") != 2 {
 		t.Fatal(tm.View())
+	}
+}
+
+func TestTermTakesOSC52Copies(t *testing.T) {
+	term := NewTerm(20, 5)
+	defer term.Close()
+	term.Feed([]byte("a\x1b]52;c;aGVsbG8gYng=\x07b\x1b]52;c;?\x07\x1b]52;;d29ybGQ=\x1b\\"))
+	if got := term.TakeCopied(); fmt.Sprint(got) != "[hello bx world]" {
+		t.Fatalf("copied %q", got)
+	}
+	if got := term.TakeCopied(); got != nil {
+		t.Fatalf("taken twice: %q", got)
+	}
+	if !strings.Contains(term.View(), "ab") {
+		t.Fatalf("OSC 52 must not print: %q", term.View())
 	}
 }
