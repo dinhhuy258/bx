@@ -65,8 +65,11 @@ export function ask(title, fields, ok = 'OK') {
     const read = () => Object.fromEntries(inputs.map(([f, el]) => [f.name, f.type === 'checks'
       ? [...el.querySelectorAll('input:checked')].map((c) => c.value)
       : el.value.trim()]));
+    // Cancel is type=button: Enter / the keyboard's Go key submits with the first submit button,
+    // which must be OK.
     const dlg = h('dialog', {}, h('form', { method: 'dialog' }, h('h2', {}, title), body,
-      h('menu', {}, h('button', { value: 'cancel', formnovalidate: true }, 'Cancel'), h('button', { value: 'ok', class: 'primary' }, ok))));
+      h('menu', {}, h('button', { type: 'button', onclick: () => dlg.close('cancel') }, 'Cancel'),
+        h('button', { value: 'ok', class: 'primary' }, ok))));
     dlg.addEventListener('close', () => {
       const v = dlg.returnValue === 'ok' ? read() : null;
       dlg.remove();
