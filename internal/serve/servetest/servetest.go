@@ -16,6 +16,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/git"
 	"github.com/dinhhuy258/bx/internal/serve"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/tmux"
 )
@@ -46,6 +47,10 @@ func New(t *testing.T) (*serve.Server, *tmux.Fake, *httptest.Server) {
 	}
 	f := &tmux.Fake{Replies: map[string]string{"list-sessions -F #{session_id}\t#{session_name}": "$5\tbx-home-network-1\n"}}
 	a := &app.App{Cfg: cfg, Tmux: tmux.New(f), Git: g, UUID: func() string { return "fixed-uuid" }}
+	var err error
+	if a.Settings, err = settings.Open(cfg.SettingsFile(), func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
 	p := state.New("home-network", repo)
 	if err := a.NewStory(p, "s1"); err != nil {
 		t.Fatal(err)

@@ -23,6 +23,7 @@ var labels = map[string]string{
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
 	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "yes": "yes", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
 	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
+	"settings": "settings",
 }
 
 // KeyBar builds the bottom line of the client.
@@ -80,7 +81,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		}
 	}
 	parts = append(parts, lk("new_chat"), lk("new_session"), lk("new_story"))
-	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"), lk("activity"))
+	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"), lk("activity"), lk("settings"))
 	if ctx.Projects > 1 {
 		parts = append(parts, switchKeys(cfg))
 	}

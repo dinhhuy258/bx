@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"slices"
@@ -29,6 +30,8 @@ type Backend interface {
 	Do(ctx context.Context, project, action string, a api.Action) (api.Result, error)
 	CreateProject(ctx context.Context, p api.NewProject) (api.Result, error)
 	Repos(ctx context.Context) ([]string, error)
+	Settings(ctx context.Context) (api.Settings, error)
+	SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error)
 }
 
 // Conn is one open session stream.
@@ -65,6 +68,11 @@ type (
 	createdMsg struct {
 		res api.Result
 		err error
+	}
+	settingsMsg struct {
+		s     api.Settings
+		err   error
+		saved bool // the reply of a save, not of the GET on open
 	}
 )
 
@@ -109,6 +117,9 @@ type Model struct {
 
 	picker   *ui.Picker
 	pickKind pickKind
+
+	settings     *ui.Settings // the settings screen, full screen while open
+	settingsNote string       // shown in its place until the server's sections arrive
 
 	activity bool        // the list pane shows the activity list of every project
 	act      ui.Activity // its cursor
@@ -292,6 +303,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setFlash("added project " + msg.res.Name)
 		return m, tea.Batch(m.switchProject(msg.res.Name), m.loadProjects())
+	case settingsMsg:
+		m.gotSettings(msg)
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case copyEndMsg:
@@ -468,12 +482,17 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.settings != nil {
+		return m, m.settingsKey(key)
+	}
 	if m.m == nil {
 		switch {
 		case key == "C-c":
 			return m, m.quit()
 		case m.project == "" && m.loaded && m.cfg.Keys.ListAction(key) == "projects":
 			m.openProjectPicker()
+		case m.loaded && m.cfg.Keys.ListAction(key) == "settings":
+			return m, m.openSettings()
 		}
 		return m, nil
 	}
@@ -585,6 +604,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "activity":
 		m.activity, m.act = true, ui.Activity{}
 		return m, m.pollActivity()
+	case "settings":
+		return m, m.openSettings()
 	case "lazygit", "nvim", "shell", "prs":
 		m.setFlash(action + " is not available yet")
 	case "keymap":
@@ -631,6 +652,8 @@ func (m *Model) activityKey(action string) tea.Cmd {
 		return m.jumpWaiting()
 	case "projects":
 		m.openProjectPicker()
+	case "settings":
+		return m.openSettings()
 	case "keymap":
 		m.showKeys = true
 	case "scroll_up":
@@ -692,7 +715,7 @@ const wheelLines = 3
 
 // wheel scrolls the Claude pane when the pointer is over it.
 func (m *Model) wheel(msg tea.MouseWheelMsg) {
-	if m.m == nil || m.picker != nil || m.showKeys || msg.Y < paneHeader {
+	if m.m == nil || m.picker != nil || m.settings != nil || m.showKeys || msg.Y < paneHeader {
 		return
 	}
 	switch {
@@ -812,6 +835,78 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 	return nil
 }
 
+// openSettings shows the settings screen and asks the server for its sections and values.
+func (m *Model) openSettings() tea.Cmd {
+	host := ""
+	if a, ok := m.be.(*API); ok {
+		if u, err := url.Parse(a.Base); err == nil {
+			host = "server " + u.Hostname()
+		}
+	}
+	m.settings, m.settingsNote = ui.NewSettings(host), "loading settings…"
+	return m.loadSettings()
+}
+
+func (m *Model) loadSettings() tea.Cmd {
+	be, ctx := m.be, m.ctx
+	return func() tea.Msg {
+		s, err := be.Settings(ctx)
+		return settingsMsg{s: s, err: err}
+	}
+}
+
+// gotSettings fills the screen with what the server holds. A failure keeps the screen and its
+// edits, and shows the error in the bar; Enter tries again.
+func (m *Model) gotSettings(msg settingsMsg) {
+	if m.settings == nil {
+		return
+	}
+	if msg.err != nil {
+		m.setFlash("settings: " + msg.err.Error())
+		m.settingsNote = "Could not load the settings · ⏎ to try again"
+		return
+	}
+	m.settings.Load(msg.s.Sections, msg.s.Values)
+	if msg.saved {
+		m.setFlash("settings saved · new sessions use them")
+	}
+}
+
+// settingsKey handles a key on the settings screen. Esc with unsaved changes asks first.
+func (m *Model) settingsKey(key string) tea.Cmd {
+	switch m.settings.Key(key) {
+	case ui.SettingsClose:
+		if n := len(m.settings.Changes()); n > 0 {
+			m.openPrompt(ui.PromptDiscardSettings, "", fmt.Sprintf("discard %s? y/n", plural(n, "change", "changes")), "")
+			return nil
+		}
+		m.settings = nil
+	case ui.SettingsSave:
+		if !m.settings.Loaded() {
+			m.settingsNote = "loading settings…"
+			return m.loadSettings()
+		}
+		changes := m.settings.Changes()
+		if len(changes) == 0 {
+			m.setFlash("no changes to save")
+			return nil
+		}
+		be, ctx := m.be, m.ctx
+		return func() tea.Msg {
+			s, err := be.SaveSettings(ctx, changes)
+			return settingsMsg{s: s, err: err, saved: true}
+		}
+	}
+	return nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
+}
+
 func (m *Model) create(p api.NewProject) tea.Cmd {
 	be, ctx := m.be, m.ctx
 	return func() tea.Msg {
@@ -854,6 +949,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			m.setFlash("closed story " + target)
 			return m.poll()
 		}
+	case ui.PromptDiscardSettings:
+		m.settings = nil
 	case ui.PromptAddFolder:
 		if text == "" {
 			return nil
@@ -902,7 +999,7 @@ func (m *Model) View() tea.View {
 	if m.streamNum != 0 {
 		v.MouseMode = tea.MouseModeCellMotion // the wheel scrolls the Claude pane
 	}
-	if m.claudeFocused && m.picker == nil && m.m != nil && !m.showKeys {
+	if m.claudeFocused && m.picker == nil && m.settings == nil && m.m != nil && !m.showKeys {
 		if x, y := m.term.Cursor(); x >= 0 {
 			off := 0
 			if !m.focusMode && !m.narrow {
@@ -918,6 +1015,8 @@ func (m *Model) body() string {
 	switch {
 	case m.picker != nil:
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
+	case m.settings != nil:
+		return m.settings.Render(m.width, m.height-1, false, m.settingsNote) + "\n" + m.bar()
 	case m.m == nil && m.prompt.Active():
 		return "bx · " + m.prompt.Line() + "\n" + m.flash
 	case m.m == nil && m.project == "" && m.loaded:
@@ -1063,6 +1162,10 @@ func (m *Model) bar() string {
 	switch {
 	case m.prompt.Active():
 		text = m.prompt.Line()
+	case m.settings != nil && m.flash != "":
+		text = m.flash
+	case m.settings != nil:
+		text = ui.SettingsBar(len(m.settings.Changes()), m.narrow)
 	case m.focusMode:
 		run, waiting := 0, []ui.WaitingElsewhere(nil)
 		for _, p := range m.projects {

@@ -1,0 +1,13 @@
+bx settings                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Claude
+
+ › Model         ◂ opus              ▸ •
+   Effort        ◂ default           ▸
+   Permission …  ◂ acceptEdits       ▸
+
+ For new sessions. Running and resumed
+ ones keep what they started with.
+ Model: --model. default = Claude's own
+
+

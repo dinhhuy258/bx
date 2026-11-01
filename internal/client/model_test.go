@@ -15,6 +15,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
@@ -27,6 +28,9 @@ type fakeBackend struct {
 	dirty     int // stories/close without force is refused with this many files
 	created   []api.NewProject
 	createErr error
+	values    map[string]string // the server's settings
+	saves     []map[string]string
+	saveErr   error
 }
 
 func (f *fakeBackend) Projects(context.Context) ([]api.ProjectSummary, error) { return f.projects, nil }
@@ -72,6 +76,24 @@ func (f *fakeBackend) CreateProject(_ context.Context, p api.NewProject) (api.Re
 
 func (f *fakeBackend) Repos(context.Context) ([]string, error) {
 	return []string{"me/lab", "me/other"}, nil
+}
+
+func (f *fakeBackend) Settings(context.Context) (api.Settings, error) {
+	return api.Settings{Sections: settings.Sections, Values: f.values}, nil
+}
+
+func (f *fakeBackend) SaveSettings(_ context.Context, values map[string]string) (api.Settings, error) {
+	f.saves = append(f.saves, values)
+	if f.saveErr != nil {
+		return api.Settings{}, f.saveErr
+	}
+	if f.values == nil {
+		f.values = map[string]string{}
+	}
+	for k, v := range values {
+		f.values[k] = v
+	}
+	return api.Settings{Sections: settings.Sections, Values: f.values}, nil
 }
 
 type fakeConn struct {
@@ -662,5 +684,56 @@ func TestActivityEmpty(t *testing.T) {
 	h.press("A")
 	if h.m.activity {
 		t.Fatal("A leaves the activity list")
+	}
+}
+
+func TestSettingsScreenEditsAndSaves(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("S")
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.settings == nil || !strings.Contains(v, "bx settings") || !strings.Contains(v, "Permission mode") {
+		t.Fatalf("S should open the settings:\n%s", v)
+	}
+	h.press("l", "j", "j", "l")
+	v = ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "◂ opus") || !strings.Contains(v, "• 2 unsaved") {
+		t.Fatalf("two changes should be marked:\n%s", v)
+	}
+	h.press("Enter")
+	if len(h.be.saves) != 1 || h.be.saves[0]["claude.model"] != "opus" || h.be.saves[0]["claude.permission_mode"] != "acceptEdits" {
+		t.Fatalf("saves = %v", h.be.saves)
+	}
+	if v = ansi.Strip(h.m.View().Content); strings.Contains(v, "unsaved") || !strings.Contains(v, "settings saved") {
+		t.Fatalf("after the save:\n%s", v)
+	}
+	h.press("Esc")
+	if h.m.settings != nil {
+		t.Fatal("Esc with nothing unsaved closes")
+	}
+}
+
+func TestSettingsEscAsksBeforeDiscarding(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("S", "l", "Esc")
+	if h.m.settings == nil || !strings.Contains(ansi.Strip(h.m.View().Content), "discard 1 change? y/n") {
+		t.Fatalf("Esc with a change should ask:\n%s", ansi.Strip(h.m.View().Content))
+	}
+	h.press("n")
+	if h.m.settings == nil || len(h.m.settings.Changes()) != 1 {
+		t.Fatal("n keeps the screen and the change")
+	}
+	h.press("Esc", "y")
+	if h.m.settings != nil || len(h.be.saves) != 0 {
+		t.Fatalf("y discards: open=%v saves=%v", h.m.settings != nil, h.be.saves)
+	}
+}
+
+func TestSettingsSaveErrorKeepsTheEdits(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.be.saveErr = errors.New("bx serve unreachable")
+	h.press("S", "l", "Enter")
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.settings == nil || len(h.m.settings.Changes()) != 1 || !strings.Contains(v, "bx serve unreachable") {
+		t.Fatalf("a failed save keeps the screen and its edits:\n%s", v)
 	}
 }

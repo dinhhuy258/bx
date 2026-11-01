@@ -23,7 +23,8 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "home-network.json")
 	p := New("home-network", "/root/projects/home-network")
 	p.Stories["guest-vlan-fix"] = &Story{Branch: "feat/guest-vlan-fix"}
-	num := p.AddSession(&Session{Story: "guest-vlan-fix", UUID: "u1", Title: "Fix lease", Created: time.Date(2026, 10, 30, 14, 2, 0, 0, time.UTC)})
+	num := p.AddSession(&Session{Story: "guest-vlan-fix", UUID: "u1", Title: "Fix lease", Created: time.Date(2026, 10, 30, 14, 2, 0, 0, time.UTC),
+		Model: "opus", Effort: "high", PermissionMode: "plan"})
 	if num != 1 || p.NextNum != 2 {
 		t.Fatalf("num=%d next=%d", num, p.NextNum)
 	}
@@ -35,7 +36,7 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := got.Sessions[1]
-	if s == nil || s.Title != "Fix lease" || s.Story != "guest-vlan-fix" {
+	if s == nil || s.Title != "Fix lease" || s.Story != "guest-vlan-fix" || s.Model != "opus" || s.Effort != "high" || s.PermissionMode != "plan" {
 		t.Fatalf("session = %+v", s)
 	}
 	entries, _ := os.ReadDir(filepath.Dir(path))

@@ -2,6 +2,7 @@
 package api
 
 import (
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
@@ -44,6 +45,14 @@ type Result struct {
 	Name  string `json:"name,omitempty"`
 	Error string `json:"error,omitempty"`
 	Dirty int    `json:"dirty,omitempty"`
+}
+
+// Settings is GET /api/settings and the reply of PUT: every section and field the server offers,
+// and the values that are set (a missing key is the default). The body of PUT has only Values,
+// the changed keys; "" puts a key back to its default.
+type Settings struct {
+	Sections []settings.Section `json:"sections,omitempty"`
+	Values   map[string]string  `json:"values"`
 }
 
 // Control is a text frame from the client. Binary frames are terminal bytes in both directions.

@@ -94,11 +94,22 @@ func Duplicates(agents []Agent) map[string]bool {
 	return d
 }
 
+// Options are the settings a session starts with. "" leaves the flag out: Claude's own default.
+type Options struct {
+	Model, Effort, PermissionMode string
+}
+
 // StartArgs builds the command for a new or resumed session. Run it in the target folder.
 // No -n: bx shows the title in its own pane header, and Claude would repeat it on the input box.
-func StartArgs(uuid string, resume bool) []string {
+func StartArgs(uuid string, resume bool, o Options) []string {
+	args := []string{"claude", "--session-id", uuid}
 	if resume {
-		return []string{"claude", "--resume", uuid}
+		args = []string{"claude", "--resume", uuid}
 	}
-	return []string{"claude", "--session-id", uuid}
+	for _, f := range [][2]string{{"--permission-mode", o.PermissionMode}, {"--model", o.Model}, {"--effort", o.Effort}} {
+		if f[1] != "" {
+			args = append(args, f[0], f[1])
+		}
+	}
+	return args
 }

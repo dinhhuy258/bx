@@ -12,17 +12,20 @@ import (
 
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/git"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/tmux"
 )
 
-// App holds the dependencies. UUID and GH are injectable for tests.
+// App holds the dependencies. UUID and GH are injectable for tests. Settings gives new sessions
+// their flags; nil means Claude's defaults.
 type App struct {
-	Cfg  *config.Config
-	Tmux *tmux.Tmux
-	Git  *git.Git
-	UUID func() string
-	GH   func(args ...string) (string, error)
+	Cfg      *config.Config
+	Tmux     *tmux.Tmux
+	Git      *git.Git
+	UUID     func() string
+	GH       func(args ...string) (string, error)
+	Settings *settings.Store
 }
 
 // New returns an App on bx's private tmux server, with the real git and gh.

@@ -71,6 +71,18 @@ func (c *API) Repos(ctx context.Context) ([]string, error) {
 	return out, c.call(ctx, reposTimeout, http.MethodGet, "/api/github/repos", nil, &out)
 }
 
+// Settings is GET /api/settings: the sections and fields the server offers, and their values.
+func (c *API) Settings(ctx context.Context) (api.Settings, error) {
+	var out api.Settings
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/settings", nil, &out)
+}
+
+// SaveSettings is PUT /api/settings with the changed values. It returns what the server saved.
+func (c *API) SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error) {
+	var out api.Settings
+	return out, c.call(ctx, pollTimeout, http.MethodPut, "/api/settings", api.Settings{Values: values}, &out)
+}
+
 // StreamURL is the WebSocket address of one session's terminal at a given size.
 func (c *API) StreamURL(project string, num, cols, rows int) string {
 	ws := "ws" + strings.TrimPrefix(c.Base, "http")

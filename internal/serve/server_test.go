@@ -17,6 +17,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/git"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/tmux"
 )
@@ -50,6 +51,10 @@ func newServer(t *testing.T) (*Server, *tmux.Fake, *httptest.Server) {
 	}
 	f := &tmux.Fake{Replies: map[string]string{listSessions: "$5\tbx-home-network-1\n"}}
 	a := &app.App{Cfg: cfg, Tmux: tmux.New(f), Git: g, UUID: func() string { return "fixed-uuid" }}
+	var err error
+	if a.Settings, err = settings.Open(cfg.SettingsFile(), func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
 	p := state.New("home-network", repo)
 	if err := a.NewStory(p, "s1"); err != nil {
 		t.Fatal(err)
@@ -150,6 +155,61 @@ func TestActionsGoThroughApp(t *testing.T) {
 	}
 	if _, code := post(t, ts, "/api/projects/nope/yes", api.Action{Num: 1}); code != 404 {
 		t.Fatalf("unknown project: %d", code)
+	}
+}
+
+func put(t *testing.T, ts *httptest.Server, path string, body any) (api.Settings, api.Result, int) {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+path, bytes.NewReader(b))
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Body.Close() }()
+	var raw json.RawMessage
+	_ = json.NewDecoder(r.Body).Decode(&raw)
+	var out api.Settings
+	var res api.Result
+	_ = json.Unmarshal(raw, &out)
+	_ = json.Unmarshal(raw, &res)
+	return out, res, r.StatusCode
+}
+
+func TestSettingsGetPutAndFlags(t *testing.T) {
+	s, f, ts := newServer(t)
+	got, code := get[api.Settings](t, ts, "/api/settings")
+	if code != 200 || len(got.Sections) != 1 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
+		t.Fatalf("%d %+v", code, got)
+	}
+	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.effort": "huge"}}); code != 400 ||
+		res.Error != `claude.effort "huge": want one of low, medium, high, xhigh, max` {
+		t.Fatalf("bad value: %d %+v", code, res)
+	}
+	if s.App.Settings.Get("claude.model") != "" {
+		t.Fatal("a refused PUT saved a value")
+	}
+	saved, _, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.permission_mode": "acceptEdits"}})
+	if code != 200 || saved.Values["claude.model"] != "opus" || len(saved.Sections) != 1 {
+		t.Fatalf("%d %+v", code, saved)
+	}
+	if _, err := os.Stat(s.Cfg.SettingsFile()); err != nil {
+		t.Fatal(err)
+	}
+	// the next session starts with the saved values, and keeps them
+	if _, code := post(t, ts, "/api/projects/home-network/sessions", api.Action{Title: "chat"}); code != 200 {
+		t.Fatal(code)
+	}
+	if want := "claude --session-id fixed-uuid --permission-mode acceptEdits --model opus"; !strings.Contains(calls(f), want) {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "", "claude.permission_mode": ""}})
+	f.Calls = nil
+	if _, code := post(t, ts, "/api/projects/home-network/resume", api.Action{Num: 2}); code != 200 {
+		t.Fatal(code)
+	}
+	if want := "claude --resume fixed-uuid --permission-mode acceptEdits --model opus"; !strings.Contains(calls(f), want) {
+		t.Fatalf("resume must reuse the session's own values; calls:\n%s", calls(f))
 	}
 }
 

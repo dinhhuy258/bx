@@ -16,6 +16,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
@@ -54,6 +55,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects", s.listProjects)
 	mux.HandleFunc("POST /api/projects", s.createProject)
 	mux.HandleFunc("GET /api/github/repos", s.githubRepos)
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/projects/{name}", s.getProject)
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/stream", s.stream)
 	mux.HandleFunc("POST /api/projects/{name}/sessions", s.action(func(p *state.Project, r api.Action) (int, error) {
@@ -182,6 +185,29 @@ func (s *Server) githubRepos(w http.ResponseWriter, r *http.Request) {
 		repos = []string{}
 	}
 	writeJSON(w, repos)
+}
+
+func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, api.Settings{Sections: settings.Sections, Values: s.App.Settings.Values()})
+}
+
+// putSettings saves the changed values, all or none. The next new session uses them.
+func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
+	var req api.Settings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, 400, fmt.Errorf("decode body: %w", err))
+		return
+	}
+	if s.App.Settings == nil {
+		httpError(w, 500, errors.New("settings are not loaded"))
+		return
+	}
+	if err := s.App.Settings.Set(req.Values); err != nil {
+		httpError(w, 400, err)
+		return
+	}
+	s.Log("settings: saved %v", req.Values)
+	s.getSettings(w, r)
 }
 
 func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {

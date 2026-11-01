@@ -76,13 +76,20 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 		title = defaultTitle
 	}
 	id := a.UUID()
-	num := p.AddSession(&state.Session{Story: story, UUID: id, Title: title, Created: time.Now()})
-	if err := a.launch(p, num, claude.StartArgs(id, false)); err != nil {
+	s := &state.Session{Story: story, UUID: id, Title: title, Created: time.Now(),
+		Model: a.Settings.Get("claude.model"), Effort: a.Settings.Get("claude.effort"), PermissionMode: a.Settings.Get("claude.permission_mode")}
+	num := p.AddSession(s)
+	if err := a.launch(p, num, claude.StartArgs(id, false, options(s))); err != nil {
 		delete(p.Sessions, num)
 		p.NextNum--
 		return 0, err
 	}
 	return num, a.SaveProject(p)
+}
+
+// options are the settings a session started with, for its command line.
+func options(s *state.Session) claude.Options {
+	return claude.Options{Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
 }
 
 // launch runs args in a new tmux session for session num, in its story's folder.
@@ -91,7 +98,8 @@ func (a *App) launch(p *state.Project, num int, args []string) error {
 	return err
 }
 
-// Resume restarts a session that is not running with `claude --resume <uuid>`.
+// Resume restarts a session that is not running with `claude --resume <uuid>` and the
+// settings it started with.
 func (a *App) Resume(p *state.Project, num int) error {
 	s := p.Sessions[num]
 	if s == nil {
@@ -104,7 +112,7 @@ func (a *App) Resume(p *state.Project, num int) error {
 	if _, ok := live[num]; ok {
 		return fmt.Errorf("session [%d] is still running", num)
 	}
-	if err := a.launch(p, num, claude.StartArgs(s.UUID, true)); err != nil {
+	if err := a.launch(p, num, claude.StartArgs(s.UUID, true, options(s))); err != nil {
 		return err
 	}
 	s.Done = false
@@ -132,7 +140,7 @@ func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) (int, 
 		if _, elsewhere := agents[s.UUID]; elsewhere {
 			continue
 		}
-		if err := a.launch(p, n, claude.StartArgs(s.UUID, true)); err != nil {
+		if err := a.launch(p, n, claude.StartArgs(s.UUID, true, options(s))); err != nil {
 			return resumed, err
 		}
 		resumed++

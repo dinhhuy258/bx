@@ -41,15 +41,23 @@ func TestDecodeAgentsRejectsGarbage(t *testing.T) {
 }
 
 func TestStartArgs(t *testing.T) {
-	got := StartArgs("abc-uuid", false)
+	got := StartArgs("abc-uuid", false, Options{})
 	want := []string{"claude", "--session-id", "abc-uuid"}
 	if !equal(got, want) {
 		t.Errorf("start = %v", got)
 	}
-	got = StartArgs("abc-uuid", true)
+	got = StartArgs("abc-uuid", true, Options{})
 	want = []string{"claude", "--resume", "abc-uuid"}
 	if !equal(got, want) {
 		t.Errorf("resume = %v", got)
+	}
+	o := Options{Model: "opus", Effort: "high", PermissionMode: "acceptEdits"}
+	flags := []string{"--permission-mode", "acceptEdits", "--model", "opus", "--effort", "high"}
+	if got = StartArgs("abc-uuid", false, o); !equal(got, append([]string{"claude", "--session-id", "abc-uuid"}, flags...)) {
+		t.Errorf("start with options = %v", got)
+	}
+	if got = StartArgs("abc-uuid", true, o); !equal(got, append([]string{"claude", "--resume", "abc-uuid"}, flags...)) {
+		t.Errorf("resume with options = %v", got)
 	}
 }
 

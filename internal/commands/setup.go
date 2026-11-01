@@ -6,6 +6,7 @@ import (
 
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/settings"
 )
 
 // setup loads the config and builds the App; used by bx serve.
@@ -21,5 +22,10 @@ func setup() (*config.Config, *app.App, *log.Logger, error) {
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return cfg, app.New(cfg), log.New(f, "", log.LstdFlags), nil
+	logger := log.New(f, "", log.LstdFlags)
+	a := app.New(cfg)
+	if a.Settings, err = settings.Open(cfg.SettingsFile(), logger.Printf); err != nil {
+		return nil, nil, nil, err
+	}
+	return cfg, a, logger, nil
 }

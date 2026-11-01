@@ -26,13 +26,17 @@ type Story struct {
 	Branch string `json:"branch"`
 }
 
-// Session is one Claude Code process. Story "" means the chats group.
+// Session is one Claude Code process. Story "" means the chats group. Model, Effort and
+// PermissionMode are the settings it started with ("" = Claude's default); resume reuses them.
 type Session struct {
-	Story   string    `json:"-"`
-	UUID    string    `json:"uuid"`
-	Title   string    `json:"title"`
-	Done    bool      `json:"done"`
-	Created time.Time `json:"created"`
+	Story          string    `json:"-"`
+	UUID           string    `json:"uuid"`
+	Title          string    `json:"title"`
+	Done           bool      `json:"done"`
+	Created        time.Time `json:"created"`
+	Model          string    `json:"model,omitempty"`
+	Effort         string    `json:"effort,omitempty"`
+	PermissionMode string    `json:"permission_mode,omitempty"`
 }
 
 // IsChat reports whether the session belongs to the chats group.
@@ -65,11 +69,14 @@ func (p *Project) SessionsOf(story string) []int {
 
 // wire types: sessions are keyed by number as JSON strings, and story is null for chats.
 type sessionWire struct {
-	Story   *string   `json:"story"`
-	UUID    string    `json:"uuid"`
-	Title   string    `json:"title"`
-	Done    bool      `json:"done"`
-	Created time.Time `json:"created"`
+	Story          *string   `json:"story"`
+	UUID           string    `json:"uuid"`
+	Title          string    `json:"title"`
+	Done           bool      `json:"done"`
+	Created        time.Time `json:"created"`
+	Model          string    `json:"model,omitempty"`
+	Effort         string    `json:"effort,omitempty"`
+	PermissionMode string    `json:"permission_mode,omitempty"`
 }
 
 type projectWire struct {
@@ -92,7 +99,8 @@ func (p *Project) MarshalJSON() ([]byte, error) {
 			st := s.Story
 			story = &st
 		}
-		w.Sessions[strconv.Itoa(n)] = &sessionWire{Story: story, UUID: s.UUID, Title: s.Title, Done: s.Done, Created: s.Created}
+		w.Sessions[strconv.Itoa(n)] = &sessionWire{Story: story, UUID: s.UUID, Title: s.Title, Done: s.Done, Created: s.Created,
+			Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
 	}
 	return json.Marshal(w)
 }
@@ -114,7 +122,8 @@ func (p *Project) UnmarshalJSON(b []byte) error {
 		if err != nil {
 			return err
 		}
-		s := &Session{UUID: sw.UUID, Title: sw.Title, Done: sw.Done, Created: sw.Created}
+		s := &Session{UUID: sw.UUID, Title: sw.Title, Done: sw.Done, Created: sw.Created,
+			Model: sw.Model, Effort: sw.Effort, PermissionMode: sw.PermissionMode}
 		if sw.Story != nil {
 			s.Story = *sw.Story
 		}

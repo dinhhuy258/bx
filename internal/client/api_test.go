@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/dinhhuy258/bx/internal/api"
@@ -44,5 +45,22 @@ func TestDoReturnsTheResultOfARefusal(t *testing.T) {
 	res, err := NewAPI(ts.URL).Do(context.Background(), "home-network", "stories/close", api.Action{Name: "s1"})
 	if err == nil || res.Dirty != 1 {
 		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+func TestSettingsAgainstServe(t *testing.T) {
+	_, _, ts := servetest.New(t)
+	c := NewAPI(ts.URL)
+	ctx := context.Background()
+	got, err := c.Settings(ctx)
+	if err != nil || len(got.Sections) != 1 || got.Sections[0].Fields[0].Key != "claude.model" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	saved, err := c.SaveSettings(ctx, map[string]string{"claude.model": "sonnet"})
+	if err != nil || saved.Values["claude.model"] != "sonnet" {
+		t.Fatalf("%+v %v", saved, err)
+	}
+	if _, err := c.SaveSettings(ctx, map[string]string{"claude.effort": "huge"}); err == nil || !strings.Contains(err.Error(), "want one of") {
+		t.Fatalf("want the server's message, got %v", err)
 	}
 }

@@ -76,6 +76,7 @@ func Default(root string) *Config {
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"},
 				"waiting": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"activity": {"A"}, "prev_project": {"["}, "next_project": {"]"}, "close_project": {"x"},
+				"settings": {"S"},
 			},
 		},
 		List:   List{AutoExpandWaiting: true},
@@ -175,6 +176,10 @@ func (c *Config) WorktreeDir(project, story string) string {
 func (c *Config) StateFile(project string) string {
 	return filepath.Join(c.Root, "state", project+".json")
 }
+
+// SettingsFile is <root>/settings.json: what the settings screen saves. It is outside state/,
+// where every .json file is a project.
+func (c *Config) SettingsFile() string { return filepath.Join(c.Root, "settings.json") }
 
 // TmuxSocket is the private tmux server bx runs every Claude on: <root>/run/tmux.sock.
 func (c *Config) TmuxSocket() string { return filepath.Join(c.Root, "run", "tmux.sock") }

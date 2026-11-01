@@ -15,6 +15,7 @@ const (
 	PromptCloseStoryForce
 	PromptAddFolder  // an absolute folder path on the server
 	PromptNewProject // a project name
+	PromptDiscardSettings
 )
 
 // PromptResult is what a key did to the prompt.
@@ -44,7 +45,9 @@ func (p *Prompt) Open(kind PromptKind, target, label, initial string) {
 func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 
 // YesNo reports whether the prompt is a y/n question.
-func (p *Prompt) YesNo() bool { return p.Kind == PromptCloseStory || p.Kind == PromptCloseStoryForce }
+func (p *Prompt) YesNo() bool {
+	return p.Kind == PromptCloseStory || p.Kind == PromptCloseStoryForce || p.Kind == PromptDiscardSettings
+}
 
 // Key feeds one key (bx key name plus the typed text). On Submit the caller reads Input and
 // Target, which stay set until the next Open; Kind is reset to PromptNone, so the caller
