@@ -47,7 +47,7 @@ dialog.sheet[open] { display: flex; flex-direction: column; gap: 8px; }
 html.session-lock, html.session-lock body { overflow: hidden; height: 100%; overscroll-behavior: none; }
 html.session-lock body { position: fixed; inset: 0; }
 .session { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--bg); padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
-.term-wrap { flex: 1; position: relative; min-height: 0; }
+.term-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
 .term { position: absolute; inset: 0; padding: 2px; touch-action: none; }
 /* xterm's DOM renderer replaces row spans on every redraw; a touch that starts on one keeps
    targeting the detached node, so its touchmoves never reach .term and a swipe stops after a line */

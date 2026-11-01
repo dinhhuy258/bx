@@ -233,9 +233,12 @@ export function showSession(root, project, num) {
   }
 
   function grow() {
+    const before = input.offsetHeight;
     const border = input.offsetHeight - input.clientHeight; // so a grown box doesn't scroll by 2 px
     input.style.height = 'auto';
     input.style.height = `${Math.min(input.scrollHeight + border, 120)}px`;
+    // the terminal is positioned over its area: refit it, or its bottom rows cover the box
+    if (input.offsetHeight !== before) layout();
   }
   input.addEventListener('input', grow);
   input.addEventListener('input', updateEnter);
