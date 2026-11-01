@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/app"
@@ -352,6 +355,43 @@ func TestSnapshotSessionStates(t *testing.T) {
 		if snap.SessionStates[n] != w {
 			t.Errorf("session %d: got %+v, want %+v", n, snap.SessionStates[n], w)
 		}
+	}
+}
+
+// failingLister lists its agents until fail is set, then errors.
+type failingLister struct {
+	agents []claude.Agent
+	fail   atomic.Bool
+}
+
+func (f *failingLister) Agents(context.Context) ([]claude.Agent, error) {
+	if f.fail.Load() {
+		return nil, errors.New("claude agents: exit 1")
+	}
+	return f.agents, nil
+}
+
+func TestSnapshotKeepsTheLastAgents(t *testing.T) {
+	s, _, ts := newServer(t)
+	l := &failingLister{agents: []claude.Agent{{SessionID: "u1", Status: "waiting"}}}
+	s.Lister = l
+	if snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network"); snap.SessionStates[1].State != "waiting" {
+		t.Fatalf("first poll: %+v", snap.SessionStates)
+	}
+	l.fail.Store(true)
+	s.mu.Lock()
+	s.agentsAt = time.Time{} // past the 1 s cache
+	s.mu.Unlock()
+	snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if got, want := snap.SessionStates[1], (api.SessionState{State: "waiting", Text: "asks: needs you ?"}); got != want || !snap.Live.AgentsErr {
+		t.Fatalf("lister failing: %+v (agents_err %v), want %+v", got, snap.Live.AgentsErr, want)
+	}
+	s.mu.Lock()
+	s.agentsAt = time.Time{}
+	s.mu.Unlock()
+	list, _ := get[[]api.ProjectSummary](t, ts, "/api/projects")
+	if len(list) != 1 || list[0].Waiting != 1 {
+		t.Fatalf("projects with the lister failing: %+v", list)
 	}
 }
 

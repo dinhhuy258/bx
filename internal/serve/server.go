@@ -33,7 +33,7 @@ type Server struct {
 	write sync.Mutex
 
 	mu       sync.Mutex
-	agents   []claude.Agent // `claude agents` is shared by every poll for 1 s
+	agents   []claude.Agent // the last good `claude agents`, shared by every poll for 1 s
 	agentsAt time.Time
 	diffs    map[string]diffCache // by project, refreshed every 10 s
 	streams  map[*stream]bool     // see stream.go
@@ -127,9 +127,9 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(names)
 	live := ui.Live{Now: time.Now()}
-	if agents, err := s.liveAgents(); err != nil {
-		live.AgentsErr = true
-	} else {
+	agents, err := s.liveAgents()
+	live.AgentsErr = err != nil
+	if agents != nil { // on an error, the last list
 		live.Agents = claude.IndexByUUID(agents)
 	}
 	out := []api.ProjectSummary{}
@@ -292,10 +292,12 @@ func (s *Server) workspaceRepos(w http.ResponseWriter, r *http.Request) {
 // story worktree.
 func (s *Server) collect(p *state.Project) ui.Live {
 	l := ui.Live{Now: time.Now()}
-	if agents, err := s.liveAgents(); err != nil {
+	agents, err := s.liveAgents()
+	if err != nil {
 		l.AgentsErr = true
 		s.Log("claude agents: %v", err)
-	} else {
+	}
+	if agents != nil { // on an error, the last list: states keep a " ?" (ui.Model.StateText)
 		l.Agents, l.Dups = claude.IndexByUUID(agents), claude.Duplicates(agents)
 	}
 	if !p.IsWorkspace() {
@@ -310,6 +312,9 @@ func (s *Server) collect(p *state.Project) ui.Live {
 	return l
 }
 
+// liveAgents runs `claude agents`, shared by every poll for 1 s. On an error it returns the
+// last good list (nil before the first) with the error: a request builds a fresh ui.Model, so
+// unlike the TUI it has no previous agents to keep, and every session would show as idle.
 func (s *Server) liveAgents() ([]claude.Agent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -320,7 +325,7 @@ func (s *Server) liveAgents() ([]claude.Agent, error) {
 	defer cancel()
 	agents, err := s.Lister.Agents(ctx)
 	if err != nil {
-		return nil, err
+		return s.agents, err
 	}
 	if agents == nil {
 		agents = []claude.Agent{}
