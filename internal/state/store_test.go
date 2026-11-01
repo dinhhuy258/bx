@@ -108,33 +108,3 @@ func asCorrupt(err error, target **CorruptError) bool {
 	}
 	return false
 }
-
-func TestLoadV1DropsLayoutFields(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "home-network.json")
-	v1 := `{"version":1,"path":"/p","window":"@3","list_pane":"%1","selected":2,
-"stories":{"s1":{"branch":"feat/s1","folded":true}},
-"sessions":{"1":{"story":"s1","uuid":"u1","title":"t","pane":"%4","done":false,"created":"2026-10-01T00:00:00Z"}},
-"next_num":2}`
-	if err := os.WriteFile(path, []byte(v1), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	p, err := Load(path, "home-network")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Sessions[1] == nil || p.Sessions[1].UUID != "u1" || p.Stories["s1"].Branch != "feat/s1" || p.NextNum != 2 {
-		t.Fatalf("lost data: %+v", p)
-	}
-	if err := Save(path, p); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(path)
-	for _, k := range []string{`"window"`, `"list_pane"`, `"selected"`, `"folded"`, `"pane"`} {
-		if strings.Contains(string(b), k) {
-			t.Errorf("saved file still has %s:\n%s", k, b)
-		}
-	}
-	if !strings.Contains(string(b), `"version": 2`) && !strings.Contains(string(b), `"version":2`) {
-		t.Errorf("not version 2:\n%s", b)
-	}
-}

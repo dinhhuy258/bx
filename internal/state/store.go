@@ -43,10 +43,6 @@ func Load(path, name string) (*Project, error) {
 	if probe.Version > CurrentVersion {
 		return nil, fmt.Errorf("state file %s has version %d, this bx reads up to %d", path, probe.Version, CurrentVersion)
 	}
-	data, err = migrate(probe.Version, data)
-	if err != nil {
-		return nil, quarantine(path, err)
-	}
 	p := &Project{}
 	if err := json.Unmarshal(data, p); err != nil {
 		return nil, quarantine(path, err)
@@ -54,17 +50,6 @@ func Load(path, name string) (*Project, error) {
 	p.Name = name
 	p.Version = CurrentVersion
 	return p, nil
-}
-
-// migrate upgrades older shapes to CurrentVersion. Version 0 (no field) is treated as 1.
-func migrate(version int, data []byte) ([]byte, error) {
-	switch version {
-	case 0, 1, 2:
-		// v1 → v2 only removed layout fields (window, list_pane, selected, folded, pane);
-		// unmarshalling drops unknown keys, so the bytes need no change.
-		return data, nil
-	}
-	return nil, fmt.Errorf("no migration from version %d", version)
 }
 
 func quarantine(path string, cause error) error {
