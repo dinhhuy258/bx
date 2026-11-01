@@ -53,3 +53,8 @@ dialog.sheet[open] { display: flex; flex-direction: column; gap: 8px; }
 .keys button { flex: 0 0 auto; min-width: 40px; padding: 8px 10px; font-family: Menlo, monospace; font-size: 14px; }
 .input { display: flex; gap: 6px; align-items: flex-end; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); }
 .input textarea { flex: 1; resize: none; max-height: 120px; }
+/* copy screen sheet: fills the viewport; no wrapping, so wide lines scroll sideways */
+dialog.copy { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; border: none; border-radius: 0; padding: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); }
+dialog.copy[open] { display: flex; flex-direction: column; }
+dialog.copy textarea { flex: 1; min-height: 0; resize: none; font-family: Menlo, monospace; font-size: 16px; white-space: pre; overflow-wrap: normal; overflow: auto; -webkit-user-select: text; user-select: text; }
+dialog.copy menu { margin-top: 8px; }

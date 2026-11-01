@@ -16,10 +16,42 @@ export function h(tag, props = {}, ...children) {
 export const bar = (left, title, right) =>
   h('header', { class: 'bar' }, left, h('h1', {}, title), right || h('span', { class: 'icon' }));
 
+// An open modal dialog makes the rest of the page inert and sits above it, so elements that
+// must work while one is open go inside it.
+const topEl = () => document.querySelector('dialog[open]') || document.body;
 export function toast(msg) {
   const t = h('div', { class: 'toast' }, msg);
-  document.body.append(t);
+  topEl().append(t);
   setTimeout(() => t.remove(), 3000);
+}
+// copyText puts text on the clipboard and returns whether it worked (a promise of it in a
+// secure context). Call it synchronously inside a tap. Pattern from m-terminal's clipboard.ts:
+// navigator.clipboard only exists in a secure context (https or localhost), so over plain http
+// it falls back to a hidden textarea and document.execCommand('copy').
+export function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      return navigator.clipboard.writeText(text).then(() => true, () => legacyCopy(text));
+    } catch { /* fall through */ }
+  }
+  return legacyCopy(text);
+}
+function legacyCopy(text) {
+  const restore = document.activeElement;
+  // off-screen but selectable (display:none can't be selected); readonly keeps the iOS keyboard shut
+  const ta = h('textarea', { readonly: true });
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;pointer-events:none';
+  topEl().append(ta);
+  let ok = false;
+  try {
+    ta.select();
+    ta.setSelectionRange(0, text.length); // iOS ignores select() alone
+    ok = document.execCommand('copy');
+  } catch { ok = false; }
+  ta.remove();
+  restore?.focus?.();
+  return ok;
 }
 
 // poll runs fn now and every ms while the page is visible, and at once when it becomes visible.

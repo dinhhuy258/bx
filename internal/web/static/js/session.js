@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { h, bar, poll, toast } from './ui.js';
+import { h, bar, poll, toast, copyText } from './ui.js';
 
 const KEYS = [['1', '1'], ['2', '2'], ['3', '3'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['⏎', '\r'],
   ['Esc', '\x1b'], ['Tab', '\t'], ['⇧Tab', '\x1b[Z'], ['^C', '\x03']];
@@ -30,8 +30,10 @@ export function showSession(root, project, num) {
   const input = h('textarea', { rows: 1, placeholder: 'Message Claude…', autocapitalize: 'off',
     autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter' });
   const sendBtn = h('button', { class: 'primary', 'aria-label': 'Send', onpointerdown: keep, onclick: () => submit() }, '➤');
+  const copyBtn = h('button', { class: 'icon', 'aria-label': 'Copy screen', onpointerdown: keep,
+    onclick: () => copyScreen() }, '⧉');
   const screen = h('div', { class: 'session' },
-    bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl]),
+    bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl], copyBtn),
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
     keys, h('div', { class: 'input' }, input, sendBtn));
   root.append(screen);
@@ -180,6 +182,33 @@ export function showSession(root, project, num) {
     input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
   }
   input.addEventListener('input', grow);
+  // copy screen: xterm has no touch selection, so show the visible rows as plain text in a
+  // sheet, where native long-press selection works. Scrolled back, that's the tmux history view.
+  let copyDlg = null;
+  function screenText() {
+    const buf = term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < term.rows; i++) lines.push(buf.getLine(buf.viewportY + i)?.translateToString(true) ?? '');
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    return lines.join('\n');
+  }
+  function copyScreen() {
+    const text = screenText();
+    if (!text) { toast('Nothing to copy'); return; }
+    const area = h('textarea', { readonly: true, wrap: 'off', autocapitalize: 'off', autocomplete: 'off',
+      autocorrect: 'off', spellcheck: 'false' });
+    area.value = text;
+    const copyAll = () => Promise.resolve(copyText(text)).then((ok) =>
+      toast(ok ? 'Copied' : "Couldn't copy, select the text and use Copy"));
+    const dlg = h('dialog', { class: 'copy' }, area, h('menu', {},
+      h('button', { onclick: () => dlg.close() }, 'Close'),
+      h('button', { class: 'primary', onclick: copyAll }, 'Copy all')));
+    dlg.addEventListener('close', () => { dlg.remove(); if (copyDlg === dlg) copyDlg = null; });
+    copyDlg?.remove();
+    copyDlg = dlg;
+    document.body.append(dlg);
+    dlg.showModal();
+  }
 
   // swipe to scroll tmux history: finger down = back in time
   function scrollBy(delta) {
@@ -259,6 +288,7 @@ export function showSession(root, project, num) {
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('online', reconnectNow);
       if (ws) ws.close(1000, 'bye');
+      copyDlg?.remove();
       term.dispose();
     },
   };
