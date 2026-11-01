@@ -48,6 +48,7 @@ export function showSession(root, project, num) {
   fit.fit();
   const encoder = new TextEncoder();
   let ws = null, opened = false, closed = false, ended = false, retry = null, scrolled = 0, lastState = '';
+  let offlineRetry = null; // the slow try while navigator.onLine is false
   let fails = 0; // closes in a row before the socket opened, with the server reachable
   let backoff = 0; // retries since the socket last opened
 
@@ -63,6 +64,7 @@ export function showSession(root, project, num) {
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       opened = true;
+      clearTimeout(offlineRetry);
       fails = 0;
       backoff = 0;
       notice.hidden = true;
@@ -115,11 +117,16 @@ export function showSession(root, project, num) {
     notice.hidden = false;
   }
 
-  // scheduleRetry reconnects after 1 s, 2 s, 4 s… up to 30 s. Offline it waits for `online`.
+  // scheduleRetry reconnects after 1 s, 2 s, 4 s… up to 30 s. Offline it waits for `online`,
+  // and also tries every 30 s, as navigator.onLine can say offline when the network is up.
+  // Such a try never counts toward `fails`: reachable() is false while offline, and its
+  // onclose calls scheduleRetry again, which re-arms it.
   function scheduleRetry() {
     clearTimeout(retry);
     if (navigator.onLine === false) {
       showNotice('Offline, waiting for network…');
+      clearTimeout(offlineRetry);
+      offlineRetry = setTimeout(connect, 30000);
       return;
     }
     showNotice('Reconnecting…');
@@ -131,6 +138,7 @@ export function showSession(root, project, num) {
   function reconnectNow() {
     if (closed || ended || ws) return;
     clearTimeout(retry);
+    clearTimeout(offlineRetry);
     backoff = 0;
     connect();
   }
@@ -312,6 +320,7 @@ export function showSession(root, project, num) {
     stop() {
       closed = true;
       clearTimeout(retry);
+      clearTimeout(offlineRetry);
       clearTimeout(resizeTimer);
       settleTimers.forEach(clearTimeout);
       stopPoll();
