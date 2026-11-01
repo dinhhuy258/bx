@@ -79,6 +79,12 @@ export function showSession(root, project, num) {
       backoff = 0;
       notice.hidden = true;
       setScrolled(0);
+      // Open live. tmux copy-mode belongs to the pane, not to one client: a client that left
+      // scrolled back (this phone before a drop or navigation, or the Mac TUI) leaves the pane
+      // there, and the attach would show it scrolled with ↓ Live hidden. The server's
+      // Tmux.Scroll(sid, 0) runs `send-keys -X cancel`, harmless when the pane isn't in a mode;
+      // it also returns a Mac TUI viewing history in this session to live, which is accepted.
+      control({ type: 'scroll', lines: 0 });
       term.reset(); // tmux attach redraws the whole screen
     };
     ws.onmessage = (e) => {
@@ -187,6 +193,8 @@ export function showSession(root, project, num) {
   // keys typed while scrolled back would go to tmux copy-mode; go back to live first
   function toLive() { if (scrolled) control({ type: 'scroll', lines: 0 }); setScrolled(0); }
   function send(bytes) { toLive(); sendBytes(bytes); }
+  // leaving while scrolled back would leave the pane in copy-mode for the next client (see onopen)
+  function leaveScroll() { if (scrolled) control({ type: 'scroll', lines: 0 }); }
 
   function submit() {
     const text = input.value;
@@ -387,6 +395,7 @@ export function showSession(root, project, num) {
   };
   document.addEventListener('visibilitychange', onVis);
   window.addEventListener('online', reconnectNow);
+  window.addEventListener('pagehide', leaveScroll); // closing the tab or reloading
 
   const stopPoll = poll(async () => {
     const snap = await api.snapshot(project);
@@ -422,6 +431,8 @@ export function showSession(root, project, num) {
       document.documentElement.classList.remove('session-lock');
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('online', reconnectNow);
+      window.removeEventListener('pagehide', leaveScroll);
+      leaveScroll();
       if (ws) ws.close(1000, 'bye');
       copyDlg?.remove();
       term.dispose();

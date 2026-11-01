@@ -458,6 +458,10 @@ func (m *Model) showSession(num int) tea.Cmd {
 func (m *Model) closeStream() {
 	m.gen++
 	if m.conn != nil {
+		// copy-mode belongs to the pane; the next client to attach (e.g. the phone) would open in it
+		if m.scrolled || m.copying {
+			_ = m.conn.Scroll(m.ctx, 0)
+		}
 		m.conn.Close()
 	}
 	m.conn, m.connecting, m.streamNum, m.scrolled, m.copying = nil, false, 0, false, false

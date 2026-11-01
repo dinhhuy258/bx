@@ -381,6 +381,24 @@ func TestWheelAndPgUpScrollTheClaudePane(t *testing.T) {
 	}
 }
 
+func TestClosingAStreamLeavesCopyMode(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter")
+	c := h.conns[0]
+	h.update(tea.MouseWheelMsg{X: ui.ListWidth + 5, Y: 5, Button: tea.MouseWheelUp})
+	h.m.closeStream()
+	if !c.closed || fmt.Sprint(c.scrolled) != fmt.Sprint([]int{-wheelLines, 0}) {
+		t.Fatalf("closed=%v scroll frames %v, want the pane back at live before closing", c.closed, c.scrolled)
+	}
+
+	h = start(t, 120, 30, "idle")
+	h.press("Enter")
+	c = h.conns[0]
+	h.m.closeStream()
+	if !c.closed || len(c.scrolled) != 0 {
+		t.Fatalf("closed=%v scroll frames %v: a live stream closes without one", c.closed, c.scrolled)
+	}
+}
 func TestPasteGoesToClaude(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.press("Enter")
