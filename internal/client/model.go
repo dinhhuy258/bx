@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -93,6 +94,7 @@ type Model struct {
 	tmux func(dir string) tea.Cmd // moves to the tmux pane beside bx; see tmuxSelect
 
 	projects []api.ProjectSummary
+	opened   opened               // the projects this client has open, saved between runs
 	models   map[string]*ui.Model // per project, so folds and cursor survive a switch
 	project  string               // the open project; "" until one is chosen
 	m        *ui.Model            // models[project]; nil until its first snapshot
@@ -107,6 +109,9 @@ type Model struct {
 
 	picker   *ui.Picker
 	pickKind pickKind
+
+	activity bool        // the list pane shows the activity list of every project
+	act      ui.Activity // its cursor
 
 	width, height int
 	narrow        bool
@@ -124,10 +129,11 @@ type Model struct {
 	cancel        context.CancelFunc
 }
 
-// NewModel builds the client. project is the one to open first ("" = the only one, or ask).
+// NewModel builds the client. project is the one to open first ("" = the one shown last time, if
+// it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -175,6 +181,41 @@ func (m *Model) poll() tea.Cmd {
 	}
 }
 
+// pollActivity fetches the snapshot of every other project with a running or waiting session,
+// while the activity list is shown.
+func (m *Model) pollActivity() tea.Cmd {
+	if !m.activity {
+		return nil
+	}
+	var cmds []tea.Cmd
+	for _, p := range m.projects {
+		if p.Name == m.project || p.Running+p.Waiting == 0 {
+			continue
+		}
+		be, ctx, project := m.be, m.ctx, p.Name
+		cmds = append(cmds, func() tea.Msg {
+			snap, err := be.Snapshot(ctx, project)
+			return snapshotMsg{project, snap, err}
+		})
+	}
+	return tea.Batch(cmds...)
+}
+
+// activityModels are the lists the activity list draws from: the open project and every other
+// one the server says has a running or waiting session.
+func (m *Model) activityModels() []*ui.Model {
+	var out []*ui.Model
+	if m.m != nil {
+		out = append(out, m.m)
+	}
+	for _, p := range m.projects {
+		if um := m.models[p.Name]; um != nil && p.Name != m.project && p.Running+p.Waiting > 0 {
+			out = append(out, um)
+		}
+	}
+	return out
+}
+
 // connect opens the stream of streamNum when it is not open yet.
 func (m *Model) connect() tea.Cmd {
 	if m.open == nil || m.streamNum == 0 || m.conn != nil || m.connecting {
@@ -200,7 +241,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.flash != "" && time.Since(m.flashAt) > 4*time.Second {
 			m.flash = ""
 		}
-		return m, tea.Batch(m.loadProjects(), m.poll(), m.connect(), m.tick())
+		return m, tea.Batch(m.loadProjects(), m.poll(), m.pollActivity(), m.connect(), m.tick())
 	case projectsMsg:
 		return m, m.gotProjects(msg)
 	case snapshotMsg:
@@ -247,7 +288,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case createdMsg:
 		if msg.err != nil {
 			m.setFlash("error: " + msg.err.Error())
-			m.pickerIfNoProject()
 			return m, nil
 		}
 		m.setFlash("added project " + msg.res.Name)
@@ -280,27 +320,58 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// gotProjects stores the project list. The first reply opens the project to start with:
-// the one asked for, the only one, or the picker.
+// gotProjects stores the project list and drops opened projects the server no longer has. The
+// first reply opens the project to start with: the one asked for, else the one shown last, else
+// the first opened one. With none opened the list stays empty until o opens one.
 func (m *Model) gotProjects(msg projectsMsg) tea.Cmd {
 	if msg.err != nil {
 		m.setFlash("error: " + msg.err.Error())
 		return nil
 	}
 	m.projects = msg.list
+	if m.opened.keep(func(name string) bool {
+		return slices.ContainsFunc(msg.list, func(p api.ProjectSummary) bool { return p.Name == name })
+	}) {
+		m.saveOpened()
+	}
 	if m.loaded {
 		return nil
 	}
 	m.loaded = true
+	name := m.project
+	m.project = ""
 	switch {
-	case m.project != "":
-		name := m.project
-		m.project = ""
-		return m.switchProject(name)
-	case len(msg.list) == 1:
-		return m.switchProject(msg.list[0].Name)
+	case name != "":
+	case slices.Contains(m.opened.Projects, m.opened.Current):
+		name = m.opened.Current
+	case len(m.opened.Projects) > 0:
+		name = m.opened.Projects[0]
+	default:
+		return nil
 	}
-	m.openProjectPicker()
+	return m.switchProject(name)
+}
+
+func (m *Model) saveOpened() {
+	m.opened.Current = m.project
+	if err := m.opened.save(m.cfg.Root); err != nil {
+		m.setFlash("save opened projects: " + err.Error())
+	}
+}
+
+// closeProject takes the open project off this client's list and shows the next opened one, or
+// the empty screen. Its sessions keep running on the server.
+func (m *Model) closeProject() tea.Cmd {
+	next := m.opened.remove(m.project)
+	m.setFlash("closed project " + m.project)
+	if next != "" {
+		return m.switchProject(next)
+	}
+	m.closeStream()
+	m.project, m.m, m.activity = "", nil, false
+	m.claudeFocused, m.focusMode, m.prompt = false, false, ui.Prompt{}
+	m.resizeTerm()
+	m.saveOpened()
 	return nil
 }
 
@@ -328,8 +399,8 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 	}
 }
 
-// switchProject shows another project: its list (kept from last time, if any) and an empty
-// Claude pane. The stream of the previous project is closed.
+// switchProject shows another project and adds it to the opened ones: its list (kept from last
+// time, if any) and an empty Claude pane. The stream of the previous project is closed.
 func (m *Model) switchProject(name string) tea.Cmd {
 	if name == m.project {
 		return nil
@@ -338,6 +409,8 @@ func (m *Model) switchProject(name string) tea.Cmd {
 	m.project, m.m = name, m.models[name]
 	m.claudeFocused, m.focusMode, m.prompt = false, false, ui.Prompt{}
 	m.resizeTerm()
+	m.opened.add(name)
+	m.saveOpened()
 	return m.poll()
 }
 
@@ -392,13 +465,15 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case ui.PromptSubmit:
 			return m, m.submit(kind, strings.TrimSpace(m.prompt.Input), m.prompt.Target)
 		case ui.PromptCancel:
-			m.pickerIfNoProject()
 		}
 		return m, nil
 	}
 	if m.m == nil {
-		if key == "C-c" {
+		switch {
+		case key == "C-c":
 			return m, m.quit()
+		case m.project == "" && m.loaded && m.cfg.Keys.ListAction(key) == "projects":
+			m.openProjectPicker()
 		}
 		return m, nil
 	}
@@ -445,6 +520,17 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if action == "" && m.cfg.Keys.IsPrefixOfSequence(key) {
 		m.seq = key
 		return m, nil
+	}
+	switch action {
+	case "prev_project":
+		return m, m.stepProject(-1)
+	case "next_project":
+		return m, m.stepProject(1)
+	case "close_project":
+		return m, m.closeProject()
+	}
+	if m.activity {
+		return m, m.activityKey(action)
 	}
 	num, sess := m.m.SelectedSession()
 	row := m.m.Selected()
@@ -496,6 +582,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.jumpWaiting()
 	case "projects":
 		m.openProjectPicker()
+	case "activity":
+		m.activity, m.act = true, ui.Activity{}
+		return m, m.pollActivity()
 	case "lazygit", "nvim", "shell", "prs":
 		m.setFlash(action + " is not available yet")
 	case "keymap":
@@ -506,6 +595,79 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.scroll(max(m.term.Rows()/2, 1))
 	}
 	return m, nil
+}
+
+// activityKey handles a list key while the activity list is shown. Keys that act on one project's
+// list (new chat, rename, ...) do nothing here.
+func (m *Model) activityKey(action string) tea.Cmd {
+	rows := ui.ActivityRows(m.activityModels())
+	r := m.act.Selected(rows)
+	switch action {
+	case "down":
+		m.act.Move(rows, 1)
+	case "up":
+		m.act.Move(rows, -1)
+	case "activity":
+		m.activity = false
+	case "open":
+		switch {
+		case r.Project == "":
+		case r.Num == 0:
+			m.activity = false
+			return m.switchProject(r.Project)
+		default:
+			return m.openSession(r.Project, r.Num)
+		}
+	case "focus":
+		if r.Num != 0 {
+			m.focusMode = true
+			return m.openSession(r.Project, r.Num)
+		}
+	case "yes":
+		if um := m.models[r.Project]; r.Num != 0 && um != nil && strings.HasPrefix(um.StateText(r.Num), "asks:") {
+			_ = m.doIn(r.Project, "yes", api.Action{Num: r.Num})
+		}
+	case "waiting":
+		return m.jumpWaiting()
+	case "projects":
+		m.openProjectPicker()
+	case "keymap":
+		m.showKeys = true
+	case "scroll_up":
+		m.scroll(-max(m.term.Rows()/2, 1))
+	case "scroll_down":
+		m.scroll(max(m.term.Rows()/2, 1))
+	}
+	return nil
+}
+
+// stepProject opens the opened project delta places away in name order, wrapping, and leaves
+// the activity list.
+func (m *Model) stepProject(delta int) tea.Cmd {
+	names := m.opened.Projects
+	if len(names) < 2 {
+		return nil
+	}
+	i := sort.SearchStrings(names, m.project) // where the open project is, or would be
+	if i < len(names) && names[i] == m.project || delta < 0 {
+		i += delta
+	}
+	m.activity = false
+	return m.switchProject(names[(i%len(names)+len(names))%len(names)])
+}
+
+// openSession opens a session of any project in the Claude pane and gives it the keys,
+// switching project first when needed.
+func (m *Model) openSession(project string, num int) tea.Cmd {
+	cmd := m.switchProject(project)
+	if m.m != nil {
+		m.m.SelectSession(num)
+	} else {
+		m.pendingSel = num
+	}
+	m.claudeFocused = true
+	m.resizeTerm()
+	return tea.Batch(cmd, m.showSession(num))
 }
 
 // copyMode puts the open session in tmux copy-mode and gives the Claude pane the keys, which
@@ -603,25 +765,19 @@ func (m *Model) jumpWaiting() tea.Cmd {
 		if p.Name == m.project || len(p.WaitingSessions) == 0 {
 			continue
 		}
-		num := p.WaitingSessions[0]
-		cmd := m.switchProject(p.Name)
-		if m.m != nil {
-			m.m.SelectSession(num)
-		} else {
-			m.pendingSel = num
-		}
-		m.claudeFocused = true
-		m.resizeTerm()
-		return tea.Batch(cmd, m.showSession(num))
+		return m.openSession(p.Name, p.WaitingSessions[0])
 	}
 	m.setFlash("nothing is waiting")
 	return nil
 }
 
+// openProjectPicker lists the projects this client has not opened yet, then the ways to add one.
 func (m *Model) openProjectPicker() {
 	items := make([]string, 0, len(m.projects)+3)
 	for _, p := range m.projects {
-		items = append(items, p.Name)
+		if !slices.Contains(m.opened.Projects, p.Name) {
+			items = append(items, p.Name)
+		}
 	}
 	m.picker, m.pickKind = ui.NewPicker("projects", append(items, addFolder, cloneRepo, newProject)), pickProjects
 }
@@ -630,9 +786,6 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 	switch m.picker.Key(key, text) {
 	case ui.PickCancel:
 		m.picker = nil
-		if m.project == "" {
-			return m.quit() // nothing to go back to
-		}
 	case ui.PickChoose:
 		choice, kind := m.picker.Choice(), m.pickKind
 		m.picker = nil
@@ -703,14 +856,12 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		}
 	case ui.PromptAddFolder:
 		if text == "" {
-			m.pickerIfNoProject()
 			return nil
 		}
 		m.setFlash("adding " + text + "…")
 		return m.create(api.NewProject{Kind: "folder", Path: text})
 	case ui.PromptNewProject:
 		if text == "" {
-			m.pickerIfNoProject()
 			return nil
 		}
 		return m.create(api.NewProject{Kind: "new", Name: text})
@@ -718,22 +869,16 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	return nil
 }
 
-// pickerIfNoProject reopens the project picker when no project is open, so a cancelled or
-// failed add does not leave an empty screen.
-func (m *Model) pickerIfNoProject() {
-	if m.project == "" {
-		m.openProjectPicker()
-	}
-}
-
 func (m *Model) openPrompt(kind ui.PromptKind, target, label, initial string) {
 	m.prompt.Open(kind, target, label, initial)
 	m.flash = ""
 }
 
-// do runs an action and shows its error in the key bar. The next poll shows the result.
-func (m *Model) do(action string, a api.Action) error {
-	_, err := m.be.Do(m.ctx, m.project, action, a)
+// do runs an action in the open project and shows its error in the key bar. The next poll shows the result.
+func (m *Model) do(action string, a api.Action) error { return m.doIn(m.project, action, a) }
+
+func (m *Model) doIn(project, action string, a api.Action) error {
+	_, err := m.be.Do(m.ctx, project, action, a)
 	if err != nil {
 		m.setFlash("error: " + err.Error())
 	}
@@ -775,6 +920,8 @@ func (m *Model) body() string {
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
 	case m.m == nil && m.prompt.Active():
 		return "bx · " + m.prompt.Line() + "\n" + m.flash
+	case m.m == nil && m.project == "" && m.loaded:
+		return m.empty()
 	case m.m == nil && m.project == "":
 		return "bx · connecting…\n" + m.flash
 	case m.m == nil:
@@ -787,11 +934,11 @@ func (m *Model) body() string {
 	case m.focusMode || (m.narrow && m.claudeFocused):
 		body = m.pane()
 	case m.narrow:
-		body = ui.Render(m.m, m.width, m.height-1, ui.RenderOptions{Focused: true})
+		body = m.list(m.width, true)
 	default:
 		// the focused pane is lit: its rule is heavy and blue and the separator's joint points at it;
 		// in Claude the list is also faint
-		list := ui.Render(m.m, ui.ListWidth, m.height-1, ui.RenderOptions{Focused: !m.claudeFocused})
+		list := m.list(ui.ListWidth, !m.claudeFocused)
 		join := "┫"
 		if m.claudeFocused {
 			join = "┣"
@@ -802,6 +949,44 @@ func (m *Model) body() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, list, lipgloss.NewStyle().Foreground(lipgloss.Color(focusColor)).Render(sep), m.pane())
 	}
 	return body + "\n" + m.bar()
+}
+
+// list is the list pane: the open project's list with the project strip, or the activity list.
+func (m *Model) list(width int, focused bool) string {
+	o := ui.RenderOptions{Focused: focused}
+	if m.activity {
+		back := fmt.Sprintf("%s back to %s · %s projects", config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "activity")), m.project, config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "projects")))
+		return ui.RenderActivity(m.activityModels(), &m.act, width, m.height-1, o, back)
+	}
+	o.Projects = m.tabs()
+	return ui.Render(m.m, width, m.height-1, o)
+}
+
+// tabs are the opened projects of the strip, in name order.
+func (m *Model) tabs() []ui.ProjectTab {
+	tabs := make([]ui.ProjectTab, 0, len(m.opened.Projects))
+	for _, name := range m.opened.Projects {
+		t := ui.ProjectTab{Name: name}
+		for _, p := range m.projects {
+			if p.Name == name {
+				t.Running, t.Waiting = p.Running, p.Waiting
+			}
+		}
+		tabs = append(tabs, t)
+	}
+	return tabs
+}
+
+// empty is the screen with no project open.
+func (m *Model) empty() string {
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
+	brand := lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true)
+	o := config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "projects"))
+	lines := []string{brand.Render("bx"), "", "  No project open.", dim.Render("  " + o + " open a project · ^c quit")}
+	for len(lines) < m.height-1 {
+		lines = append(lines, "")
+	}
+	return strings.Join(lines, "\n") + "\n" + m.flash
 }
 
 // paneHeader is the rows above the Claude pane: the title line and the rule under it.
@@ -890,8 +1075,12 @@ func (m *Model) bar() string {
 			}
 		}
 		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "waiting"), m.cfg.Client.PaneLeft, run, waiting)
+	case m.activity && !m.claudeFocused && m.seq == "":
+		r := m.act.Selected(ui.ActivityRows(m.activityModels()))
+		waiting := r.Num != 0 && strings.HasPrefix(m.models[r.Project].StateText(r.Num), "asks:")
+		text = ui.ActivityBar(m.cfg, r.Num == 0, waiting, ui.BarContext{Flash: m.flash, Narrow: m.narrow})
 	default:
-		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.streamNum, Seq: m.seq, Flash: m.flash, Narrow: m.narrow})
+		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.streamNum, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects)})
 	}
 	// cut the text to one line: Width would wrap it and push the bar off the screen
 	text = ansi.Truncate(" "+text, max(m.width, 1), "…")

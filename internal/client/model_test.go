@@ -110,21 +110,36 @@ type harness struct {
 	tmux   []string // tmux pane moves: "L" or "R"
 }
 
-// start builds a client over projects (each with session 1 in story s1) and runs Init.
+// start builds a client over projects (each with session 1 in story s1), opening the first one
+// as `bx <project>` does, and runs Init.
 func start(t *testing.T, w, h int, statuses ...string) *harness {
+	t.Helper()
+	first := ""
+	if len(statuses) > 0 {
+		first = "home-network"
+	}
+	return startIn(t, t.TempDir(), first, w, h, statuses...)
+}
+
+// startIn is start with the client root (where the opened projects are saved) and the project
+// asked for on the command line ("" = none).
+func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *harness {
 	t.Helper()
 	be := &fakeBackend{snaps: map[string]api.Snapshot{}}
 	names := []string{"home-network", "lab"}
 	for i, st := range statuses {
 		be.snaps[names[i]] = snapshot(names[i], st)
 		sum := api.ProjectSummary{Name: names[i]}
-		if st == "waiting" {
+		switch st {
+		case "waiting":
 			sum.Waiting, sum.WaitingSessions = 1, []int{1}
+		case "running":
+			sum.Running = 1
 		}
 		be.projects = append(be.projects, sum)
 	}
 	hs := &harness{be: be}
-	hs.m = NewModel(config.Default(t.TempDir()), be, "")
+	hs.m = NewModel(config.Default(root), be, project)
 	hs.m.tick = func() tea.Cmd { return nil }
 	hs.m.tmux = func(dir string) tea.Cmd { hs.tmux = append(hs.tmux, dir); return nil }
 	hs.m.SetStreamer(func(_ context.Context, project string, num, cols, rows int, term *Term, _ func(tea.Msg)) (Conn, error) {
@@ -203,15 +218,55 @@ func TestStartupOpensTheOnlyProject(t *testing.T) {
 	}
 }
 
-func TestStartupWithManyProjectsShowsThePicker(t *testing.T) {
-	h := start(t, 120, 30, "running", "running")
+func TestStartupWithNothingOpenedIsEmpty(t *testing.T) {
+	h := startIn(t, t.TempDir(), "", 120, 30, "running", "running")
 	v := h.m.View().Content
-	if !strings.Contains(v, "home-network") || !strings.Contains(v, "lab") || !strings.Contains(v, "+ Add existing folder") {
-		t.Fatalf("picker:\n%s", v)
+	if h.m.picker != nil || h.m.project != "" || !strings.Contains(v, "No project open.") || !strings.Contains(v, "o open a project") {
+		t.Fatalf("picker=%v project=%q\n%s", h.m.picker != nil, h.m.project, v)
 	}
-	h.press("Down", "Enter")
+	h.press("o", "Down", "Enter")
 	if h.m.project != "lab" || h.m.picker != nil || !strings.Contains(h.m.View().Content, "Add lease time") {
 		t.Fatalf("project=%q\n%s", h.m.project, h.m.View().Content)
+	}
+}
+
+func TestOpenedProjectsAreSavedAndRestored(t *testing.T) {
+	root := t.TempDir()
+	h := startIn(t, root, "", 120, 30, "running", "running")
+	h.press("o", "Enter") // home-network
+	h.press("o")
+	if items := ansi.Strip(h.m.View().Content); strings.Contains(items, "home-network") || !strings.Contains(items, "lab") {
+		t.Fatalf("the picker must leave out opened projects:\n%s", items)
+	}
+	h.press("Enter") // lab, the only one left
+	h.press("[")     // back to home-network: shown last
+	h = startIn(t, root, "", 120, 30, "running", "running")
+	if h.m.project != "home-network" || strings.Join(h.m.opened.Projects, ",") != "home-network,lab" {
+		t.Fatalf("restored project=%q opened=%v", h.m.project, h.m.opened.Projects)
+	}
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "◉ home-network  ● lab") {
+		t.Fatalf("strip:\n%s", v)
+	}
+}
+
+func TestCloseProject(t *testing.T) {
+	root := t.TempDir()
+	h := startIn(t, root, "", 120, 30, "running", "running")
+	h.press("o", "Enter", "o", "Enter") // home-network, then lab
+	h.press("x")
+	if h.m.project != "home-network" || strings.Join(h.m.opened.Projects, ",") != "home-network" {
+		t.Fatalf("project=%q opened=%v", h.m.project, h.m.opened.Projects)
+	}
+	h.press("o")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "lab") {
+		t.Fatalf("a closed project goes back to the picker:\n%s", v)
+	}
+	h.press("Esc", "x")
+	if v := h.m.View().Content; h.m.project != "" || h.m.picker != nil || !strings.Contains(v, "No project open.") {
+		t.Fatalf("project=%q\n%s", h.m.project, v)
+	}
+	if h = startIn(t, root, "", 120, 30, "running", "running"); h.m.project != "" {
+		t.Fatalf("nothing opened must stay empty after a restart: %q", h.m.project)
 	}
 }
 
@@ -422,7 +477,6 @@ func TestCloseStoryAsksAgainWhenDirty(t *testing.T) {
 
 func TestWaitingJumpsAcrossProjects(t *testing.T) {
 	h := start(t, 120, 30, "running", "waiting")
-	h.press("Enter") // picker: home-network
 	h.press("a")
 	if h.m.project != "lab" || strings.Join(h.opened, "|") != "lab 1" || !h.m.claudeFocused {
 		t.Fatalf("project=%q opened=%q", h.m.project, h.opened)
@@ -480,8 +534,9 @@ func TestAddFolderFromThePicker(t *testing.T) {
 }
 
 func TestAddFirstFolderWithNoProjects(t *testing.T) {
-	h := start(t, 120, 30) // no projects: the picker opens
+	h := start(t, 120, 30) // no projects: the empty screen
 	h.be.snaps["lab"] = snapshot("lab", "running")
+	h.press("o")
 	h.typeText("existing")
 	h.press("Enter")
 	h.typeText("/srv/lab")
@@ -497,19 +552,20 @@ func TestAddFirstFolderWithNoProjects(t *testing.T) {
 	}
 }
 
-func TestCancelledOrFailedFirstAddReopensThePicker(t *testing.T) {
+func TestCancelledOrFailedFirstAddStaysEmpty(t *testing.T) {
 	h := start(t, 120, 30)
+	h.press("o")
 	h.typeText("existing")
 	h.press("Enter", "Esc")
-	if h.m.picker == nil {
-		t.Fatalf("Esc should reopen the picker:\n%s", h.m.View().Content)
+	if v := h.m.View().Content; h.m.picker != nil || !strings.Contains(v, "No project open.") {
+		t.Fatalf("Esc should go back to the empty screen:\n%s", v)
 	}
 	h.be.createErr = errors.New("not a git repository")
-	h.press("Enter") // the cursor is back on the first entry, + Add existing folder
+	h.press("o", "Enter") // + Add existing folder
 	h.typeText("/srv/nope")
 	h.press("Enter")
-	if v := h.m.View().Content; h.m.picker == nil || !strings.Contains(v, "not a git repository") {
-		t.Fatalf("a failed add should reopen the picker with the error:\n%s", v)
+	if v := h.m.View().Content; h.m.picker != nil || !strings.Contains(v, "No project open.") || !strings.Contains(v, "not a git repository") {
+		t.Fatalf("a failed add should show the error on the empty screen:\n%s", v)
 	}
 }
 
@@ -546,5 +602,65 @@ func TestToolKeysExplainThemselves(t *testing.T) {
 	h.press("d")
 	if len(h.be.actions) != 0 || !strings.Contains(h.m.View().Content, "not available yet") {
 		t.Fatalf("actions=%q\n%s", h.be.actions, h.m.View().Content)
+	}
+}
+
+func TestProjectStripAndSwitchKeys(t *testing.T) {
+	h := start(t, 200, 30, "waiting", "running")
+	h.press("o", "Enter", "[") // open lab, then back to home-network
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "◉ home-network  ● lab") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "A activity") {
+		t.Fatalf("strip and key bar:\n%s", v)
+	}
+	h.press("]")
+	if h.m.project != "lab" {
+		t.Fatalf("] opened %q", h.m.project)
+	}
+	h.press("]") // wraps
+	if h.m.project != "home-network" {
+		t.Fatalf("] wrapped to %q", h.m.project)
+	}
+	h.press("[")
+	if h.m.project != "lab" {
+		t.Fatalf("[ opened %q", h.m.project)
+	}
+}
+
+func TestActivityListsEveryProject(t *testing.T) {
+	h := start(t, 160, 30, "running", "waiting")
+	h.press("A") // the activity list
+	v := ansi.Strip(h.m.View().Content)
+	// lab waits, so it comes first
+	lab, home := strings.Index(v, "  lab "), strings.Index(v, "  home-network ")
+	if !strings.Contains(v, "bx activity") || lab < 0 || home < 0 || lab > home {
+		t.Fatalf("activity:\n%s", v)
+	}
+	if !strings.Contains(v, "s1 · asks: needs you") || !strings.Contains(v, "s1 · running") || !strings.Contains(v, "A back") || !strings.Contains(v, "y yes") {
+		t.Fatalf("rows and key bar:\n%s", v)
+	}
+	h.press("y") // the cursor starts on lab's waiting session
+	if got := strings.Join(h.be.actions, "|"); got != "lab yes 1" {
+		t.Fatalf("actions %q", got)
+	}
+	h.press("Enter")
+	if h.m.project != "lab" || !h.m.claudeFocused || strings.Join(h.opened, "|") != "lab 1" || !h.m.activity {
+		t.Fatalf("project=%q focused=%v opened=%q activity=%v", h.m.project, h.m.claudeFocused, h.opened, h.m.activity)
+	}
+	h.press("C-h", "k", "Enter") // back to the list, up to lab's header: its list
+	if h.m.activity || h.m.project != "lab" {
+		t.Fatalf("activity=%v project=%q", h.m.activity, h.m.project)
+	}
+}
+
+func TestActivityEmpty(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	h.press("A")
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "Nothing is running or waiting.") || !strings.Contains(v, "A back to home-network · o projects") {
+		t.Fatalf("empty activity:\n%s", v)
+	}
+	h.press("A")
+	if h.m.activity {
+		t.Fatal("A leaves the activity list")
 	}
 }

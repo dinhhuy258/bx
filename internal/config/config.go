@@ -75,6 +75,7 @@ func Default(root string) *Config {
 				"lazygit": {"d"}, "nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"},
 				"waiting": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
+				"activity": {"A"}, "prev_project": {"["}, "next_project": {"]"}, "close_project": {"x"},
 			},
 		},
 		List:   List{AutoExpandWaiting: true},

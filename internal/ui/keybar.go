@@ -15,13 +15,14 @@ type BarContext struct {
 	Seq           string // pending first key of a sequence, "" when none
 	Flash         string // message shown instead of the keys
 	Narrow        bool   // window too small for two panes: one pane at a time
+	Projects      int    // how many projects the client has open; the switch keys show from two
 }
 
 var labels = map[string]string{
 	"focus": "focus mode", "waiting": "jump to waiting", "projects": "projects",
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
 	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "yes": "yes", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
-	"rename": "rename", "resume": "resume", "close_story": "close story",
+	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
 }
 
 // KeyBar builds the bottom line of the client.
@@ -79,10 +80,57 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		}
 	}
 	parts = append(parts, lk("new_chat"), lk("new_session"), lk("new_story"))
-	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"))
+	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"), lk("activity"))
+	if ctx.Projects > 1 {
+		parts = append(parts, switchKeys(cfg))
+	}
+	parts = append(parts, lk("close_project"))
 	if ctx.Narrow {
 		// one pane at a time: say how to come back
 		parts = append(parts, k(cfg.Client.PaneRight, "back"))
+	}
+	return join(parts)
+}
+
+// switchKeys is "[ ] switch project", or "" when either key is unbound.
+func switchKeys(cfg *config.Config) string {
+	prev, next := cfg.Keys.First(cfg.Keys.List, "prev_project"), cfg.Keys.First(cfg.Keys.List, "next_project")
+	if prev == "" || next == "" {
+		return ""
+	}
+	return config.Pretty(prev) + " " + config.Pretty(next) + " switch project"
+}
+
+// ActivityBar is the key bar of the activity list. waiting tells whether the selected session
+// asks something; header that the cursor is on a project's header.
+func ActivityBar(cfg *config.Config, header, waiting bool, ctx BarContext) string {
+	if ctx.Flash != "" {
+		return ctx.Flash
+	}
+	lk := func(action, label string) string {
+		if key := cfg.Keys.First(cfg.Keys.List, action); key != "" {
+			return config.Pretty(key) + " " + label
+		}
+		return ""
+	}
+	parts := []string{"j/k move"}
+	switch {
+	case header:
+		parts = append(parts, lk("open", "open project"))
+	case ctx.Narrow:
+		parts = append(parts, lk("open", "Claude"))
+	default:
+		parts = append(parts, lk("open", "type in Claude"))
+	}
+	if !header {
+		if waiting {
+			parts = append(parts, lk("yes", "yes"))
+		}
+		parts = append(parts, lk("focus", "focus"))
+	}
+	parts = append(parts, lk("activity", "back"), switchKeys(cfg))
+	if ctx.Narrow {
+		parts = append(parts, config.Pretty(cfg.Client.PaneRight)+" back")
 	}
 	return join(parts)
 }

@@ -13,8 +13,12 @@ import (
 const ListWidth = 46
 
 // RenderOptions controls colours. Plain disables ANSI for golden tests. Focused draws the rule
-// under the header heavy and blue, like the Claude pane's when it has the focus.
-type RenderOptions struct{ Plain, Focused bool }
+// under the header heavy and blue, like the Claude pane's when it has the focus. Projects, the
+// projects the client has open, adds the project strip under the rule.
+type RenderOptions struct {
+	Plain, Focused bool
+	Projects       []ProjectTab
+}
 
 type palette struct {
 	dim, blue, amber, green, red, bold, sel, brand lipgloss.Style
@@ -49,15 +53,11 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 	run, wait := m.Counts()
 	nStories := len(m.P.Stories)
 	head := fit(pal.brand.Render("bx")+" "+pal.bold.Render(m.P.Name), pal.dim.Render(plural(nStories, "story", "stories")), width)
-	ch, color := "─", "#3b4261"
-	if o.Focused {
-		ch, color = "━", "#7aa2f7"
+	// the rule stays on the second line, level with the Claude pane's
+	lines = append(lines, head, rule(width, o))
+	if len(o.Projects) > 0 {
+		lines = append(lines, strip(o.Projects, m.P.Name, width, pal))
 	}
-	rule := strings.Repeat(ch, width)
-	if !o.Plain {
-		rule = lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(rule)
-	}
-	lines = append(lines, head, rule)
 	waitText := pal.dim.Render(fmt.Sprintf("◆ %d needs you", wait))
 	if wait > 0 {
 		waitText = pal.amber.Render(fmt.Sprintf("◆ %d needs you", wait))
@@ -114,13 +114,7 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 	if nStories == 0 {
 		lines = append(lines, "", "No stories yet.", "A story is a branch with its own worktree.", "Press w to create one.")
 	}
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
-	if len(lines) > height {
-		lines = lines[:height]
-	}
-	return strings.Join(lines, "\n")
+	return pad(lines, height)
 }
 
 func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected bool) string {

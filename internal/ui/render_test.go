@@ -2,10 +2,12 @@ package ui
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/state"
 )
@@ -136,5 +138,57 @@ func TestShortPathUsesHome(t *testing.T) {
 	}
 	if got := shortPath("/srv/repo"); got != "/srv/repo" {
 		t.Fatal(got)
+	}
+}
+
+func TestRenderProjectStrip(t *testing.T) {
+	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	tabs := []ProjectTab{{Name: "bx", Waiting: 1}, {Name: "home-network", Waiting: 1, Running: 2}, {Name: "dotfiles"}, {Name: "lab"}}
+	lines := strings.Split(Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs}), "\n")
+	if lines[2] != "◆ bx  ◉ home-network  ○ dotfiles  ○ lab" {
+		t.Fatalf("strip %q", lines[2])
+	}
+	// too narrow for all: the projects before the open one go first
+	tabs = append([]ProjectTab{{Name: "a-very-long-project"}, {Name: "another-long-one"}}, tabs...)
+	line := strings.Split(Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs}), "\n")[2]
+	if !strings.HasPrefix(line, "… ") || !strings.Contains(line, "home-network") || runeWidth(line) > 46 {
+		t.Fatalf("cut strip %q", line)
+	}
+	// no opened projects: no strip, the list is as before (the golden test)
+	if Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs[:0]}) != Render(m, 46, 30, RenderOptions{Plain: true}) {
+		t.Fatal("no projects must not add a strip")
+	}
+}
+
+func TestActivityRowsAndRender(t *testing.T) {
+	home, _ := sampleModel(Options{AutoExpandWaiting: true})
+	p, live := sampleHomeNetwork()
+	p.Name = "bx"
+	live.Agents["u2"] = claude.Agent{SessionID: "u2", Status: "idle"} // bx has nothing waiting
+	bx := NewModel(p, Options{})
+	bx.SetLive(live)
+	rows := ActivityRows([]*Model{bx, home})
+	want := []ActivityRow{{"home-network", 0}, {"home-network", 2}, {"home-network", 1}, {"home-network", 4}, {"bx", 0}, {"bx", 1}, {"bx", 4}}
+	if fmt.Sprint(rows) != fmt.Sprint(want) {
+		t.Fatalf("rows %v\nwant %v", rows, want)
+	}
+	var a Activity
+	out := RenderActivity([]*Model{bx, home}, &a, 46, 30, RenderOptions{Plain: true}, "")
+	for _, s := range []string{"bx activity", "2 projects", "● 4 running", "◆ 1 needs you", "  home-network", "◆ 1  ● 2", "›  ◆ [2] Write the test checklist", "guest-vlan-fix · asks: permission prompt"} {
+		if !strings.Contains(out, s) {
+			t.Errorf("missing %q in\n%s", s, out)
+		}
+	}
+	// the cursor stays on its session when the rows move
+	a.Move(rows, 2) // from home-network [2] to [4]
+	if a.Selected(rows) != (ActivityRow{"home-network", 4}) {
+		t.Fatal(a.Selected(rows))
+	}
+	home.Live.Agents["u1"] = claude.Agent{SessionID: "u1", Status: "idle"}
+	if r := a.Selected(ActivityRows([]*Model{bx, home})); r != (ActivityRow{"home-network", 4}) {
+		t.Fatalf("cursor moved to %v", r)
+	}
+	if out := RenderActivity(nil, &a, 46, 10, RenderOptions{Plain: true}, "A back"); !strings.Contains(out, "Nothing is running or waiting.") {
+		t.Fatal(out)
 	}
 }
