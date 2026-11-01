@@ -45,7 +45,8 @@ export function showSession(root, project, num) {
   fit.fit();
   const encoder = new TextEncoder();
   let ws = null, opened = false, closed = false, ended = false, retry = null, scrolled = 0, lastState = '';
-  let fails = 0; // closes in a row before the socket opened
+  let fails = 0; // closes in a row before the socket opened, with the server reachable
+  let backoff = 0; // retries since the socket last opened
 
   // terminal replies (device attributes) and a hardware keyboard, e.g. on an iPad; typed keys
   // go back to live first, like the key row
@@ -60,6 +61,7 @@ export function showSession(root, project, num) {
     ws.onopen = () => {
       opened = true;
       fails = 0;
+      backoff = 0;
       notice.hidden = true;
       setScrolled(0);
       term.reset(); // tmux attach redraws the whole screen
@@ -71,25 +73,69 @@ export function showSession(root, project, num) {
       }
       term.write(new Uint8Array(e.data));
     };
-    ws.onclose = (e) => {
+    ws.onclose = async (e) => {
       ws = null;
       if (closed) return;
-      if (!opened) fails++;
-      // the state can say alive when it isn't (idle if `claude agents` fails), so give up after 3 tries
-      if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done' || fails >= 3))) {
+      if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done'))) {
         showEnded();
         return;
       }
-      noticeText.textContent = 'Reconnecting…';
-      resumeBtn.hidden = true;
-      notice.hidden = false;
-      retry = setTimeout(connect, 1500);
+      if (!opened) {
+        // The socket failed before it opened. Either the server refused it (410: the tmux
+        // session is gone) or the server can't be reached (offline, the phone just woke up,
+        // Wi-Fi <-> cellular). The browser doesn't say which, so ask the server for the
+        // project: if it answers, the stream was refused. Only those failures count, and the
+        // state can say alive when it isn't (idle if `claude agents` fails), so give up after 3.
+        showNotice('Reconnecting…');
+        const ok = await reachable();
+        if (closed || ended || ws) return; // stopped, ended or reconnected meanwhile
+        if (ok && ++fails >= 3) {
+          showEnded();
+          return;
+        }
+      }
+      scheduleRetry();
     };
+  }
+
+  // reachable reports whether the server answers, within 5 s. A 5xx may come from a proxy in
+  // front of a server that is down, so it doesn't count.
+  function reachable() {
+    if (navigator.onLine === false) return Promise.resolve(false);
+    const check = api.snapshot(project).then(() => true, (e) => !!e.status && e.status < 500);
+    return Promise.race([check, new Promise((r) => setTimeout(() => r(false), 5000))]);
+  }
+
+  function showNotice(text) {
+    noticeText.textContent = text;
+    resumeBtn.hidden = true;
+    notice.hidden = false;
+  }
+
+  // scheduleRetry reconnects after 1 s, 2 s, 4 s… up to 30 s. Offline it waits for `online`.
+  function scheduleRetry() {
+    clearTimeout(retry);
+    if (navigator.onLine === false) {
+      showNotice('Offline, waiting for network…');
+      return;
+    }
+    showNotice('Reconnecting…');
+    retry = setTimeout(connect, Math.min(30000, 1000 * 2 ** backoff++));
+  }
+
+  // reconnectNow skips the backoff, e.g. when the network comes back. connect() opens at
+  // most one socket: it does nothing while `ws` is set.
+  function reconnectNow() {
+    if (closed || ended || ws) return;
+    clearTimeout(retry);
+    backoff = 0;
+    connect();
   }
 
   function showEnded() {
     ended = true;
     fails = 0;
+    backoff = 0;
     noticeText.textContent = 'Session ended';
     resumeBtn.hidden = false;
     notice.hidden = false;
@@ -179,13 +225,14 @@ export function showSession(root, project, num) {
   window.addEventListener('resize', onResize);
   onResize();
 
-  // back in the foreground: reconnect a dropped socket at once
+  // back in the foreground or back online: reconnect a dropped socket at once
   const onVis = () => {
     if (document.hidden) return;
-    if (!ws) connect();
+    if (!ws) reconnectNow();
     else control({ type: 'resize', cols: term.cols, rows: term.rows }); // a dead socket fails and closes
   };
   document.addEventListener('visibilitychange', onVis);
+  window.addEventListener('online', reconnectNow);
 
   const stopPoll = poll(async () => {
     const snap = await api.snapshot(project);
@@ -210,6 +257,7 @@ export function showSession(root, project, num) {
       if (vv) { vv.removeEventListener('resize', onResize); vv.removeEventListener('scroll', onResize); }
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('online', reconnectNow);
       if (ws) ws.close(1000, 'bye');
       term.dispose();
     },
