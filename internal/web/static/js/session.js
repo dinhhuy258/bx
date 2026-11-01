@@ -1,10 +1,9 @@
 import { api } from './api.js';
 import { h, bar, poll, toast, copyText } from './ui.js';
 
-const KEYS = [['1', '1'], ['2', '2'], ['3', '3'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['⏎', '\r'],
-  ['Esc', '\x1b'], ['Tab', '\t'], ['⇧Tab', '\x1b[Z'], ['^C', '\x03']];
 const MAX_INPUT = 64 * 1024; // the server reads frames up to 1 MB
 const ENTER_DELAY = 50; // ms between the text and Enter, so Claude doesn't take Enter as part of a paste
+const HOLD_DELAY = 400, HOLD_EVERY = 100; // ms: holding ▲/▼ repeats after HOLD_DELAY, every HOLD_EVERY
 
 // encodeMessage turns the input box into terminal bytes (without the final Enter). Control
 // characters are dropped, which also stops the text from ending a bracketed paste early.
@@ -25,17 +24,28 @@ export function showSession(root, project, num) {
   const resumeBtn = h('button', { class: 'primary', hidden: true, onclick: () => resume() }, 'Resume');
   const notice = h('div', { class: 'notice', hidden: true }, noticeText, resumeBtn);
   const keep = (e) => e.preventDefault(); // tapping a button must not close the keyboard
-  const keys = h('div', { class: 'keys' }, KEYS.map(([label, bytes]) =>
-    h('button', { onpointerdown: keep, onclick: () => send(bytes) }, label)));
   const input = h('textarea', { rows: 1, placeholder: 'Message Claude…', autocapitalize: 'off',
     autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter' });
-  const sendBtn = h('button', { class: 'primary', 'aria-label': 'Send', onpointerdown: keep, onclick: () => submit() }, '➤');
-  const copyBtn = h('button', { class: 'icon', 'aria-label': 'Copy screen', onpointerdown: keep,
+  // ▲/▼ send on pointerdown, then repeat while held; a keyboard-activated click (detail 0) sends too
+  let holdDelay = null, holdRepeat = null;
+  const stepBtn = (label, aria, bytes) => h('button', { 'aria-label': aria,
+    onpointerdown: (e) => { keep(e); if (e.button !== 0) return; send(bytes); startHold(bytes); },
+    onpointerup: stopHold, onpointercancel: stopHold, onpointerleave: stopHold,
+    oncontextmenu: (e) => e.preventDefault(),
+    onclick: (e) => { if (e.detail === 0) send(bytes); } }, label);
+  const stepper = h('div', { class: 'stepper' }, stepBtn('▲', 'Up', '\x1b[A'), stepBtn('▼', 'Down', '\x1b[B'));
+  // Enter with an empty box presses Enter (e.g. to pick a highlighted option); with text it sends it
+  const enterBtn = h('button', { class: 'enter', onpointerdown: keep,
+    onclick: () => (input.value.trim() ? submit() : send('\r')) }, 'Enter');
+  const copyBtn = h('button', { class: 'hk', 'aria-label': 'Copy screen', onpointerdown: keep,
     onclick: () => copyScreen() }, '⧉');
+  const escBtn = h('button', { class: 'hk', 'aria-label': 'Escape', onpointerdown: keep,
+    onclick: () => send('\x1b') }, 'Esc');
   const screen = h('div', { class: 'session' },
-    bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl], copyBtn),
+    bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl],
+      h('span', { class: 'hbtns' }, copyBtn, escBtn)),
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
-    keys, h('div', { class: 'input' }, input, sendBtn));
+    h('div', { class: 'input' }, input, stepper, enterBtn));
   root.append(screen);
   document.documentElement.classList.add('session-lock'); // see layout()
 
@@ -53,7 +63,7 @@ export function showSession(root, project, num) {
   let backoff = 0; // retries since the socket last opened
 
   // terminal replies (device attributes) and a hardware keyboard, e.g. on an iPad; typed keys
-  // go back to live first, like the key row
+  // go back to live first, like the buttons
   term.onData((d) => { toLive(); sendBytes(d, true); });
 
   function connect() {
@@ -167,7 +177,7 @@ export function showSession(root, project, num) {
   function control(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }
-  // back at live (↓ Live, a key, send, a reconnect) also ends a momentum glide, which would
+  // back at live (↓ Live, a button, send, a reconnect) also ends a momentum glide, which would
   // otherwise scroll back into tmux copy-mode while the user types
   function setScrolled(n) {
     scrolled = n;
@@ -189,14 +199,39 @@ export function showSession(root, project, num) {
       if (!sendBytes('\r') || input.value !== text) return; // keep the text if Enter didn't go
       input.value = '';
       grow();
+      updateEnter();
     }, ENTER_DELAY);
   }
 
+  function stopHold() {
+    clearTimeout(holdDelay);
+    clearInterval(holdRepeat);
+    holdDelay = holdRepeat = null;
+  }
+  function startHold(bytes) {
+    stopHold();
+    holdDelay = setTimeout(() => {
+      holdRepeat = setInterval(() => { toLive(); if (!sendBytes(bytes, true)) stopHold(); }, HOLD_EVERY);
+    }, HOLD_DELAY);
+  }
+
+  // the Enter button reads ➤ when the box has text; it glows while Claude waits for an answer
+  function updateEnter() {
+    const text = !!input.value.trim();
+    enterBtn.textContent = text ? '➤' : 'Enter';
+    enterBtn.setAttribute('aria-label', text ? 'Send' : 'Enter');
+    enterBtn.classList.toggle('solid', text || lastState === 'waiting');
+    enterBtn.classList.toggle('glow', !text && lastState === 'waiting');
+  }
+
   function grow() {
+    const border = input.offsetHeight - input.clientHeight; // so a grown box doesn't scroll by 2 px
     input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+    input.style.height = `${Math.min(input.scrollHeight + border, 120)}px`;
   }
   input.addEventListener('input', grow);
+  input.addEventListener('input', updateEnter);
+  updateEnter();
   // copy screen: xterm has no touch selection, so show the visible rows as plain text in a
   // sheet, where native long-press selection works. Scrolled back, that's the tmux history view.
   let copyDlg = null;
@@ -362,6 +397,8 @@ export function showSession(root, project, num) {
     stateEl.className = `badge ${st.state}`;
     stateEl.textContent = st.state;
     lastState = st.state;
+    escBtn.classList.toggle('stop', st.state === 'running');
+    updateEnter();
     // resumed elsewhere; 'starting' has a tmux session, so the stream can attach. Never 'gone'.
     if (ended && ['running', 'waiting', 'starting'].includes(st.state)) { ended = false; connect(); }
   });
@@ -376,6 +413,7 @@ export function showSession(root, project, num) {
       clearTimeout(resizeTimer);
       settleTimers.forEach(clearTimeout);
       stopGlide();
+      stopHold();
       stopPoll();
       if (vv) { vv.removeEventListener('resize', onResize); vv.removeEventListener('scroll', onResize); }
       window.removeEventListener('resize', onResize);
