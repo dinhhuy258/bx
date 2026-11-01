@@ -162,6 +162,7 @@ func put(t *testing.T, ts *httptest.Server, path string, body any) (api.Settings
 	t.Helper()
 	b, _ := json.Marshal(body)
 	req, _ := http.NewRequest(http.MethodPut, ts.URL+path, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
 	r, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

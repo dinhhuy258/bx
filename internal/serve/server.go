@@ -84,7 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/rename", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.Rename(p, r.Num, r.Title)
 	}))
-	return mux
+	return sameOrigin(mux)
 }
 
 func (s *Server) stateDir() string { return filepath.Join(s.Cfg.Root, "state") }
