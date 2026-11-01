@@ -45,6 +45,7 @@ export function showSession(root, project, num) {
   fit.fit();
   const encoder = new TextEncoder();
   let ws = null, opened = false, closed = false, ended = false, retry = null, scrolled = 0, lastState = '';
+  let fails = 0; // closes in a row before the socket opened
 
   // terminal replies (device attributes) and a hardware keyboard, e.g. on an iPad; typed keys
   // go back to live first, like the key row
@@ -58,6 +59,7 @@ export function showSession(root, project, num) {
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       opened = true;
+      fails = 0;
       notice.hidden = true;
       setScrolled(0);
       term.reset(); // tmux attach redraws the whole screen
@@ -72,7 +74,9 @@ export function showSession(root, project, num) {
     ws.onclose = (e) => {
       ws = null;
       if (closed) return;
-      if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done'))) {
+      if (!opened) fails++;
+      // the state can say alive when it isn't (idle if `claude agents` fails), so give up after 3 tries
+      if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done' || fails >= 3))) {
         showEnded();
         return;
       }
@@ -85,6 +89,7 @@ export function showSession(root, project, num) {
 
   function showEnded() {
     ended = true;
+    fails = 0;
     noticeText.textContent = 'Session ended';
     resumeBtn.hidden = false;
     notice.hidden = false;
@@ -112,13 +117,16 @@ export function showSession(root, project, num) {
 
   function submit() {
     const text = input.value;
-    if (!text.trim()) return;
     if (text.length > MAX_INPUT) { toast('Message too long'); return; }
+    const bytes = encodeMessage(text);
+    if (!bytes.replace(/\x1b\[20[01]~/g, '').trim()) return; // nothing left but control characters or blanks
     toLive();
-    if (!sendBytes(encodeMessage(text))) return;
-    setTimeout(() => sendBytes('\r'), ENTER_DELAY);
-    input.value = '';
-    grow();
+    if (!sendBytes(bytes)) return;
+    setTimeout(() => {
+      if (!sendBytes('\r') || input.value !== text) return; // keep the text if Enter didn't go
+      input.value = '';
+      grow();
+    }, ENTER_DELAY);
   }
 
   function grow() {
@@ -188,7 +196,7 @@ export function showSession(root, project, num) {
     stateEl.className = `badge ${st.state}`;
     stateEl.textContent = st.state;
     lastState = st.state;
-    if (ended && st.state !== 'gone' && st.state !== 'done') { ended = false; connect(); } // resumed elsewhere
+    if (ended && (st.state === 'running' || st.state === 'waiting')) { ended = false; connect(); } // resumed elsewhere
   });
 
   connect();
