@@ -1,0 +1,209 @@
+import { api } from './api.js';
+import { h, bar, poll, toast } from './ui.js';
+
+const KEYS = [['1', '1'], ['2', '2'], ['3', '3'], ['↑', '\x1b[A'], ['↓', '\x1b[B'], ['⏎', '\r'],
+  ['Esc', '\x1b'], ['Tab', '\t'], ['⇧Tab', '\x1b[Z'], ['^C', '\x03']];
+const MAX_INPUT = 64 * 1024; // the server reads frames up to 1 MB
+const ENTER_DELAY = 50; // ms between the text and Enter, so Claude doesn't take Enter as part of a paste
+
+// encodeMessage turns the input box into terminal bytes (without the final Enter). Control
+// characters are dropped, which also stops the text from ending a bracketed paste early.
+// Multi-line text goes as one bracketed paste so its newlines don't submit. Outside a paste a
+// tab would press Tab, so a single line gets spaces instead.
+export function encodeMessage(text) {
+  const clean = text.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+  return clean.includes('\n') ? `\x1b[200~${clean}\x1b[201~` : clean.replace(/\t/g, ' ');
+}
+
+export function showSession(root, project, num) {
+  const backHref = `#/p/${encodeURIComponent(project)}`;
+  const titleEl = h('span', {}, `#${num}`);
+  const stateEl = h('span', { class: 'badge' });
+  const termEl = h('div', { class: 'term' });
+  const liveBtn = h('button', { class: 'live', hidden: true, onclick: () => toLive() }, '↓ Live');
+  const noticeText = h('span');
+  const resumeBtn = h('button', { class: 'primary', hidden: true, onclick: () => resume() }, 'Resume');
+  const notice = h('div', { class: 'notice', hidden: true }, noticeText, resumeBtn);
+  const keep = (e) => e.preventDefault(); // tapping a button must not close the keyboard
+  const keys = h('div', { class: 'keys' }, KEYS.map(([label, bytes]) =>
+    h('button', { onpointerdown: keep, onclick: () => send(bytes) }, label)));
+  const input = h('textarea', { rows: 1, placeholder: 'Message Claude…', autocapitalize: 'off',
+    autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter' });
+  const sendBtn = h('button', { class: 'primary', 'aria-label': 'Send', onpointerdown: keep, onclick: () => submit() }, '➤');
+  const screen = h('div', { class: 'session' },
+    bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl]),
+    h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
+    keys, h('div', { class: 'input' }, input, sendBtn));
+  root.append(screen);
+
+  const term = new window.Terminal({ fontSize: 12, fontFamily: 'Menlo, monospace', scrollback: 0,
+    cursorBlink: false, theme: { background: '#111111' } });
+  const fit = new window.FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(termEl);
+  term.textarea.setAttribute('inputmode', 'none'); // tapping the terminal doesn't open the keyboard
+  fit.fit();
+  const encoder = new TextEncoder();
+  let ws = null, opened = false, closed = false, ended = false, retry = null, scrolled = 0, lastState = '';
+
+  // terminal replies (device attributes) and a hardware keyboard, e.g. on an iPad; typed keys
+  // go back to live first, like the key row
+  term.onData((d) => { toLive(); sendBytes(d, true); });
+
+  function connect() {
+    if (closed || ended || ws) return;
+    clearTimeout(retry);
+    opened = false;
+    ws = new WebSocket(api.streamURL(project, num, term.cols, term.rows));
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => {
+      opened = true;
+      notice.hidden = true;
+      setScrolled(0);
+      term.reset(); // tmux attach redraws the whole screen
+    };
+    ws.onmessage = (e) => {
+      if (typeof e.data === 'string') {
+        try { if (JSON.parse(e.data).type === 'copy_end') setScrolled(0); } catch { /* ignore */ }
+        return;
+      }
+      term.write(new Uint8Array(e.data));
+    };
+    ws.onclose = (e) => {
+      ws = null;
+      if (closed) return;
+      if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done'))) {
+        showEnded();
+        return;
+      }
+      noticeText.textContent = 'Reconnecting…';
+      resumeBtn.hidden = true;
+      notice.hidden = false;
+      retry = setTimeout(connect, 1500);
+    };
+  }
+
+  function showEnded() {
+    ended = true;
+    noticeText.textContent = 'Session ended';
+    resumeBtn.hidden = false;
+    notice.hidden = false;
+  }
+
+  async function resume() {
+    try { await api.action(project, 'resume', { num }); } catch (e) { toast(e.message); return; }
+    ended = false;
+    lastState = '';
+    connect();
+  }
+
+  function sendBytes(s, quiet) {
+    if (ws && ws.readyState === WebSocket.OPEN) { ws.send(encoder.encode(s)); return true; }
+    if (!quiet) toast('Not connected');
+    return false;
+  }
+  function control(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+  function setScrolled(n) { scrolled = n; liveBtn.hidden = n === 0; }
+  // keys typed while scrolled back would go to tmux copy-mode; go back to live first
+  function toLive() { if (scrolled) control({ type: 'scroll', lines: 0 }); setScrolled(0); }
+  function send(bytes) { toLive(); sendBytes(bytes); }
+
+  function submit() {
+    const text = input.value;
+    if (!text.trim()) return;
+    if (text.length > MAX_INPUT) { toast('Message too long'); return; }
+    toLive();
+    if (!sendBytes(encodeMessage(text))) return;
+    setTimeout(() => sendBytes('\r'), ENTER_DELAY);
+    input.value = '';
+    grow();
+  }
+
+  function grow() {
+    input.style.height = 'auto';
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+  }
+  input.addEventListener('input', grow);
+
+  // swipe to scroll tmux history: finger down = back in time
+  function scrollBy(delta) {
+    const next = Math.min(0, scrolled + delta);
+    if (next === scrolled) return;
+    if (next === 0) { toLive(); return; }
+    control({ type: 'scroll', lines: next - scrolled });
+    setScrolled(next);
+  }
+  let touchY = null, acc = 0;
+  const lineH = () => Math.max(8, termEl.clientHeight / term.rows);
+  const onTouchStart = (e) => { touchY = e.touches[0].clientY; acc = 0; };
+  const onTouchMove = (e) => {
+    if (touchY === null) return;
+    e.preventDefault();
+    const y = e.touches[0].clientY;
+    acc += y - touchY;
+    touchY = y;
+    const lines = Math.trunc(acc / lineH());
+    if (!lines) return;
+    acc -= lines * lineH();
+    scrollBy(-lines);
+  };
+  const onTouchEnd = () => { touchY = null; };
+  const onWheel = (e) => { e.preventDefault(); e.stopPropagation(); scrollBy(e.deltaY < 0 ? -3 : 3); };
+  termEl.addEventListener('touchstart', onTouchStart, { passive: true });
+  termEl.addEventListener('touchmove', onTouchMove, { passive: false });
+  termEl.addEventListener('touchend', onTouchEnd);
+  termEl.addEventListener('wheel', onWheel, { passive: false, capture: true });
+
+  // fit the screen to the visual viewport (the keyboard shrinks it on iOS), then tell tmux
+  let resizeTimer = null;
+  const vv = window.visualViewport;
+  const onResize = () => {
+    if (vv) { screen.style.height = `${vv.height}px`; screen.style.top = `${vv.offsetTop}px`; }
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      fit.fit();
+      control({ type: 'resize', cols: term.cols, rows: term.rows });
+    }, 100);
+  };
+  if (vv) { vv.addEventListener('resize', onResize); vv.addEventListener('scroll', onResize); }
+  window.addEventListener('resize', onResize);
+  onResize();
+
+  // back in the foreground: reconnect a dropped socket at once
+  const onVis = () => {
+    if (document.hidden) return;
+    if (!ws) connect();
+    else control({ type: 'resize', cols: term.cols, rows: term.rows }); // a dead socket fails and closes
+  };
+  document.addEventListener('visibilitychange', onVis);
+
+  const stopPoll = poll(async () => {
+    const snap = await api.snapshot(project);
+    const s = (snap.project.sessions || {})[num];
+    if (!s) { toast(`No session #${num}`); location.hash = backHref; return; }
+    const st = (snap.session_states || {})[num] || { state: '' };
+    titleEl.textContent = s.title || `#${num}`;
+    stateEl.className = `badge ${st.state}`;
+    stateEl.textContent = st.state;
+    lastState = st.state;
+    if (ended && st.state !== 'gone' && st.state !== 'done') { ended = false; connect(); } // resumed elsewhere
+  });
+
+  connect();
+
+  return {
+    stop() {
+      closed = true;
+      clearTimeout(retry);
+      clearTimeout(resizeTimer);
+      stopPoll();
+      if (vv) { vv.removeEventListener('resize', onResize); vv.removeEventListener('scroll', onResize); }
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onVis);
+      if (ws) ws.close(1000, 'bye');
+      term.dispose();
+    },
+  };
+}

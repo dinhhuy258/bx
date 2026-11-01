@@ -1,0 +1,52 @@
+:root { color-scheme: dark; --bg: #111; --fg: #e6e6e6; --dim: #888; --line: #2a2a2a; --accent: #4c9aff; --wait: #f5a623; --run: #3fb950; --gone: #f85149; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.4 -apple-system, system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+a { color: inherit; text-decoration: none; }
+/* 16px keeps iOS from zooming when a field gets focus */
+button, select, input, textarea { font: inherit; font-size: 16px; color: inherit; background: #1d1d1d; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.icon, a.icon { background: none; border: none; font-size: 22px; padding: 4px 10px; min-width: 44px; min-height: 44px; text-align: center; display: inline-flex; align-items: center; justify-content: center; }
+
+.bar { display: flex; align-items: center; gap: 4px; padding: 0 4px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1; }
+.bar h1 { flex: 1; min-width: 0; font-size: 17px; margin: 0; display: flex; gap: 8px; align-items: center; overflow: hidden; white-space: nowrap; }
+.bar h1 > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.sub { color: var(--dim); padding: 6px 14px; font-size: 13px; }
+
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.list li.done { opacity: .5; }
+.row { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; min-width: 0; }
+.title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { color: var(--dim); font-size: 13px; display: flex; gap: 8px; }
+.badge { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.badge.waiting { color: var(--wait); }
+.badge.running { color: var(--run); }
+.badge.gone { color: var(--gone); }
+
+.group > header { display: flex; align-items: center; gap: 8px; padding: 10px 0 2px 14px; color: var(--dim); font-size: 13px; }
+.group > header .title { flex: 1; color: var(--fg); font-weight: 600; }
+.empty, .help { padding: 14px; color: var(--dim); }
+.error { padding: 10px 14px; color: var(--gone); }
+
+dialog { background: #1a1a1a; color: var(--fg); border: 1px solid var(--line); border-radius: 12px; width: min(92vw, 420px); padding: 16px; }
+dialog::backdrop { background: rgba(0, 0, 0, .6); }
+dialog h2 { font-size: 16px; margin: 0 0 12px; word-break: break-word; }
+dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 16px 0 0; }
+dialog.sheet[open] { display: flex; flex-direction: column; gap: 8px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+.field small { color: var(--dim); }
+.checks label { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+.toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #333; padding: 10px 16px; border-radius: 8px; z-index: 10; max-width: 90vw; }
+
+/* session screen: fills the visual viewport (JS sets height/top when the keyboard opens) */
+.session { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--bg); padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
+.term-wrap { flex: 1; position: relative; min-height: 0; }
+.term { position: absolute; inset: 0; padding: 2px; touch-action: none; }
+.live { position: absolute; right: 10px; bottom: 10px; z-index: 2; }
+.notice { position: absolute; left: 10px; right: 10px; bottom: 10px; background: #222; padding: 10px; border-radius: 8px; display: flex; gap: 10px; align-items: center; justify-content: space-between; z-index: 2; }
+.keys { display: flex; gap: 4px; overflow-x: auto; padding: 6px; border-top: 1px solid var(--line); }
+.keys button { flex: 0 0 auto; min-width: 40px; padding: 8px 10px; font-family: Menlo, monospace; font-size: 14px; }
+.input { display: flex; gap: 6px; align-items: flex-end; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); }
+.input textarea { flex: 1; resize: none; max-height: 120px; }
