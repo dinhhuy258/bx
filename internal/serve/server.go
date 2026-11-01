@@ -19,6 +19,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
+	"github.com/dinhhuy258/bx/internal/web"
 )
 
 // Server serves the API for every project under the bx root. It is the only writer of the
@@ -84,6 +85,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/rename", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.Rename(p, r.Num, r.Title)
 	}))
+	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
 	return sameOrigin(mux)
 }
 

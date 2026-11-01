@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -351,5 +352,21 @@ func TestSnapshotSessionStates(t *testing.T) {
 		if snap.SessionStates[n] != w {
 			t.Errorf("session %d: got %+v, want %+v", n, snap.SessionStates[n], w)
 		}
+	}
+}
+
+func TestWebAppAndAPIShareTheMux(t *testing.T) {
+	_, _, ts := newServer(t)
+	r, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(r.Body)
+	_ = r.Body.Close()
+	if r.StatusCode != 200 || !strings.Contains(string(b), "<title>bx</title>") {
+		t.Fatalf("GET /: %d %.80s", r.StatusCode, b)
+	}
+	if list, code := get[[]api.ProjectSummary](t, ts, "/api/projects"); code != 200 || len(list) != 1 {
+		t.Fatalf("GET /api/projects: %d %+v", code, list)
 	}
 }
