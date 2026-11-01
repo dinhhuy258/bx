@@ -24,8 +24,14 @@ func TestHandlerServesApp(t *testing.T) {
 		if r.StatusCode != 200 || !strings.Contains(string(b), c.want) {
 			t.Errorf("%s: %d, missing %q", c.path, r.StatusCode, c.want)
 		}
-		if csp := r.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "default-src 'self'") {
-			t.Errorf("%s: CSP %q", c.path, csp)
+		csp := r.Header.Get("Content-Security-Policy")
+		for _, d := range []string{"default-src 'self'", "connect-src 'self';", "frame-ancestors 'none'"} {
+			if !strings.Contains(csp, d) {
+				t.Errorf("%s: CSP %q lacks %q", c.path, csp, d)
+			}
+		}
+		if xfo := r.Header.Get("X-Frame-Options"); xfo != "DENY" {
+			t.Errorf("%s: X-Frame-Options %q", c.path, xfo)
 		}
 	}
 	if r, _ := http.Get(ts.URL + "/nope.js"); r.StatusCode != 404 {

@@ -12,7 +12,9 @@ import (
 var files embed.FS
 
 // csp allows only this server. xterm.js adds <style> elements, hence 'unsafe-inline' for styles.
-const csp = "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+// frame-ancestors 'none' stops other pages from framing the app: a framed copy is same-origin,
+// so the origin guard could not tell its requests apart.
+const csp = "default-src 'self'; connect-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
 
 // Handler serves the app. no-cache makes the browser revalidate, so a deploy shows up on reload.
 func Handler() http.Handler {
@@ -23,6 +25,7 @@ func Handler() http.Handler {
 	files := http.FileServerFS(sub)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", csp)
+		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Cache-Control", "no-cache")
 		files.ServeHTTP(w, r)
 	})
