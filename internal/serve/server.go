@@ -224,7 +224,30 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	if titles := s.App.Titles(p, live.Agents); len(titles) > 0 {
 		p = s.setTitles(p, titles)
 	}
-	writeJSON(w, api.Snapshot{Project: p, Live: live})
+	writeJSON(w, api.Snapshot{Project: p, Live: live, SessionStates: sessionStates(p, live)})
+}
+
+// sessionStates derives every session's state with the rules the TUI uses (ui.Model), so the
+// web client does not carry its own copy.
+func sessionStates(p *state.Project, live ui.Live) map[int]api.SessionState {
+	m := ui.NewModel(p, ui.Options{})
+	m.SetLive(live)
+	out := make(map[int]api.SessionState, len(p.Sessions))
+	for n, s := range p.Sessions {
+		st := "idle"
+		switch {
+		case s.Done:
+			st = "done"
+		case m.Gone(n):
+			st = "gone"
+		case m.State(n) == claude.Waiting:
+			st = "waiting"
+		case m.State(n) == claude.Running:
+			st = "running"
+		}
+		out[n] = api.SessionState{State: st, Text: m.StateText(n)}
+	}
+	return out
 }
 
 // setTitles names unnamed sessions after their first prompt. It reloads the project under the

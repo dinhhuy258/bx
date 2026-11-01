@@ -313,3 +313,42 @@ func TestWorkspaceStories(t *testing.T) {
 		t.Fatalf("%d %+v", code, res)
 	}
 }
+
+func TestSnapshotSessionStates(t *testing.T) {
+	s, _, ts := newServer(t)
+	s.Lister = fakeLister{[]claude.Agent{
+		{SessionID: "u1", Status: "waiting"},
+		{SessionID: "u4", Status: "busy"},
+		{SessionID: "u5", Status: "idle"},
+	}}
+	p, err := s.App.LoadProject("home-network")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.AddSession(&state.Session{Story: "s1", UUID: "u2", Title: "finished", Done: true}) // 2
+	p.AddSession(&state.Session{UUID: "u3", Title: "lost"})                              // 3: no agent
+	p.AddSession(&state.Session{UUID: "u4", Title: "busy"})                              // 4
+	p.AddSession(&state.Session{UUID: "u5", Title: "quiet"})                             // 5
+	if err := s.App.SaveProject(p); err != nil {
+		t.Fatal(err)
+	}
+	snap, code := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if code != 200 {
+		t.Fatal(code)
+	}
+	want := map[int]api.SessionState{
+		1: {State: "waiting", Text: "asks: needs you"},
+		2: {State: "done", Text: "done"},
+		3: {State: "gone", Text: "gone · r to resume"},
+		4: {State: "running", Text: "running"},
+		5: {State: "idle", Text: "idle"},
+	}
+	if len(snap.SessionStates) != len(want) {
+		t.Fatalf("%+v", snap.SessionStates)
+	}
+	for n, w := range want {
+		if snap.SessionStates[n] != w {
+			t.Errorf("session %d: got %+v, want %+v", n, snap.SessionStates[n], w)
+		}
+	}
+}

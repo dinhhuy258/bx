@@ -9,8 +9,16 @@ import (
 
 // Snapshot is GET /api/projects/{name}.
 type Snapshot struct {
-	Project *state.Project `json:"project"` // the stored record (stories, sessions)
-	Live    ui.Live        `json:"live"`    // agent states, diff, branch, dirty count, server time
+	Project       *state.Project       `json:"project"`        // the stored record (stories, sessions)
+	Live          ui.Live              `json:"live"`           // agent states, diff, branch, dirty count, server time
+	SessionStates map[int]SessionState `json:"session_states"` // derived from Project and Live; read by the web client
+}
+
+// SessionState is the derived state of one session, keyed by session number in Snapshot.
+// State is "running", "waiting", "idle", "done" or "gone"; Text is the TUI's row label.
+type SessionState struct {
+	State string `json:"state"`
+	Text  string `json:"text"`
 }
 
 // ProjectSummary is one row of GET /api/projects.
