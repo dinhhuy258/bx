@@ -150,20 +150,26 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	interval, timeout := pingInterval, pingTimeout
+	// The pinger has its own context, stopped before the socket closes: a ping that fails
+	// because we are closing it is not worth a log line.
+	pingCtx, stopPing := context.WithCancel(ctx)
+	defer stopPing()
+	pingDone := make(chan struct{})
 	go func() { // keepalive: a phone that slept or changed network can leave a dead socket that looks open
+		defer close(pingDone)
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-pingCtx.Done():
 				return
 			case <-t.C:
 			}
-			pctx, pcancel := context.WithTimeout(ctx, timeout)
+			pctx, pcancel := context.WithTimeout(pingCtx, timeout)
 			err := c.Ping(pctx) // the pong is read by the socket → pty loop
 			pcancel()
 			if err != nil {
-				if ctx.Err() == nil {
+				if pingCtx.Err() == nil {
 					s.Log("stream %s [%d]: ping: %v", p.Name, num, err)
 				}
 				cancel()
@@ -175,6 +181,8 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	case <-attachDone:
 	case <-ctx.Done():
 	}
+	stopPing()
+	<-pingDone
 	switch {
 	case ctx.Err() == nil: // tmux attach exited by itself: the session is gone
 		c.Close(websocket.StatusNormalClosure, "session ended")

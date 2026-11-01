@@ -52,15 +52,27 @@ func (attachFake) Command(...string) *exec.Cmd {
 	return exec.Command("sh", "-c", "while :; do echo x; sleep 0.1; done")
 }
 
+// endingFake is a fake tmux whose attach exits after 200 ms: the session ends.
+type endingFake struct{ *tmux.Fake }
+
+func (endingFake) Command(...string) *exec.Cmd {
+	return exec.Command("sh", "-c", "echo x; sleep 0.2")
+}
+
 // pingStream shortens the keepalive, opens session 1's stream and returns the client socket
 // and a channel of the server's log lines.
 func pingStream(t *testing.T, interval, timeout time.Duration) (*websocket.Conn, <-chan string) {
+	t.Helper()
+	return pingStreamWith(t, interval, timeout, func(f *tmux.Fake) tmux.Exec { return attachFake{f} })
+}
+
+func pingStreamWith(t *testing.T, interval, timeout time.Duration, fake func(*tmux.Fake) tmux.Exec) (*websocket.Conn, <-chan string) {
 	t.Helper()
 	oldInterval, oldTimeout := pingInterval, pingTimeout
 	pingInterval, pingTimeout = interval, timeout
 	t.Cleanup(func() { pingInterval, pingTimeout = oldInterval, oldTimeout })
 	s, f, ts := newServer(t)
-	s.App.Tmux = tmux.New(attachFake{f})
+	s.App.Tmux = tmux.New(fake(f))
 	logs := make(chan string, 100)
 	done := make(chan struct{}) // the stream handler logged "closed"
 	var once sync.Once
@@ -141,6 +153,38 @@ func TestStreamPingDropsADeadClient(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatalf("stream still open (failed ping: %v)", pinged)
+		}
+	}
+}
+
+// TestStreamEndLogsNoPing: the session ends while a ping waits for its pong (the client
+// doesn't read). Closing the socket must not log that ping as failed.
+func TestStreamEndLogsNoPing(t *testing.T) {
+	c, logs := pingStreamWith(t, 50*time.Millisecond, time.Second,
+		func(f *tmux.Fake) tmux.Exec { return endingFake{f} })
+	deadline := time.After(1500 * time.Millisecond) // past the session end and the ping timeout
+	closed := false
+	for {
+		select {
+		case l := <-logs:
+			if strings.Contains(l, "ping:") {
+				t.Fatalf("server log: %s", l)
+			}
+			closed = closed || strings.HasSuffix(l, ": closed")
+		case <-deadline:
+			c.CloseNow() // the server's close handshake may wait for this client
+			for !closed {
+				select {
+				case l := <-logs:
+					if strings.Contains(l, "ping:") {
+						t.Fatalf("server log: %s", l)
+					}
+					closed = strings.HasSuffix(l, ": closed")
+				case <-time.After(5 * time.Second):
+					t.Fatal("stream did not close")
+				}
+			}
+			return
 		}
 	}
 }
