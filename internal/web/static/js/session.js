@@ -167,7 +167,13 @@ export function showSession(root, project, num) {
   function control(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }
-  function setScrolled(n) { scrolled = n; liveBtn.hidden = n === 0; }
+  // back at live (↓ Live, a key, send, a reconnect) also ends a momentum glide, which would
+  // otherwise scroll back into tmux copy-mode while the user types
+  function setScrolled(n) {
+    scrolled = n;
+    liveBtn.hidden = n === 0;
+    if (n === 0) stopGlide();
+  }
   // keys typed while scrolled back would go to tmux copy-mode; go back to live first
   function toLive() { if (scrolled) control({ type: 'scroll', lines: 0 }); setScrolled(0); }
   function send(bytes) { toLive(); sendBytes(bytes); }
@@ -231,25 +237,70 @@ export function showSession(root, project, num) {
     control({ type: 'scroll', lines: next - scrolled });
     setScrolled(next);
   }
-  let touchY = null, acc = 0;
+  // A fling keeps scrolling after the finger lifts, iOS-style (pattern from m-terminal's
+  // terminalTouch.ts): the release velocity, over the last 100 ms, decays exponentially
+  // (τ 325 ms, UIScrollView's constant). Each frame adds whole lines at most once, so a fast
+  // glide sends one scroll frame per animation frame. A new touch stops it.
+  const DECAY_TAU = 325, MIN_FLING = 0.05, STOP_SPEED = 0.01, VELOCITY_WINDOW = 100; // ms, px/ms
+  let touchY = null, acc = 0, samples = [], glide = 0;
   const lineH = () => Math.max(8, termEl.clientHeight / term.rows);
-  const onTouchStart = (e) => { touchY = e.touches[0].clientY; acc = 0; };
+  // applyAcc scrolls by the whole lines in acc (px; finger down is positive)
+  const applyAcc = () => {
+    const lines = Math.trunc(acc / lineH());
+    if (!lines) return;
+    acc -= lines * lineH();
+    scrollBy(-lines);
+  };
+  const stopGlide = () => { cancelAnimationFrame(glide); glide = 0; };
+  const startGlide = (v) => {
+    let prev = performance.now();
+    const step = (now) => {
+      glide = 0;
+      const dt = now - prev;
+      prev = now;
+      acc += v * dt;
+      applyAcc();
+      v *= Math.exp(-dt / DECAY_TAU);
+      if (v < 0 && scrolled === 0) return; // back at live
+      if (Math.abs(v) > STOP_SPEED) glide = requestAnimationFrame(step);
+    };
+    glide = requestAnimationFrame(step);
+  };
+  const onTouchStart = (e) => {
+    stopGlide();
+    touchY = e.touches[0].clientY;
+    acc = 0;
+    samples = [{ y: touchY, t: performance.now() }];
+  };
   const onTouchMove = (e) => {
     if (touchY === null) return;
     e.preventDefault();
     const y = e.touches[0].clientY;
     acc += y - touchY;
     touchY = y;
-    const lines = Math.trunc(acc / lineH());
-    if (!lines) return;
-    acc -= lines * lineH();
-    scrollBy(-lines);
+    const now = performance.now();
+    samples.push({ y, t: now });
+    while (samples.length > 1 && now - samples[0].t > VELOCITY_WINDOW) samples.shift();
+    applyAcc();
   };
-  const onTouchEnd = () => { touchY = null; };
+  const onTouchEnd = (e) => {
+    if (touchY === null) return;
+    touchY = null;
+    if (e.type === 'touchcancel' || e.touches.length) return;
+    // against the release time: a finger held still sends no touchmove, and must not fling
+    const now = performance.now();
+    const recent = samples.filter((s) => now - s.t <= VELOCITY_WINDOW);
+    if (recent.length < 2) return;
+    const first = recent[0], last = recent[recent.length - 1];
+    if (last.t - first.t < 1) return;
+    const v = (last.y - first.y) / (last.t - first.t);
+    if (Math.abs(v) >= MIN_FLING && !(v < 0 && scrolled === 0)) startGlide(v);
+  };
   const onWheel = (e) => { e.preventDefault(); e.stopPropagation(); scrollBy(e.deltaY < 0 ? -3 : 3); };
   termEl.addEventListener('touchstart', onTouchStart, { passive: true });
   termEl.addEventListener('touchmove', onTouchMove, { passive: false });
   termEl.addEventListener('touchend', onTouchEnd);
+  termEl.addEventListener('touchcancel', onTouchEnd);
   termEl.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
   // Fit the screen to the visual viewport (the keyboard shrinks it on iOS), then tell tmux.
@@ -324,6 +375,7 @@ export function showSession(root, project, num) {
       clearTimeout(offlineRetry);
       clearTimeout(resizeTimer);
       settleTimers.forEach(clearTimeout);
+      stopGlide();
       stopPoll();
       if (vv) { vv.removeEventListener('resize', onResize); vv.removeEventListener('scroll', onResize); }
       window.removeEventListener('resize', onResize);
