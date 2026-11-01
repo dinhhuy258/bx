@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/dinhhuy258/bx/internal/app"
+	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/settings"
 )
@@ -28,10 +29,8 @@ func setup() (*config.Config, *app.App, *log.Logger, error) {
 	if a.Self, err = os.Executable(); err != nil {
 		logger.Printf("no bx binary path, workspace stories run without the guard: %v", err)
 	}
-	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+	if dir := claude.ConfigDir(); dir != "" {
 		a.Transcripts = filepath.Join(dir, "projects")
-	} else if home, err := os.UserHomeDir(); err == nil {
-		a.Transcripts = filepath.Join(home, ".claude", "projects")
 	}
 	if a.Settings, err = settings.Open(cfg.SettingsFile(), logger.Printf); err != nil {
 		return nil, nil, nil, err

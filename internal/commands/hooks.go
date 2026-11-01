@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/cli"
 	"github.com/dinhhuy258/bx/internal/notify"
 )
@@ -24,8 +25,12 @@ func runHooks(args []string, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "bx hooks:", err)
 		return 1
 	}
-	home, _ := os.UserHomeDir()
-	if err := installHooks(filepath.Join(home, ".claude", "settings.json"), self, out); err != nil {
+	dir := claude.ConfigDir()
+	if dir == "" {
+		fmt.Fprintln(errOut, "bx hooks: no Claude config dir (set CLAUDE_CONFIG_DIR or HOME)")
+		return 1
+	}
+	if err := installHooks(filepath.Join(dir, "settings.json"), self, out); err != nil {
 		fmt.Fprintln(errOut, "bx hooks:", err)
 		return 1
 	}
