@@ -209,6 +209,10 @@ export function showSession(root, project, num) {
     copyDlg = dlg;
     document.body.append(dlg);
     dlg.showModal();
+    // open at the top-left; the textarea is readonly, so its focus opens no keyboard
+    area.setSelectionRange(0, 0);
+    area.scrollTop = 0;
+    area.scrollLeft = 0;
   }
 
   // swipe to scroll tmux history: finger down = back in time
