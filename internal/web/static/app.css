@@ -44,6 +44,9 @@ dialog.sheet[open] { display: flex; flex-direction: column; gap: 8px; }
 .session { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--bg); padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 .term-wrap { flex: 1; position: relative; min-height: 0; }
 .term { position: absolute; inset: 0; padding: 2px; touch-action: none; }
+/* xterm's DOM renderer replaces row spans on every redraw; a touch that starts on one keeps
+   targeting the detached node, so its touchmoves never reach .term and a swipe stops after a line */
+.term .xterm-rows { pointer-events: none; }
 .live { position: absolute; right: 10px; bottom: 10px; z-index: 2; }
 .notice { position: absolute; left: 10px; right: 10px; bottom: 10px; background: #222; padding: 10px; border-radius: 8px; display: flex; gap: 10px; align-items: center; justify-content: space-between; z-index: 2; }
 .keys { display: flex; gap: 4px; overflow-x: auto; padding: 6px; border-top: 1px solid var(--line); }
