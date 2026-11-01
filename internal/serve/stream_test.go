@@ -5,10 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +40,107 @@ func TestStreamRefusesASessionThatIsNotRunning(t *testing.T) {
 		r.Body.Close()
 		if r.StatusCode != want {
 			t.Errorf("%s: %d, want %d", path, r.StatusCode, want)
+		}
+	}
+}
+
+// attachFake is a fake tmux whose attach prints a line every 100 ms in the pty, so a stream
+// opens without tmux. It prints because on macOS closing the pty waits for the pending read.
+type attachFake struct{ *tmux.Fake }
+
+func (attachFake) Command(...string) *exec.Cmd {
+	return exec.Command("sh", "-c", "while :; do echo x; sleep 0.1; done")
+}
+
+// pingStream shortens the keepalive, opens session 1's stream and returns the client socket
+// and a channel of the server's log lines.
+func pingStream(t *testing.T, interval, timeout time.Duration) (*websocket.Conn, <-chan string) {
+	t.Helper()
+	oldInterval, oldTimeout := pingInterval, pingTimeout
+	pingInterval, pingTimeout = interval, timeout
+	t.Cleanup(func() { pingInterval, pingTimeout = oldInterval, oldTimeout })
+	s, f, ts := newServer(t)
+	s.App.Tmux = tmux.New(attachFake{f})
+	logs := make(chan string, 100)
+	done := make(chan struct{}) // the stream handler logged "closed"
+	var once sync.Once
+	s.Log = func(format string, args ...any) {
+		l := fmt.Sprintf(format, args...)
+		if strings.HasSuffix(l, ": closed") {
+			once.Do(func() { close(done) })
+		}
+		select {
+		case logs <- l:
+		default:
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/projects/home-network/sessions/1/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { // before the package vars are restored: the handler reads them
+		c.CloseNow()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("stream did not close")
+		}
+	})
+	return c, logs
+}
+
+func TestStreamPingKeepsAReadingClient(t *testing.T) {
+	c, logs := pingStream(t, 50*time.Millisecond, 2*time.Second)
+	readErr := make(chan error, 1)
+	go func() { // reading answers the server's pings
+		for {
+			if _, _, err := c.Read(context.Background()); err != nil {
+				readErr <- err
+				return
+			}
+		}
+	}()
+	deadline := time.After(time.Second) // 20 ping intervals
+	for {
+		select {
+		case err := <-readErr:
+			t.Fatalf("stream closed: %v", err)
+		case l := <-logs:
+			if strings.Contains(l, "ping:") || strings.Contains(l, "closed") {
+				t.Fatalf("server log: %s", l)
+			}
+		case <-deadline:
+			return
+		}
+	}
+}
+
+func TestStreamPingDropsADeadClient(t *testing.T) {
+	interval, timeout := 50*time.Millisecond, 200*time.Millisecond
+	_, logs := pingStream(t, interval, timeout) // never reads, so never answers a ping
+	start := time.Now()
+	deadline := time.After(5 * time.Second)
+	pinged := false
+	for {
+		select {
+		case l := <-logs:
+			t.Logf("%v %s", time.Since(start), l)
+			if strings.Contains(l, "ping:") {
+				pinged = true
+				if d := time.Since(start); d > interval+timeout+2*time.Second {
+					t.Errorf("ping failed after %v", d)
+				}
+			}
+			if strings.Contains(l, "closed") {
+				if !pinged {
+					t.Fatalf("stream closed without a failed ping")
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatalf("stream still open (failed ping: %v)", pinged)
 		}
 	}
 }

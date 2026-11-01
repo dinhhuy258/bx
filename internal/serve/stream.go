@@ -149,6 +149,28 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	interval, timeout := pingInterval, pingTimeout
+	go func() { // keepalive: a phone that slept or changed network can leave a dead socket that looks open
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			pctx, pcancel := context.WithTimeout(ctx, timeout)
+			err := c.Ping(pctx) // the pong is read by the socket → pty loop
+			pcancel()
+			if err != nil {
+				if ctx.Err() == nil {
+					s.Log("stream %s [%d]: ping: %v", p.Name, num, err)
+				}
+				cancel()
+				return
+			}
+		}
+	}()
 	select {
 	case <-attachDone:
 	case <-ctx.Done():
@@ -165,6 +187,13 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 
 // modeCheckDelay is how long after a key in copy-mode the server asks tmux whether it left.
 const modeCheckDelay = 50 * time.Millisecond
+
+// pingInterval is how often the server pings a stream's client; one that does not answer
+// within pingTimeout is dropped. Variables so tests can shorten them.
+var (
+	pingInterval = 30 * time.Second
+	pingTimeout  = 10 * time.Second
+)
 
 // dim parses a terminal dimension and clamps it to something tmux accepts.
 func dim(s string, def int) int {
