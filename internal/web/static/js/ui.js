@@ -27,11 +27,12 @@ export function toast(msg) {
 // copyText puts text on the clipboard and returns whether it worked (a promise of it in a
 // secure context). Call it synchronously inside a tap. Pattern from m-terminal's clipboard.ts:
 // navigator.clipboard only exists in a secure context (https or localhost), so over plain http
-// it falls back to a hidden textarea and document.execCommand('copy').
+// it falls back to a hidden textarea and document.execCommand('copy'). A rejected writeText
+// gets no fallback: it rejects after the tap, and execCommand outside a tap fails too.
 export function copyText(text) {
   if (window.isSecureContext && navigator.clipboard?.writeText) {
     try {
-      return navigator.clipboard.writeText(text).then(() => true, () => legacyCopy(text));
+      return navigator.clipboard.writeText(text).then(() => true, () => false);
     } catch { /* fall through */ }
   }
   return legacyCopy(text);
