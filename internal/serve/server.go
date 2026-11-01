@@ -226,20 +226,34 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	if titles := s.App.Titles(p, live.Agents); len(titles) > 0 {
 		p = s.setTitles(p, titles)
 	}
-	writeJSON(w, api.Snapshot{Project: p, Live: live, SessionStates: sessionStates(p, live)})
+	tm, err := s.App.Live(p)
+	if err != nil {
+		s.Log("tmux sessions: %v", err)
+	}
+	writeJSON(w, api.Snapshot{Project: p, Live: live, SessionStates: sessionStates(p, live, tm, err == nil)})
 }
 
 // sessionStates derives every session's state with the rules the TUI uses (ui.Model), so the
-// web client does not carry its own copy.
-func sessionStates(p *state.Project, live ui.Live) map[int]api.SessionState {
+// web client does not carry its own copy. With the bx tmux sessions known (tmuxOK, tm from
+// App.Live) two cases differ, because the client attaches to tmux: a session without a tmux
+// session is gone even if `claude agents` lists it (a stream can't attach), and one with a
+// tmux session that `claude agents` doesn't list yet is starting, not gone.
+func sessionStates(p *state.Project, live ui.Live, tm map[int]string, tmuxOK bool) map[int]api.SessionState {
 	m := ui.NewModel(p, ui.Options{})
 	m.SetLive(live)
 	out := make(map[int]api.SessionState, len(p.Sessions))
 	for n, s := range p.Sessions {
+		_, inTmux := tm[n]
 		st := "idle"
 		switch {
 		case s.Done:
 			st = "done"
+		case tmuxOK && !inTmux:
+			out[n] = api.SessionState{State: "gone", Text: "gone · r to resume"}
+			continue
+		case tmuxOK && m.Gone(n):
+			out[n] = api.SessionState{State: "starting", Text: "starting"}
+			continue
 		case m.Gone(n):
 			st = "gone"
 		case m.State(n) == claude.Waiting:

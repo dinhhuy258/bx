@@ -311,7 +311,8 @@ export function showSession(root, project, num) {
     stateEl.className = `badge ${st.state}`;
     stateEl.textContent = st.state;
     lastState = st.state;
-    if (ended && (st.state === 'running' || st.state === 'waiting')) { ended = false; connect(); } // resumed elsewhere
+    // resumed elsewhere; 'starting' has a tmux session, so the stream can attach. Never 'gone'.
+    if (ended && ['running', 'waiting', 'starting'].includes(st.state)) { ended = false; connect(); }
   });
 
   connect();

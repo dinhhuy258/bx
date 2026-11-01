@@ -320,43 +320,74 @@ func TestWorkspaceStories(t *testing.T) {
 }
 
 func TestSnapshotSessionStates(t *testing.T) {
-	s, _, ts := newServer(t)
+	s, f, ts := newServer(t)
 	s.Lister = fakeLister{[]claude.Agent{
 		{SessionID: "u1", Status: "waiting"},
 		{SessionID: "u4", Status: "busy"},
 		{SessionID: "u5", Status: "idle"},
+		{SessionID: "u7", Status: "busy"},
 	}}
 	p, err := s.App.LoadProject("home-network")
 	if err != nil {
 		t.Fatal(err)
 	}
 	p.AddSession(&state.Session{Story: "s1", UUID: "u2", Title: "finished", Done: true}) // 2
-	p.AddSession(&state.Session{UUID: "u3", Title: "lost"})                              // 3: no agent
+	p.AddSession(&state.Session{UUID: "u3", Title: "lost"})                              // 3: no agent, no tmux
 	p.AddSession(&state.Session{UUID: "u4", Title: "busy"})                              // 4
 	p.AddSession(&state.Session{UUID: "u5", Title: "quiet"})                             // 5
+	p.AddSession(&state.Session{UUID: "u6", Title: "new"})                               // 6: tmux, no agent yet
+	p.AddSession(&state.Session{UUID: "u7", Title: "detached"})                          // 7: agent, no tmux
 	if err := s.App.SaveProject(p); err != nil {
 		t.Fatal(err)
 	}
-	snap, code := get[api.Snapshot](t, ts, "/api/projects/home-network")
-	if code != 200 {
-		t.Fatal(code)
-	}
-	want := map[int]api.SessionState{
-		1: {State: "waiting", Text: "asks: needs you"},
-		2: {State: "done", Text: "done"},
-		3: {State: "gone", Text: "gone · r to resume"},
-		4: {State: "running", Text: "running"},
-		5: {State: "idle", Text: "idle"},
-	}
-	if len(snap.SessionStates) != len(want) {
-		t.Fatalf("%+v", snap.SessionStates)
-	}
-	for n, w := range want {
-		if snap.SessionStates[n] != w {
-			t.Errorf("session %d: got %+v, want %+v", n, snap.SessionStates[n], w)
+	gone := api.SessionState{State: "gone", Text: "gone · r to resume"}
+	for _, c := range []struct {
+		name string
+		tmux *string // the list-sessions reply; nil: tmux fails
+		want map[int]api.SessionState
+	}{
+		{"tmux known", ptr("$5\tbx-home-network-1\n$6\tbx-home-network-4\n$7\tbx-home-network-5\n$8\tbx-home-network-6\n"),
+			map[int]api.SessionState{
+				1: {State: "waiting", Text: "asks: needs you"},
+				2: {State: "done", Text: "done"},
+				3: gone,
+				4: {State: "running", Text: "running"},
+				5: {State: "idle", Text: "idle"},
+				6: {State: "starting", Text: "starting"},
+				7: gone,
+			}},
+		{"tmux failing", nil, // the agents alone decide, as in the TUI
+			map[int]api.SessionState{
+				1: {State: "waiting", Text: "asks: needs you"},
+				2: {State: "done", Text: "done"},
+				3: gone,
+				4: {State: "running", Text: "running"},
+				5: {State: "idle", Text: "idle"},
+				6: gone,
+				7: {State: "running", Text: "running"},
+			}},
+	} {
+		if c.tmux == nil {
+			delete(f.Replies, listSessions)
+		} else {
+			f.Replies[listSessions] = *c.tmux
+		}
+		snap, code := get[api.Snapshot](t, ts, "/api/projects/home-network")
+		if code != 200 {
+			t.Fatal(code)
+		}
+		if len(snap.SessionStates) != len(c.want) {
+			t.Fatalf("%s: %+v", c.name, snap.SessionStates)
+		}
+		for n, w := range c.want {
+			if snap.SessionStates[n] != w {
+				t.Errorf("%s: session %d: got %+v, want %+v", c.name, n, snap.SessionStates[n], w)
+			}
 		}
 	}
 }
+
+func ptr[T any](v T) *T { return &v }
 
 // failingLister lists its agents until fail is set, then errors.
 type failingLister struct {
