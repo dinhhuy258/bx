@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,5 +30,19 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	}
 	if out.Live.Agents["u1"].State() != claude.Waiting || out.Live.Diff["s1"].Add != 3 || out.Live.Branch != "main" {
 		t.Fatalf("live = %+v", out.Live)
+	}
+}
+
+func TestSyncFileContentIsBase64(t *testing.T) {
+	b, err := json.Marshal(SyncFile{Path: "skills/a/SKILL.md", Content: []byte("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"content":"aGk="`) {
+		t.Fatalf("%s", b)
+	}
+	var out SyncFile
+	if err := json.Unmarshal(b, &out); err != nil || string(out.Content) != "hi" {
+		t.Fatalf("%+v %v", out, err)
 	}
 }

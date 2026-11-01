@@ -29,6 +29,9 @@ type Server struct {
 	Cfg    *config.Config
 	Lister claude.Lister
 	Log    func(format string, args ...any)
+	// ClaudeDir is Claude's config dir, the target of bx claude sync; "" is claude.ConfigDir()
+	// at request time.
+	ClaudeDir string
 
 	write sync.Mutex
 
@@ -85,6 +88,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/rename", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.Rename(p, r.Num, r.Title)
 	}))
+	mux.HandleFunc("POST /api/claude/sync/plan", s.claudeSyncPlan)
+	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
 	return sameOrigin(mux)
 }

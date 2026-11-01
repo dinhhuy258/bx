@@ -72,3 +72,47 @@ type Control struct {
 	Rows  int    `json:"rows,omitempty"`
 	Lines int    `json:"lines,omitempty"` // scroll: <0 back into history, >0 toward live, 0 back to live
 }
+
+// SyncFile is one file of a Claude sync: in a plan request its hash, size and mode; in an apply
+// request its mode and content (base64 on the wire). Path is relative to the Claude config dir,
+// slash-separated, e.g. "skills/brainstorm/SKILL.md".
+type SyncFile struct {
+	Path    string `json:"path"`
+	SHA256  string `json:"sha256,omitempty"`
+	Size    int64  `json:"size,omitempty"`
+	Exec    bool   `json:"exec,omitempty"`
+	Content []byte `json:"content,omitempty"`
+}
+
+// SyncPlanRequest is the body of POST /api/claude/sync/plan: the Mac's files of Folders.
+type SyncPlanRequest struct {
+	Folders []string   `json:"folders"`
+	Files   []SyncFile `json:"files"`
+}
+
+// SyncPlan is its reply. Dir is the server's Claude config dir, for display.
+type SyncPlan struct {
+	Dir       string   `json:"dir"`
+	Add       []string `json:"add"`
+	Update    []string `json:"update"`
+	Delete    []string `json:"delete"`
+	Unchanged int      `json:"unchanged"`
+	Kept      int      `json:"kept"`
+}
+
+// SyncApplyRequest is the body of POST /api/claude/sync. Paths is every Mac file of Folders
+// (the server records those that exist after the apply), Files the adds and updates, Delete
+// the paths to remove.
+type SyncApplyRequest struct {
+	Folders []string   `json:"folders"`
+	Paths   []string   `json:"paths"`
+	Files   []SyncFile `json:"files"`
+	Delete  []string   `json:"delete"`
+}
+
+// SyncResult is its reply.
+type SyncResult struct {
+	Added   int `json:"added"`
+	Updated int `json:"updated"`
+	Deleted int `json:"deleted"`
+}
