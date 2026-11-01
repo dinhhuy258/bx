@@ -11,19 +11,49 @@ import (
 // CurrentVersion is written to every file and checked on read.
 const CurrentVersion = 2
 
+// Project kinds. A repo project is one git repository; a workspace is a folder of repositories
+// (not one itself), and its stories branch only the repositories they pick.
+const (
+	KindRepo      = ""
+	KindWorkspace = "workspace"
+)
+
 // Project is the content of ~/.bx/state/<project>.json.
 type Project struct {
 	Version  int               `json:"version"`
 	Name     string            `json:"-"`
 	Path     string            `json:"path"`
+	Kind     string            `json:"kind,omitempty"` // KindRepo or KindWorkspace, fixed when added
 	Stories  map[string]*Story `json:"stories"`
 	Sessions map[int]*Session  `json:"-"`
 	NextNum  int               `json:"next_num"`
 }
 
 // Story is a branch with a worktree. The worktree path is derived from root, project and story.
+// In a workspace the story folder mirrors the project folder: each of Repos is a worktree on
+// Branch, everything else a link to the original.
 type Story struct {
-	Branch string `json:"branch"`
+	Branch string      `json:"branch"`
+	Repos  []StoryRepo `json:"repos,omitempty"`
+}
+
+// StoryRepo is one repository of a workspace story: its path under the project folder and the
+// branch the story forked from.
+type StoryRepo struct {
+	Rel  string `json:"rel"`
+	Base string `json:"base"`
+}
+
+// IsWorkspace reports whether the project is a folder of repositories.
+func (p *Project) IsWorkspace() bool { return p.Kind == KindWorkspace }
+
+// RepoNames are the Rel of every repository of a story, in the order they were added.
+func (s *Story) RepoNames() []string {
+	out := make([]string, len(s.Repos))
+	for i, r := range s.Repos {
+		out[i] = r.Rel
+	}
+	return out
 }
 
 // Session is one Claude Code process. Story "" means the chats group. Model, Effort and
@@ -82,6 +112,7 @@ type sessionWire struct {
 type projectWire struct {
 	Version  int                     `json:"version"`
 	Path     string                  `json:"path"`
+	Kind     string                  `json:"kind,omitempty"`
 	Stories  map[string]*Story       `json:"stories"`
 	Sessions map[string]*sessionWire `json:"sessions"`
 	NextNum  int                     `json:"next_num"`
@@ -89,7 +120,7 @@ type projectWire struct {
 
 // MarshalJSON writes the wire shape from the design doc.
 func (p *Project) MarshalJSON() ([]byte, error) {
-	w := projectWire{Version: CurrentVersion, Path: p.Path, Stories: p.Stories, Sessions: map[string]*sessionWire{}, NextNum: p.NextNum}
+	w := projectWire{Version: CurrentVersion, Path: p.Path, Kind: p.Kind, Stories: p.Stories, Sessions: map[string]*sessionWire{}, NextNum: p.NextNum}
 	if w.Stories == nil {
 		w.Stories = map[string]*Story{}
 	}
@@ -111,7 +142,7 @@ func (p *Project) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &w); err != nil {
 		return err
 	}
-	p.Version, p.Path, p.NextNum = w.Version, w.Path, w.NextNum
+	p.Version, p.Path, p.Kind, p.NextNum = w.Version, w.Path, w.Kind, w.NextNum
 	p.Stories = w.Stories
 	if p.Stories == nil {
 		p.Stories = map[string]*Story{}

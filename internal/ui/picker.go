@@ -18,16 +18,37 @@ const (
 )
 
 // Picker is a filterable single-choice list (projects, GitHub repositories). Typed text
-// filters; arrows, C-j and C-k move.
+// filters; arrows, C-j and C-k move. As a checklist Space ticks the highlighted item.
 type Picker struct {
-	Title  string
-	items  []string
-	filter string
-	cursor int
+	Title   string
+	items   []string
+	filter  string
+	cursor  int
+	checked map[string]bool // nil unless a checklist
 }
 
 // NewPicker builds a picker over items.
 func NewPicker(title string, items []string) *Picker { return &Picker{Title: title, items: items} }
+
+// NewChecklist builds a picker that chooses several items (workspace repositories).
+func NewChecklist(title string, items []string) *Picker {
+	return &Picker{Title: title, items: items, checked: map[string]bool{}}
+}
+
+// Checked are the ticked items of a checklist in list order. With none ticked, Enter takes the
+// highlighted one.
+func (p *Picker) Checked() []string {
+	var out []string
+	for _, it := range p.items {
+		if p.checked[it] {
+			out = append(out, it)
+		}
+	}
+	if len(out) == 0 && p.Choice() != "" {
+		out = []string{p.Choice()}
+	}
+	return out
+}
 
 func (p *Picker) visible() []string {
 	if p.filter == "" {
@@ -56,6 +77,13 @@ func (p *Picker) Key(key, text string) PickResult {
 		p.cursor--
 	case "Down", "C-j":
 		p.cursor++
+	case "Space":
+		if p.checked == nil {
+			p.filter += " "
+			p.cursor = 0
+		} else if c := p.Choice(); c != "" {
+			p.checked[c] = !p.checked[c]
+		}
 	case "BSpace":
 		if r := []rune(p.filter); len(r) > 0 {
 			p.filter, p.cursor = string(r[:len(r)-1]), 0
@@ -96,15 +124,27 @@ func (p *Picker) Render(w, h int) string {
 	rows := max(h-len(lines)-1, 1)
 	start := max(0, min(p.cursor-rows/2, len(v)-rows))
 	for i := start; i < len(v) && i < start+rows; i++ {
-		line := ansi.Truncate("  "+v[i], w, "…")
+		item := v[i]
+		if p.checked != nil {
+			box := "[ ] "
+			if p.checked[item] {
+				box = "[x] "
+			}
+			item = box + item
+		}
+		line := ansi.Truncate("  "+item, w, "…")
 		if i == p.cursor {
-			line = sel.Width(w).Render(ansi.Truncate("▸ "+v[i], w, "…"))
+			line = sel.Width(w).Render(ansi.Truncate("▸ "+item, w, "…"))
 		}
 		lines = append(lines, line)
 	}
 	if len(v) == 0 {
 		lines = append(lines, "  no match")
 	}
-	lines = append(lines, "", "type to filter · ↑↓ move · ⏎ choose · esc cancel")
+	help := "type to filter · ↑↓ move · ⏎ choose · esc cancel"
+	if p.checked != nil {
+		help = "type to filter · ↑↓ move · space tick · ⏎ done · esc cancel"
+	}
+	lines = append(lines, "", help)
 	return strings.Join(lines, "\n")
 }

@@ -20,12 +20,16 @@ import (
 // App holds the dependencies. UUID and GH are injectable for tests. Settings gives new sessions
 // their flags; nil means Claude's defaults.
 type App struct {
-	Cfg      *config.Config
-	Tmux     *tmux.Tmux
-	Git      *git.Git
-	UUID     func() string
-	GH       func(args ...string) (string, error)
-	Settings *settings.Store
+	Cfg  *config.Config
+	Tmux *tmux.Tmux
+	Git  *git.Git
+	UUID func() string
+	Self string // the bx binary, for the hooks it gives Claude; "" gives none
+	// Transcripts is Claude's projects folder (~/.claude/projects), where Titles reads the
+	// first prompt of unnamed sessions; "" leaves them unnamed.
+	Transcripts string
+	GH          func(args ...string) (string, error)
+	Settings    *settings.Store
 }
 
 // New returns an App on bx's private tmux server, with the real git and gh.
@@ -59,13 +63,17 @@ func (a *App) LoadProject(name string) (*state.Project, error) {
 // SaveProject writes the state file.
 func (a *App) SaveProject(p *state.Project) error { return state.Save(a.Cfg.StateFile(p.Name), p) }
 
-// NewStory creates branch feat/<name> and the worktree, then records the story.
-func (a *App) NewStory(p *state.Project, name string) error {
+// NewStory creates branch feat/<name> and the worktree, then records the story. In a workspace
+// it branches the repos picked (paths relative to the project folder) instead.
+func (a *App) NewStory(p *state.Project, name string, repos []string) error {
 	if !nameRe.MatchString(name) {
 		return fmt.Errorf("story name %q: use lowercase letters, digits, . _ -", name)
 	}
 	if _, exists := p.Stories[name]; exists {
 		return fmt.Errorf("story %q already exists", name)
+	}
+	if p.IsWorkspace() {
+		return a.newWorkspaceStory(p, name, "feat/"+name, repos)
 	}
 	base, err := a.Git.DefaultBranch(p.Path)
 	if err != nil {

@@ -63,20 +63,20 @@ func TestTmuxName(t *testing.T) {
 
 func TestNewStoryCreatesWorktreeAndRecord(t *testing.T) {
 	a, _, p := newApp(t)
-	if err := a.NewStory(p, "s1"); err != nil {
+	if err := a.NewStory(p, "s1", nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(a.Cfg.WorktreeDir("home-network", "s1")); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.NewStory(p, "Bad Name"); err == nil {
+	if err := a.NewStory(p, "Bad Name", nil); err == nil {
 		t.Fatal("bad name accepted")
 	}
 }
 
 func TestNewSessionStartsItsOwnTmuxSession(t *testing.T) {
 	a, f, p := newApp(t)
-	if err := a.NewStory(p, "s1"); err != nil {
+	if err := a.NewStory(p, "s1", nil); err != nil {
 		t.Fatal(err)
 	}
 	num, err := a.NewSession(p, "s1", "Check syntax")
@@ -151,7 +151,7 @@ func TestResumeAllSkipsDoneLiveAndForeign(t *testing.T) {
 
 func TestCloseStoryDirtyThenForce(t *testing.T) {
 	a, f, p := newApp(t)
-	if err := a.NewStory(p, "s1"); err != nil {
+	if err := a.NewStory(p, "s1", nil); err != nil {
 		t.Fatal(err)
 	}
 	p.AddSession(&state.Session{Story: "s1", UUID: "u1"})
@@ -177,5 +177,40 @@ func TestCloseStoryDirtyThenForce(t *testing.T) {
 	got, _ := a.LoadProject("home-network")
 	if got.Stories["s1"] != nil || got.Sessions[1] != nil {
 		t.Fatalf("records left: %+v", got)
+	}
+}
+
+func TestTitlesFromTheFirstPrompt(t *testing.T) {
+	a, f, p := newApp(t)
+	a.Transcripts = t.TempDir()
+	f.Replies[listSessions] = ""
+	num, _ := a.NewChat(p, "")
+	named, _ := a.NewChat(p, "kept")
+	cwd := "/work/home-network"
+	path := claude.TranscriptPath(a.Transcripts, cwd, "fixed-uuid")
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte(`{"type":"user","message":{"content":"make the guest network use a shorter DHCP lease please"}}`+"\n"), 0o644)
+	agents := map[string]claude.Agent{"fixed-uuid": {SessionID: "fixed-uuid", Cwd: cwd}}
+
+	if got := a.Titles(p, map[string]claude.Agent{}); len(got) != 0 {
+		t.Fatalf("a session that is not running is not read: %v", got)
+	}
+	titles := a.Titles(p, agents)
+	if len(titles) != 1 || titles[num] != "make the guest network use a shorter DH…" {
+		t.Fatalf("titles = %v", titles)
+	}
+	if changed, err := a.SetTitles(p, titles); !changed || err != nil {
+		t.Fatal(changed, err)
+	}
+	got, _ := a.LoadProject("home-network")
+	if got.Sessions[num].Title != titles[num] || got.Sessions[named].Title != "kept" {
+		t.Fatalf("saved %q, %q", got.Sessions[num].Title, got.Sessions[named].Title)
+	}
+	if len(a.Titles(got, agents)) != 0 {
+		t.Fatal("a named session is not read again")
+	}
+	got.Sessions[num].Title = "mine" // a rename between Titles and SetTitles wins
+	if changed, _ := a.SetTitles(got, titles); changed {
+		t.Fatal("the rename was overwritten")
 	}
 }

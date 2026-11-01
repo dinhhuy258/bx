@@ -31,6 +31,11 @@ type fakeBackend struct {
 	values    map[string]string // the server's settings
 	saves     []map[string]string
 	saveErr   error
+	origDirty int // stories/repos without force is refused with this many files
+}
+
+func (f *fakeBackend) ProjectRepos(context.Context, string) ([]string, error) {
+	return []string{"api", "libs/auth", "web"}, nil
 }
 
 func (f *fakeBackend) Projects(context.Context) ([]api.ProjectSummary, error) { return f.projects, nil }
@@ -53,6 +58,9 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 			parts = append(parts, s)
 		}
 	}
+	if len(a.Repos) > 0 {
+		parts = append(parts, "["+strings.Join(a.Repos, ",")+"]")
+	}
 	if a.Force {
 		parts = append(parts, "force")
 	}
@@ -62,6 +70,8 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 		return api.Result{Num: 9}, nil
 	case action == "stories/close" && !a.Force && f.dirty > 0:
 		return api.Result{Error: "dirty", Dirty: f.dirty}, errors.New("dirty")
+	case action == "stories/repos" && !a.Force && f.origDirty > 0:
+		return api.Result{Error: "dirty", Dirty: f.origDirty, Detail: fmt.Sprintf("web: %d", f.origDirty)}, errors.New("dirty")
 	}
 	return api.Result{}, nil
 }
@@ -468,14 +478,12 @@ func TestPromptsCallTheBackend(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
 	h.press("w")
 	h.typeText("guest")
-	h.press("Enter", "c")
-	h.typeText("hi")
-	h.press("Enter")
+	h.press("Enter", "c") // no title prompt: the chat opens and takes the focus
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a new chat should open and focus: %q", h.opened)
 	}
 	h.press("C-h", "y") // back to the list; y answers the waiting session 1
-	if got := strings.Join(h.be.actions, "|"); got != "home-network stories guest|home-network sessions hi|home-network yes 1" {
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories guest|home-network sessions|home-network yes 1" {
 		t.Fatalf("actions = %q", got)
 	}
 }
@@ -735,5 +743,77 @@ func TestSettingsSaveErrorKeepsTheEdits(t *testing.T) {
 	v := ansi.Strip(h.m.View().Content)
 	if h.m.settings == nil || len(h.m.settings.Changes()) != 1 || !strings.Contains(v, "bx serve unreachable") {
 		t.Fatalf("a failed save keeps the screen and its edits:\n%s", v)
+	}
+}
+
+// workspace makes home-network a workspace whose story s1 has the repository api.
+func workspace(h *harness) {
+	snap := h.be.snaps["home-network"]
+	snap.Project.Kind = state.KindWorkspace
+	snap.Project.Stories["s1"].Repos = []state.StoryRepo{{Rel: "api", Base: "main"}}
+	h.be.snaps["home-network"] = snap
+	drain(h.m, h.m.poll())
+}
+
+func TestWorkspaceNewStoryPicksRepos(t *testing.T) {
+	h := start(t, 160, 30, "running")
+	workspace(h)
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "workspace · /p/home-network") || !strings.Contains(v, "api") {
+		t.Fatalf("view:\n%s", v)
+	}
+	h.press("w")
+	h.typeText("login")
+	h.press("Enter")
+	if h.m.picker == nil || !strings.Contains(h.m.View().Content, "[ ] libs/auth") {
+		t.Fatalf("no checklist:\n%s", h.m.View().Content)
+	}
+	h.press(" ", "Down", "Down", " ", "Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories login [api,web]" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestAddRepoAsksWhenTheOriginalIsDirty(t *testing.T) {
+	h := start(t, 240, 30, "running")
+	h.press("k", "+") // on story s1 of a repo project: nothing
+	if h.m.picker != nil {
+		t.Fatal("add repo outside a workspace")
+	}
+	workspace(h)
+	if bar := h.m.View().Content; !strings.Contains(bar, "+ add repo") {
+		t.Fatalf("key bar:\n%s", bar)
+	}
+	h.press("j")
+	if bar := h.m.View().Content; strings.Contains(bar, "+ add repo") {
+		t.Fatal("add repo shown on a session row")
+	}
+	h.press("k")
+	h.be.origDirty = 3
+	h.press("+")
+	if v := h.m.View().Content; strings.Contains(v, "] api") || !strings.Contains(v, "[ ] web") {
+		t.Fatalf("checklist must leave out api:\n%s", v)
+	}
+	h.press("Down", "Enter") // web, the highlighted one
+	if v := h.m.View().Content; !strings.Contains(v, "(web: 3)") {
+		t.Fatalf("no y/n:\n%s", v)
+	}
+	h.press("y")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories/repos s1 [web]|home-network stories/repos s1 [web] force" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestKeymapWithNoProjectOpen(t *testing.T) {
+	h := startIn(t, t.TempDir(), "", 120, 30, "running")
+	if v := h.m.View().Content; !strings.Contains(v, "S settings · ? keys") {
+		t.Fatal(v)
+	}
+	h.press("?")
+	if v := h.m.View().Content; !strings.Contains(v, "bx keymap") || !strings.Contains(v, "add_repo") {
+		t.Fatal(v)
+	}
+	h.press("x")
+	if v := h.m.View().Content; !strings.Contains(v, "No project open.") {
+		t.Fatal(v)
 	}
 }

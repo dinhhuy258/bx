@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,5 +67,35 @@ func TestDefaultBranch(t *testing.T) {
 	repo := initRepo(t)
 	if b, err := New().DefaultBranch(repo); err != nil || b != "main" {
 		t.Fatalf("default = %q err %v", b, err)
+	}
+}
+
+func TestInitMakesMain(t *testing.T) {
+	dest := filepath.Join(t.TempDir(), "new")
+	g := New()
+	if err := g.Init(dest); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := g.DefaultBranch(dest); err != nil || b != "main" {
+		t.Fatalf("default = %q err %v", b, err)
+	}
+}
+
+func TestSubRepos(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"api/.git", "web/.git", "web/inner/.git", "libs/auth/.git", "a/b/c/.git", ".hidden/x/.git", "node_modules/y/.git", "docs"} {
+		os.MkdirAll(filepath.Join(root, d), 0o755)
+	}
+	os.WriteFile(filepath.Join(root, "tool"), nil, 0o644)
+	os.MkdirAll(filepath.Join(root, "wt"), 0o755)
+	os.WriteFile(filepath.Join(root, "wt", ".git"), []byte("gitdir: x\n"), 0o644) // a worktree's .git file
+	os.Symlink(filepath.Join(root, "api"), filepath.Join(root, "api-link"))
+	got, err := SubRepos(root, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "api libs/auth web wt"
+	if s := strings.Join(got, " "); s != want {
+		t.Fatalf("repos = %q, want %q", s, want)
 	}
 }

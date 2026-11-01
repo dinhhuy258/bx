@@ -8,14 +8,13 @@ type PromptKind int
 const (
 	PromptNone PromptKind = iota
 	PromptNewStory
-	PromptNewSession
-	PromptNewChat
 	PromptRename
 	PromptCloseStory
 	PromptCloseStoryForce
 	PromptAddFolder  // an absolute folder path on the server
 	PromptNewProject // a project name
 	PromptDiscardSettings
+	PromptAddRepoForce // y/n: add repositories whose originals have uncommitted files
 )
 
 // PromptResult is what a key did to the prompt.
@@ -27,7 +26,7 @@ const (
 	PromptCancel                     // Esc, or anything but y on a yes/no prompt
 )
 
-// Prompt is the one-line input shown in the key bar (new story, new session, rename, close story).
+// Prompt is the one-line input shown in the key bar (new story, rename, close story).
 // Used by the client.
 type Prompt struct {
 	Kind   PromptKind
@@ -46,7 +45,7 @@ func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 
 // YesNo reports whether the prompt is a y/n question.
 func (p *Prompt) YesNo() bool {
-	return p.Kind == PromptCloseStory || p.Kind == PromptCloseStoryForce || p.Kind == PromptDiscardSettings
+	return p.Kind == PromptCloseStory || p.Kind == PromptCloseStoryForce || p.Kind == PromptDiscardSettings || p.Kind == PromptAddRepoForce
 }
 
 // Key feeds one key (bx key name plus the typed text). On Submit the caller reads Input and

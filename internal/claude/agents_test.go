@@ -59,6 +59,9 @@ func TestStartArgs(t *testing.T) {
 	if got = StartArgs("abc-uuid", true, o); !equal(got, append([]string{"claude", "--resume", "abc-uuid"}, flags...)) {
 		t.Errorf("resume with options = %v", got)
 	}
+	if got = StartArgs("abc-uuid", false, Options{Settings: `{"hooks":{}}`}); !equal(got, []string{"claude", "--session-id", "abc-uuid", "--settings", `{"hooks":{}}`}) {
+		t.Errorf("start with settings = %v", got)
+	}
 }
 
 func equal(a, b []string) bool {

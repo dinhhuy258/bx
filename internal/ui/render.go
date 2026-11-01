@@ -124,7 +124,11 @@ func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected
 	}
 	name := "chats"
 	// Each group row is one folder: chats run in the project folder, a story in its worktree.
+	// A workspace is no repository: its folder has no branch nor changes of its own.
 	right := pal.dim.Render(m.branch()+" · ") + changed(m.Live.DirtyFiles, pal, " · ") + pal.dim.Render(shortPath(m.P.Path))
+	if m.P.IsWorkspace() {
+		right = pal.dim.Render("workspace · " + shortPath(m.P.Path))
+	}
 	if r.Story != "" {
 		name = r.Story
 		d := m.Live.Diff[r.Story]
@@ -139,6 +143,13 @@ func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected
 			parts = append(parts, pal.red.Render(fmt.Sprintf("-%d", d.Del)))
 		}
 		right = strings.Join(parts, " ")
+		if st := m.P.Stories[r.Story]; st != nil && len(st.Repos) > 0 {
+			repos := pal.dim.Render(strings.Join(st.RepoNames(), ", "))
+			if right != "" {
+				repos += pal.dim.Render(" · ")
+			}
+			right = repos + right
+		}
 		if !m.IsOpen(r.Story) {
 			if sum := m.Summary(r.Story); sum != "" {
 				right = sum + "  " + right

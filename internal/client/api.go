@@ -71,6 +71,12 @@ func (c *API) Repos(ctx context.Context) ([]string, error) {
 	return out, c.call(ctx, reposTimeout, http.MethodGet, "/api/github/repos", nil, &out)
 }
 
+// ProjectRepos is GET /api/projects/{name}/repos: the repositories of a workspace, relative to it.
+func (c *API) ProjectRepos(ctx context.Context, project string) ([]string, error) {
+	var out []string
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/repos", nil, &out)
+}
+
 // Settings is GET /api/settings: the sections and fields the server offers, and their values.
 func (c *API) Settings(ctx context.Context) (api.Settings, error) {
 	var out api.Settings

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -50,6 +51,12 @@ func (g *Git) WorktreeRemove(repo, path string, force bool) error {
 // WorktreePrune drops worktree records whose folder is gone.
 func (g *Git) WorktreePrune(repo string) error {
 	_, err := g.run(repo, "worktree", "prune")
+	return err
+}
+
+// DeleteBranch deletes a branch even when it is not merged.
+func (g *Git) DeleteBranch(repo, branch string) error {
+	_, err := g.run(repo, "branch", "-D", branch)
 	return err
 }
 
@@ -105,13 +112,57 @@ func (g *Git) Clone(url, dest string) error {
 	return err
 }
 
-// Init creates a repo with branch main.
+// Init creates a repo with branch main and an empty first commit, so main exists for stories
+// to branch from. Without a configured identity the commit is made as bx.
 func (g *Git) Init(dest string) error {
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return err
 	}
-	_, err := g.run(dest, "init", "-q", "-b", "main")
+	if _, err := g.run(dest, "init", "-q", "-b", "main"); err != nil {
+		return err
+	}
+	args := []string{"commit", "-q", "--allow-empty", "-m", "init"}
+	if email, _ := g.run(dest, "config", "user.email"); email == "" {
+		args = append([]string{"-c", "user.name=bx", "-c", "user.email=bx@localhost"}, args...)
+	}
+	_, err := g.run(dest, args...)
 	return err
+}
+
+// SubRepos returns the folders under dir, up to depth levels down, that hold a .git entry,
+// as slash paths relative to dir, sorted. It does not look inside a repo it found, nor in
+// hidden folders or node_modules. Links are not followed.
+func SubRepos(dir string, depth int) ([]string, error) {
+	var out []string
+	var walk func(rel string, level int) error
+	walk = func(rel string, level int) error {
+		entries, err := os.ReadDir(filepath.Join(dir, rel))
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if !e.IsDir() || strings.HasPrefix(name, ".") || name == "node_modules" {
+				continue
+			}
+			sub := filepath.Join(rel, name)
+			if _, err := os.Lstat(filepath.Join(dir, sub, ".git")); err == nil {
+				out = append(out, filepath.ToSlash(sub))
+				continue
+			}
+			if level < depth {
+				if err := walk(sub, level+1); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	if err := walk("", 1); err != nil {
+		return nil, err
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // IsRepo reports whether dir is inside a git work tree.

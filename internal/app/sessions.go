@@ -14,6 +14,9 @@ import (
 
 const defaultTitle = "New session"
 
+// titleLen is how much of the first prompt becomes the title of an unnamed session.
+const titleLen = 40
+
 // ErrNotRunning means the session's tmux session does not exist (Claude exited or the
 // server restarted); `r` resumes it.
 var ErrNotRunning = errors.New("not running")
@@ -79,7 +82,7 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 	s := &state.Session{Story: story, UUID: id, Title: title, Created: time.Now(),
 		Model: a.Settings.Get("claude.model"), Effort: a.Settings.Get("claude.effort"), PermissionMode: a.Settings.Get("claude.permission_mode")}
 	num := p.AddSession(s)
-	if err := a.launch(p, num, claude.StartArgs(id, false, options(s))); err != nil {
+	if err := a.launch(p, num, claude.StartArgs(id, false, a.options(p, s))); err != nil {
 		delete(p.Sessions, num)
 		p.NextNum--
 		return 0, err
@@ -87,9 +90,14 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 	return num, a.SaveProject(p)
 }
 
-// options are the settings a session started with, for its command line.
-func options(s *state.Session) claude.Options {
-	return claude.Options{Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
+// options are the settings a session started with, for its command line. A session of a
+// workspace story also gets the guard hook, which keeps edits out of the original repositories.
+func (a *App) options(p *state.Project, s *state.Session) claude.Options {
+	o := claude.Options{Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
+	if p.IsWorkspace() && s.Story != "" && a.Self != "" {
+		o.Settings = GuardSettings(a.Self, a.Dir(p, s.Story))
+	}
+	return o
 }
 
 // launch runs args in a new tmux session for session num, in its story's folder.
@@ -112,7 +120,7 @@ func (a *App) Resume(p *state.Project, num int) error {
 	if _, ok := live[num]; ok {
 		return fmt.Errorf("session [%d] is still running", num)
 	}
-	if err := a.launch(p, num, claude.StartArgs(s.UUID, true, options(s))); err != nil {
+	if err := a.launch(p, num, claude.StartArgs(s.UUID, true, a.options(p, s))); err != nil {
 		return err
 	}
 	s.Done = false
@@ -140,7 +148,7 @@ func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) (int, 
 		if _, elsewhere := agents[s.UUID]; elsewhere {
 			continue
 		}
-		if err := a.launch(p, n, claude.StartArgs(s.UUID, true, options(s))); err != nil {
+		if err := a.launch(p, n, claude.StartArgs(s.UUID, true, a.options(p, s))); err != nil {
 			return resumed, err
 		}
 		resumed++
@@ -167,21 +175,78 @@ func (a *App) Rename(p *state.Project, num int, title string) error {
 	return a.SaveProject(p)
 }
 
-// DirtyError refuses to close a story whose worktree has uncommitted files.
+// Titles finds a title for every running session still called "New session": the start of
+// the first prompt in its transcript. It only reads; SetTitles stores them.
+func (a *App) Titles(p *state.Project, agents map[string]claude.Agent) map[int]string {
+	if a.Transcripts == "" {
+		return nil
+	}
+	var out map[int]string
+	for n, s := range p.Sessions {
+		ag, live := agents[s.UUID]
+		if s.Title != defaultTitle || !live || ag.Cwd == "" {
+			continue
+		}
+		if t := claude.FirstPrompt(claude.TranscriptPath(a.Transcripts, ag.Cwd, s.UUID)); t != "" {
+			if out == nil {
+				out = map[int]string{}
+			}
+			out[n] = shorten(t, titleLen)
+		}
+	}
+	return out
+}
+
+// SetTitles stores titles from Titles on the sessions that are still unnamed, so a rename in
+// between wins. Reports whether anything changed.
+func (a *App) SetTitles(p *state.Project, titles map[int]string) (bool, error) {
+	changed := false
+	for n, t := range titles {
+		if s := p.Sessions[n]; s != nil && s.Title == defaultTitle {
+			s.Title, changed = t, true
+		}
+	}
+	if !changed {
+		return false, nil
+	}
+	return true, a.SaveProject(p)
+}
+
+func shorten(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n-1])) + "…"
+}
+
+// DirtyError refuses to close a story whose worktree has uncommitted files, or, with Original,
+// to add a repository whose original has them. Detail splits Files by repository.
 type DirtyError struct {
-	Story string
-	Files int
+	Story    string
+	Files    int
+	Detail   string
+	Original bool
 }
 
 func (e *DirtyError) Error() string {
+	if e.Original {
+		return fmt.Sprintf("uncommitted files in the original (%s) will not be in story %q", e.Detail, e.Story)
+	}
+	if e.Detail != "" {
+		return fmt.Sprintf("story %q has %d uncommitted files (%s)", e.Story, e.Files, e.Detail)
+	}
 	return fmt.Sprintf("story %q has %d uncommitted files", e.Story, e.Files)
 }
 
 // CloseStory stops the story's sessions, removes its worktree and forgets it. Without force
-// a dirty worktree is refused with *DirtyError; force discards the changes.
+// a dirty worktree is refused with *DirtyError; force discards the changes. The branches stay.
 func (a *App) CloseStory(p *state.Project, name string, force bool) error {
 	if _, ok := p.Stories[name]; !ok {
 		return fmt.Errorf("no story %q", name)
+	}
+	if p.IsWorkspace() {
+		return a.closeWorkspaceStory(p, name, force)
 	}
 	dir := a.Cfg.WorktreeDir(p.Name, name)
 	if !force {
@@ -189,6 +254,19 @@ func (a *App) CloseStory(p *state.Project, name string, force bool) error {
 			return &DirtyError{Story: name, Files: n}
 		}
 	}
+	if err := a.stopStory(p, name); err != nil {
+		return err
+	}
+	if _, err := os.Stat(dir); err == nil {
+		if err := a.Git.WorktreeRemove(p.Path, dir, force); err != nil {
+			return err
+		}
+	}
+	return a.forgetStory(p, name)
+}
+
+// stopStory kills the story's running sessions.
+func (a *App) stopStory(p *state.Project, name string) error {
 	live, err := a.Live(p)
 	if err != nil {
 		return err
@@ -198,11 +276,11 @@ func (a *App) CloseStory(p *state.Project, name string, force bool) error {
 			_ = a.Tmux.KillSession(id) // may exit on its own meanwhile
 		}
 	}
-	if _, err := os.Stat(dir); err == nil {
-		if err := a.Git.WorktreeRemove(p.Path, dir, force); err != nil {
-			return err
-		}
-	}
+	return nil
+}
+
+// forgetStory drops the story and its sessions from the state.
+func (a *App) forgetStory(p *state.Project, name string) error {
 	for _, n := range p.SessionsOf(name) {
 		delete(p.Sessions, n)
 	}

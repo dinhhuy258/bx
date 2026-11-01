@@ -19,6 +19,9 @@ type Diff struct {
 	Dirty int `json:"dirty,omitempty"` // git status --porcelain in the story worktree
 }
 
+// Plus adds two diffs, for a story of several repositories.
+func (d Diff) Plus(o Diff) Diff { return Diff{d.Add + o.Add, d.Del + o.Del, d.Dirty + o.Dirty} }
+
 // Live is everything derived on each tick and never stored.
 type Live struct {
 	Now        time.Time               `json:"now"`

@@ -30,6 +30,7 @@ type Backend interface {
 	Do(ctx context.Context, project, action string, a api.Action) (api.Result, error)
 	CreateProject(ctx context.Context, p api.NewProject) (api.Result, error)
 	Repos(ctx context.Context) ([]string, error)
+	ProjectRepos(ctx context.Context, project string) ([]string, error)
 	Settings(ctx context.Context) (api.Settings, error)
 	SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error)
 }
@@ -65,6 +66,14 @@ type (
 		repos []string
 		err   error
 	}
+	// storyReposMsg is the repositories of a workspace, for the checklist of a new story or,
+	// with add, of the repositories to add to story.
+	storyReposMsg struct {
+		project, story string
+		add            bool
+		repos          []string
+		err            error
+	}
 	createdMsg struct {
 		res api.Result
 		err error
@@ -88,6 +97,8 @@ type pickKind int
 const (
 	pickProjects pickKind = iota
 	pickRepos
+	pickStoryRepos // the repositories of a new workspace story
+	pickAddRepos   // repositories to add to a workspace story
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -115,8 +126,10 @@ type Model struct {
 	connecting bool
 	pendingSel int // select this session when the project's first snapshot arrives
 
-	picker   *ui.Picker
-	pickKind pickKind
+	picker    *ui.Picker
+	pickKind  pickKind
+	pickStory string   // the story of a repository checklist
+	addRepos  []string // the repositories of an add waiting for its y/n
 
 	settings     *ui.Settings // the settings screen, full screen while open
 	settingsNote string       // shown in its place until the server's sections arrive
@@ -295,6 +308,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.picker, m.pickKind = ui.NewPicker("clone from GitHub", msg.repos), pickRepos
+		return m, nil
+	case storyReposMsg:
+		m.gotStoryRepos(msg)
 		return m, nil
 	case createdMsg:
 		if msg.err != nil {
@@ -491,8 +507,12 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.quit()
 		case m.project == "" && m.loaded && m.cfg.Keys.ListAction(key) == "projects":
 			m.openProjectPicker()
+		case m.showKeys:
+			m.showKeys = false
 		case m.loaded && m.cfg.Keys.ListAction(key) == "settings":
 			return m, m.openSettings()
+		case m.loaded && m.cfg.Keys.ListAction(key) == "keymap":
+			m.showKeys = true
 		}
 		return m, nil
 	}
@@ -576,13 +596,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			_ = m.do("yes", api.Action{Num: num})
 		}
 	case "new_chat":
-		m.openPrompt(ui.PromptNewChat, "", "chat title", "")
+		return m, m.newSession("")
 	case "new_session":
-		if row.Story == "" {
-			m.openPrompt(ui.PromptNewChat, "", "chat title", "")
-		} else {
-			m.openPrompt(ui.PromptNewSession, row.Story, "session title", "")
-		}
+		return m, m.newSession(row.Story)
 	case "new_story":
 		m.openPrompt(ui.PromptNewStory, "", "story name (branch feat/<name>)", "")
 	case "rename":
@@ -592,6 +608,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "resume":
 		if sess != nil && m.m.Gone(num) {
 			_ = m.do("resume", api.Action{Num: num})
+		}
+	case "add_repo":
+		if row.Kind == ui.RowStory && row.Story != "" && m.m.P.IsWorkspace() {
+			return m, m.loadStoryRepos(row.Story, true)
 		}
 	case "close_story":
 		if row.Story != "" {
@@ -810,11 +830,16 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 	case ui.PickCancel:
 		m.picker = nil
 	case ui.PickChoose:
-		choice, kind := m.picker.Choice(), m.pickKind
+		choice, checked, kind := m.picker.Choice(), m.picker.Checked(), m.pickKind
 		m.picker = nil
-		if kind == pickRepos {
+		switch kind {
+		case pickRepos:
 			m.setFlash("cloning " + choice + "…")
 			return m.create(api.NewProject{Kind: "clone", Repo: choice})
+		case pickStoryRepos:
+			return m.newStory(m.pickStory, checked)
+		case pickAddRepos:
+			return m.addStoryRepos(m.pickStory, checked, false)
 		}
 		switch choice {
 		case addFolder:
@@ -915,24 +940,34 @@ func (m *Model) create(p api.NewProject) tea.Cmd {
 	}
 }
 
+// newSession starts a session in story ("" = a chat) with no title: bx serve names it after
+// the first prompt. A chat takes the focus, so the prompt can be typed right away.
+func (m *Model) newSession(story string) tea.Cmd {
+	res, err := m.be.Do(m.ctx, m.project, "sessions", api.Action{Story: story})
+	if err != nil {
+		m.setFlash("error: " + err.Error())
+		return nil
+	}
+	m.pendingSel = res.Num
+	if story == "" {
+		m.claudeFocused = true
+		m.resizeTerm()
+	}
+	return tea.Batch(m.showSession(res.Num), m.poll())
+}
+
 func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	switch kind {
 	case ui.PromptNewStory:
-		if text != "" && m.do("stories", api.Action{Name: text}) == nil {
-			m.setFlash("Created story " + text + " on branch feat/" + text)
+		switch {
+		case text == "":
+		case m.m != nil && m.m.P.IsWorkspace():
+			return m.loadStoryRepos(text, false) // then the checklist of its repositories
+		default:
+			return m.newStory(text, nil)
 		}
-	case ui.PromptNewSession, ui.PromptNewChat:
-		res, err := m.be.Do(m.ctx, m.project, "sessions", api.Action{Story: target, Title: text})
-		if err != nil {
-			m.setFlash("error: " + err.Error())
-			return nil
-		}
-		m.pendingSel = res.Num
-		if kind == ui.PromptNewChat {
-			m.claudeFocused = true
-			m.resizeTerm()
-		}
-		return tea.Batch(m.showSession(res.Num), m.poll())
+	case ui.PromptAddRepoForce:
+		return m.addStoryRepos(target, m.addRepos, true)
 	case ui.PromptRename:
 		if num, _ := m.m.SelectedSession(); num != 0 && text != "" {
 			_ = m.do("rename", api.Action{Num: num, Title: text})
@@ -942,7 +977,11 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		res, err := m.be.Do(m.ctx, m.project, "stories/close", api.Action{Name: target, Force: force})
 		switch {
 		case err != nil && res.Dirty > 0 && !force:
-			m.openPrompt(ui.PromptCloseStoryForce, target, fmt.Sprintf("%s has %d uncommitted files · discard them? y/n", target, res.Dirty), "")
+			files := fmt.Sprintf("%d uncommitted files", res.Dirty)
+			if res.Detail != "" {
+				files += " (" + res.Detail + ")"
+			}
+			m.openPrompt(ui.PromptCloseStoryForce, target, fmt.Sprintf("%s has %s · discard them? y/n", target, files), "")
 		case err != nil:
 			m.setFlash("error: " + err.Error())
 		default:
@@ -962,6 +1001,78 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			return nil
 		}
 		return m.create(api.NewProject{Kind: "new", Name: text})
+	}
+	return nil
+}
+
+// newStory creates a story; repos are its repositories in a workspace.
+func (m *Model) newStory(name string, repos []string) tea.Cmd {
+	if m.do("stories", api.Action{Name: name, Repos: repos}) != nil {
+		return nil
+	}
+	msg := "Created story " + name + " on branch feat/" + name
+	if len(repos) > 0 {
+		msg += " in " + strings.Join(repos, ", ")
+	}
+	m.setFlash(msg)
+	return m.poll()
+}
+
+// loadStoryRepos asks for the repositories of the open workspace, for the checklist of a new
+// story or, with add, of the repositories to add to story.
+func (m *Model) loadStoryRepos(story string, add bool) tea.Cmd {
+	be, ctx, project := m.be, m.ctx, m.project
+	return func() tea.Msg {
+		repos, err := be.ProjectRepos(ctx, project)
+		return storyReposMsg{project: project, story: story, add: add, repos: repos, err: err}
+	}
+}
+
+func (m *Model) gotStoryRepos(msg storyReposMsg) {
+	if msg.project != m.project || m.m == nil {
+		return
+	}
+	if msg.err != nil {
+		m.setFlash("error: " + msg.err.Error())
+		return
+	}
+	repos, title := msg.repos, fmt.Sprintf("repositories of story %s (branch feat/%s)", msg.story, msg.story)
+	if msg.add {
+		var in []string
+		if st := m.m.P.Stories[msg.story]; st != nil {
+			in = st.RepoNames()
+		}
+		repos = slices.DeleteFunc(slices.Clone(repos), func(r string) bool { return slices.Contains(in, r) })
+		title = "add repositories to story " + msg.story
+	}
+	if len(repos) == 0 {
+		if msg.add {
+			m.setFlash("every repository is already in story " + msg.story)
+		} else {
+			m.setFlash("no repositories in " + m.m.P.Path)
+		}
+		return
+	}
+	kind := pickStoryRepos
+	if msg.add {
+		kind = pickAddRepos
+	}
+	m.picker, m.pickKind, m.pickStory = ui.NewChecklist(title, repos), kind, msg.story
+}
+
+// addStoryRepos adds repositories to a workspace story. When an original has uncommitted
+// files, which the story will not have, it asks first.
+func (m *Model) addStoryRepos(story string, repos []string, force bool) tea.Cmd {
+	res, err := m.be.Do(m.ctx, m.project, "stories/repos", api.Action{Name: story, Repos: repos, Force: force})
+	switch {
+	case err != nil && res.Dirty > 0 && !force:
+		m.addRepos = repos
+		m.openPrompt(ui.PromptAddRepoForce, story, fmt.Sprintf("uncommitted files in the original (%s) will not be in the story · add anyway? y/n", res.Detail), "")
+	case err != nil:
+		m.setFlash("error: " + err.Error())
+	default:
+		m.setFlash("added " + strings.Join(repos, ", ") + " to story " + story)
+		return m.poll()
 	}
 	return nil
 }
@@ -1017,6 +1128,8 @@ func (m *Model) body() string {
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
 	case m.settings != nil:
 		return m.settings.Render(m.width, m.height-1, false, m.settingsNote) + "\n" + m.bar()
+	case m.showKeys:
+		return "bx keymap · press any key to close\n\n" + keymapText(m.cfg)
 	case m.m == nil && m.prompt.Active():
 		return "bx · " + m.prompt.Line() + "\n" + m.flash
 	case m.m == nil && m.project == "" && m.loaded:
@@ -1025,8 +1138,6 @@ func (m *Model) body() string {
 		return "bx · connecting…\n" + m.flash
 	case m.m == nil:
 		return "bx · loading " + m.project + "…\n" + m.flash
-	case m.showKeys:
-		return "bx keymap · press any key to close\n\n" + keymapText(m.cfg)
 	}
 	var body string
 	switch {
@@ -1080,8 +1191,9 @@ func (m *Model) tabs() []ui.ProjectTab {
 func (m *Model) empty() string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
 	brand := lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true)
-	o := config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "projects"))
-	lines := []string{brand.Render("bx"), "", "  No project open.", dim.Render("  " + o + " open a project · ^c quit")}
+	key := func(action string) string { return config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, action)) }
+	hint := key("projects") + " open a project · " + key("settings") + " settings · " + key("keymap") + " keys · ^c quit"
+	lines := []string{brand.Render("bx"), "", "  No project open.", dim.Render("  " + hint)}
 	for len(lines) < m.height-1 {
 		lines = append(lines, "")
 	}

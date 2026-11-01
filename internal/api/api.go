@@ -23,11 +23,12 @@ type ProjectSummary struct {
 
 // Action is the body of every POST /api/projects/{name}/<action>.
 type Action struct {
-	Num   int    `json:"num,omitempty"`   // yes, resume, rename
-	Story string `json:"story,omitempty"` // sessions ("" = chat)
-	Title string `json:"title,omitempty"` // sessions, rename
-	Name  string `json:"name,omitempty"`  // stories, stories/close
-	Force bool   `json:"force,omitempty"` // stories/close: discard uncommitted files
+	Num   int      `json:"num,omitempty"`   // yes, resume, rename
+	Story string   `json:"story,omitempty"` // sessions ("" = chat)
+	Title string   `json:"title,omitempty"` // sessions, rename
+	Name  string   `json:"name,omitempty"`  // stories, stories/close, stories/repos
+	Force bool     `json:"force,omitempty"` // stories/close: discard uncommitted files; stories/repos: add dirty originals
+	Repos []string `json:"repos,omitempty"` // stories, stories/repos in a workspace: repositories, relative to it
 }
 
 // NewProject is the body of POST /api/projects.
@@ -41,10 +42,11 @@ type NewProject struct {
 // Result is the reply of every POST. Num is the new session (POST sessions), Name the new
 // project (POST /api/projects), Dirty the uncommitted files when a close is refused (409).
 type Result struct {
-	Num   int    `json:"num,omitempty"`
-	Name  string `json:"name,omitempty"`
-	Error string `json:"error,omitempty"`
-	Dirty int    `json:"dirty,omitempty"`
+	Num    int    `json:"num,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Error  string `json:"error,omitempty"`
+	Dirty  int    `json:"dirty,omitempty"`
+	Detail string `json:"detail,omitempty"` // the dirty files by repository, "api: 3, web: 1"
 }
 
 // Settings is GET /api/settings and the reply of PUT: every section and field the server offers,

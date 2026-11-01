@@ -66,8 +66,12 @@ func (s *Server) Handler() http.Handler {
 		return s.App.NewSession(p, r.Story, r.Title)
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/stories", s.action(func(p *state.Project, r api.Action) (int, error) {
-		return 0, s.App.NewStory(p, r.Name)
+		return 0, s.App.NewStory(p, r.Name, r.Repos)
 	}))
+	mux.HandleFunc("POST /api/projects/{name}/stories/repos", s.action(func(p *state.Project, r api.Action) (int, error) {
+		return 0, s.App.AddStoryRepos(p, r.Name, r.Repos, r.Force)
+	}))
+	mux.HandleFunc("GET /api/projects/{name}/repos", s.workspaceRepos)
 	mux.HandleFunc("POST /api/projects/{name}/stories/close", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.CloseStory(p, r.Name, r.Force)
 	}))
@@ -216,11 +220,51 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		httpError(w, statusOf(err), err)
 		return
 	}
-	writeJSON(w, api.Snapshot{Project: p, Live: s.collect(p)})
+	live := s.collect(p)
+	if titles := s.App.Titles(p, live.Agents); len(titles) > 0 {
+		p = s.setTitles(p, titles)
+	}
+	writeJSON(w, api.Snapshot{Project: p, Live: live})
+}
+
+// setTitles names unnamed sessions after their first prompt. It reloads the project under the
+// write lock, so a change since the load is kept; on an error the old project is shown.
+func (s *Server) setTitles(p *state.Project, titles map[int]string) *state.Project {
+	s.write.Lock()
+	defer s.write.Unlock()
+	fresh, err := s.load(p.Name)
+	if err != nil {
+		s.Log("titles: %s: %v", p.Name, err)
+		return p
+	}
+	if _, err := s.App.SetTitles(fresh, titles); err != nil {
+		s.Log("titles: %s: %v", p.Name, err)
+		return p
+	}
+	return fresh
+}
+
+// workspaceRepos lists the repositories of a workspace, for the story checklists.
+func (s *Server) workspaceRepos(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	repos, err := s.App.WorkspaceRepos(p)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	if repos == nil {
+		repos = []string{}
+	}
+	writeJSON(w, repos)
 }
 
 // collect builds the live view of a project: agents, branch and dirty count of the project
-// folder, and the diff and dirty count of every story worktree.
+// folder (not for a workspace, which is no repository), and the diff and dirty count of every
+// story worktree.
 func (s *Server) collect(p *state.Project) ui.Live {
 	l := ui.Live{Now: time.Now()}
 	if agents, err := s.liveAgents(); err != nil {
@@ -229,11 +273,13 @@ func (s *Server) collect(p *state.Project) ui.Live {
 	} else {
 		l.Agents, l.Dups = claude.IndexByUUID(agents), claude.Duplicates(agents)
 	}
-	if n, err := s.App.Git.DirtyCount(p.Path); err == nil {
-		l.DirtyFiles = n
-	}
-	if b, err := s.App.Git.CurrentBranch(p.Path); err == nil {
-		l.Branch = b
+	if !p.IsWorkspace() {
+		if n, err := s.App.Git.DirtyCount(p.Path); err == nil {
+			l.DirtyFiles = n
+		}
+		if b, err := s.App.Git.CurrentBranch(p.Path); err == nil {
+			l.Branch = b
+		}
 	}
 	l.Diff = s.diff(p)
 	return l
@@ -265,23 +311,37 @@ func (s *Server) diff(p *state.Project) map[string]ui.Diff {
 	if ok && time.Since(c.at) < 10*time.Second {
 		return c.diff
 	}
-	base, _ := s.App.Git.DefaultBranch(p.Path)
 	d := map[string]ui.Diff{}
-	for name := range p.Stories {
-		dir := s.App.Dir(p, name)
-		var sd ui.Diff
-		if add, del, err := s.App.Git.ShortStat(dir, base); err == nil {
-			sd.Add, sd.Del = add, del
+	if p.IsWorkspace() {
+		for name, st := range p.Stories { // summed over the story's repositories
+			var sd ui.Diff
+			for _, r := range st.Repos {
+				sd = sd.Plus(s.storyDiff(filepath.Join(s.App.Dir(p, name), r.Rel), r.Base))
+			}
+			d[name] = sd
 		}
-		if n, err := s.App.Git.DirtyCount(dir); err == nil {
-			sd.Dirty = n
+	} else {
+		base, _ := s.App.Git.DefaultBranch(p.Path)
+		for name := range p.Stories {
+			d[name] = s.storyDiff(s.App.Dir(p, name), base)
 		}
-		d[name] = sd
 	}
 	s.mu.Lock()
 	s.diffs[p.Name] = diffCache{at: time.Now(), diff: d}
 	s.mu.Unlock()
 	return d
+}
+
+// storyDiff is the lines a worktree's branch changed since base, and its uncommitted files.
+func (s *Server) storyDiff(dir, base string) ui.Diff {
+	var sd ui.Diff
+	if add, del, err := s.App.Git.ShortStat(dir, base); err == nil {
+		sd.Add, sd.Del = add, del
+	}
+	if n, err := s.App.Git.DirtyCount(dir); err == nil {
+		sd.Dirty = n
+	}
+	return sd
 }
 
 func sortedNums(p *state.Project) []int {
@@ -337,7 +397,7 @@ func (s *Server) action(fn func(p *state.Project, r api.Action) (int, error)) ht
 		case errors.As(err, &dirty):
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
-			_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error(), Dirty: dirty.Files})
+			_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error(), Dirty: dirty.Files, Detail: dirty.Detail})
 			return
 		case err != nil:
 			httpError(w, statusOf(err), err)

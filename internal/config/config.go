@@ -73,7 +73,7 @@ func Default(root string) *Config {
 				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
 				"yes": {"y"}, "new_chat": {"c"}, "new_session": {"n"}, "new_story": {"w"},
 				"lazygit": {"d"}, "nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
-				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"},
+				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
 				"waiting": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"activity": {"A"}, "prev_project": {"["}, "next_project": {"]"}, "close_project": {"x"},
 				"settings": {"S"},

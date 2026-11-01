@@ -20,8 +20,16 @@ func TestAddFolder(t *testing.T) {
 	if _, err := a.AddFolder("rel/path"); err == nil {
 		t.Fatal("relative path accepted")
 	}
-	if _, err := a.AddFolder(t.TempDir()); err == nil || !strings.Contains(err.Error(), "not a git repository") {
-		t.Fatalf("plain folder: %v", err)
+	if _, err := a.AddFolder(filepath.Join(t.TempDir(), "gone")); err == nil || !strings.Contains(err.Error(), "not a folder") {
+		t.Fatalf("missing folder: %v", err)
+	}
+	ws := filepath.Join(t.TempDir(), "Work")
+	os.Mkdir(ws, 0o755)
+	if name, err := a.AddFolder(ws); err != nil || name != "work" {
+		t.Fatalf("plain folder: %q %v", name, err)
+	}
+	if got, _ := a.LoadProject("work"); !got.IsWorkspace() {
+		t.Fatalf("kind = %q", got.Kind)
 	}
 	other := filepath.Join(t.TempDir(), "Lab-Tools")
 	if err := a.Git.Init(other); err != nil {
@@ -32,7 +40,7 @@ func TestAddFolder(t *testing.T) {
 		t.Fatalf("%q %v", name, err)
 	}
 	got, err := a.LoadProject("lab-tools")
-	if err != nil || got.Path != other {
+	if err != nil || got.Path != other || got.IsWorkspace() {
 		t.Fatalf("%+v %v", got, err)
 	}
 	if _, err := a.AddFolder(p.Path); err == nil || !strings.Contains(err.Error(), "already exists") {

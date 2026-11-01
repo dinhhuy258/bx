@@ -37,3 +37,25 @@ func TestPickerFiltersMovesAndChooses(t *testing.T) {
 		t.Fatal("Enter on an empty list must do nothing")
 	}
 }
+
+func TestChecklistTicks(t *testing.T) {
+	p := NewChecklist("repos", []string{"api", "libs/auth", "web"})
+	if got := p.Checked(); len(got) != 1 || got[0] != "api" {
+		t.Fatalf("nothing ticked takes the highlighted one: %v", got)
+	}
+	p.Key("Space", " ")
+	p.Key("Down", "")
+	p.Key("Down", "")
+	p.Key("Space", " ")
+	p.Key("w", "w") // the filter hides api, which stays ticked
+	if got := strings.Join(p.Checked(), " "); got != "api web" {
+		t.Fatalf("checked = %q", got)
+	}
+	p.Key("Space", " ") // untick web
+	if got := strings.Join(p.Checked(), " "); got != "api" {
+		t.Fatalf("checked = %q", got)
+	}
+	if out := p.Render(40, 10); !strings.Contains(out, "[ ] web") || !strings.Contains(out, "space tick") {
+		t.Fatal(out)
+	}
+}

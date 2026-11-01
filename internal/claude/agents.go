@@ -97,6 +97,7 @@ func Duplicates(agents []Agent) map[string]bool {
 // Options are the settings a session starts with. "" leaves the flag out: Claude's own default.
 type Options struct {
 	Model, Effort, PermissionMode string
+	Settings                      string // extra settings JSON for --settings, such as hooks
 }
 
 // StartArgs builds the command for a new or resumed session. Run it in the target folder.
@@ -106,7 +107,7 @@ func StartArgs(uuid string, resume bool, o Options) []string {
 	if resume {
 		args = []string{"claude", "--resume", uuid}
 	}
-	for _, f := range [][2]string{{"--permission-mode", o.PermissionMode}, {"--model", o.Model}, {"--effort", o.Effort}} {
+	for _, f := range [][2]string{{"--permission-mode", o.PermissionMode}, {"--model", o.Model}, {"--effort", o.Effort}, {"--settings", o.Settings}} {
 		if f[1] != "" {
 			args = append(args, f[0], f[1])
 		}

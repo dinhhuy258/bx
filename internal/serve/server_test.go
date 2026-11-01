@@ -56,7 +56,7 @@ func newServer(t *testing.T) (*Server, *tmux.Fake, *httptest.Server) {
 		t.Fatal(err)
 	}
 	p := state.New("home-network", repo)
-	if err := a.NewStory(p, "s1"); err != nil {
+	if err := a.NewStory(p, "s1", nil); err != nil {
 		t.Fatal(err)
 	}
 	p.AddSession(&state.Session{Story: "s1", UUID: "u1", Title: "Add lease time"})
@@ -269,5 +269,47 @@ func TestResumeAllAtStartup(t *testing.T) {
 	}
 	if strings.Contains(calls(f), "claude --resume u1") {
 		t.Fatal("resumed a running session")
+	}
+}
+
+func TestWorkspaceStories(t *testing.T) {
+	s, _, ts := newServer(t)
+	root := filepath.Join(t.TempDir(), "work")
+	for _, rel := range []string{"api", "web"} {
+		dir := filepath.Join(root, rel)
+		if err := s.App.Git.Init(dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if res, code := post(t, ts, "/api/projects", api.NewProject{Kind: "folder", Path: root}); code != 200 || res.Name != "work" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	repos, code := get[[]string](t, ts, "/api/projects/work/repos")
+	if code != 200 || strings.Join(repos, " ") != "api web" {
+		t.Fatalf("%d %v", code, repos)
+	}
+	if _, code := get[[]string](t, ts, "/api/projects/home-network/repos"); code != 400 {
+		t.Fatalf("repos of a repo project: %d", code)
+	}
+	if res, code := post(t, ts, "/api/projects/work/stories", api.Action{Name: "login", Repos: []string{"api"}}); code != 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	os.WriteFile(filepath.Join(root, "web", "wip.txt"), []byte("x\n"), 0o644)
+	res, code := post(t, ts, "/api/projects/work/stories/repos", api.Action{Name: "login", Repos: []string{"web"}})
+	if code != 409 || res.Dirty != 1 || res.Detail != "web: 1" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if res, code := post(t, ts, "/api/projects/work/stories/repos", api.Action{Name: "login", Repos: []string{"web"}, Force: true}); code != 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	os.WriteFile(filepath.Join(s.Cfg.WorktreeDir("work", "login"), "api", "a.txt"), []byte("x\n"), 0o644)
+	snap, code := get[api.Snapshot](t, ts, "/api/projects/work")
+	if code != 200 || !snap.Project.IsWorkspace() || snap.Live.Branch != "" || snap.Live.Diff["login"].Dirty != 1 ||
+		strings.Join(snap.Project.Stories["login"].RepoNames(), " ") != "api web" {
+		t.Fatalf("%d %+v", code, snap)
+	}
+	res, code = post(t, ts, "/api/projects/work/stories/close", api.Action{Name: "login"})
+	if code != 409 || res.Detail != "api: 1" {
+		t.Fatalf("%d %+v", code, res)
 	}
 }

@@ -3,6 +3,7 @@ package commands
 import (
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/config"
@@ -24,6 +25,14 @@ func setup() (*config.Config, *app.App, *log.Logger, error) {
 	}
 	logger := log.New(f, "", log.LstdFlags)
 	a := app.New(cfg)
+	if a.Self, err = os.Executable(); err != nil {
+		logger.Printf("no bx binary path, workspace stories run without the guard: %v", err)
+	}
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		a.Transcripts = filepath.Join(dir, "projects")
+	} else if home, err := os.UserHomeDir(); err == nil {
+		a.Transcripts = filepath.Join(home, ".claude", "projects")
+	}
 	if a.Settings, err = settings.Open(cfg.SettingsFile(), logger.Printf); err != nil {
 		return nil, nil, nil, err
 	}

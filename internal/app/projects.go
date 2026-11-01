@@ -38,22 +38,31 @@ func (a *App) checkNew(name string) error {
 	return nil
 }
 
-func (a *App) register(name, path string) error { return a.SaveProject(state.New(name, path)) }
+func (a *App) register(name, path, kind string) error {
+	p := state.New(name, path)
+	p.Kind = kind
+	return a.SaveProject(p)
+}
 
-// AddFolder registers an existing git repository on the server where it is.
+// AddFolder registers an existing folder on the server where it is: a git repository, or else
+// a workspace, a folder of repositories.
 func (a *App) AddFolder(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("%q is not an absolute path", path)
 	}
 	path = filepath.Clean(path)
+	if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
+		return "", fmt.Errorf("%s is not a folder", path)
+	}
+	kind := state.KindRepo
 	if !a.Git.IsRepo(path) {
-		return "", fmt.Errorf("%s is not a git repository", path)
+		kind = state.KindWorkspace
 	}
 	name := ProjectName(path)
 	if err := a.checkNew(name); err != nil {
 		return "", err
 	}
-	return name, a.register(name, path)
+	return name, a.register(name, path, kind)
 }
 
 // CloneProject clones owner/repo with gh into the projects folder.
@@ -72,7 +81,7 @@ func (a *App) CloneProject(repo string) (string, error) {
 	if _, err := a.GH("repo", "clone", repo, dest); err != nil {
 		return "", err
 	}
-	return name, a.register(name, dest)
+	return name, a.register(name, dest, state.KindRepo)
 }
 
 // NewProject creates an empty repository in the projects folder.
@@ -87,7 +96,7 @@ func (a *App) NewProject(name string) (string, error) {
 	if err := a.Git.Init(dest); err != nil {
 		return "", err
 	}
-	return name, a.register(name, dest)
+	return name, a.register(name, dest, state.KindRepo)
 }
 
 // GitHubRepos lists up to 100 repositories of the gh user, as owner/repo.
