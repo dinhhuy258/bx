@@ -37,6 +37,7 @@ export function showSession(root, project, num) {
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
     keys, h('div', { class: 'input' }, input, sendBtn));
   root.append(screen);
+  document.documentElement.classList.add('session-lock'); // see layout()
 
   const term = new window.Terminal({ fontSize: 12, fontFamily: 'Menlo, monospace', scrollback: 0,
     cursorBlink: false, theme: { background: '#111111' } });
@@ -239,20 +240,46 @@ export function showSession(root, project, num) {
   termEl.addEventListener('touchend', onTouchEnd);
   termEl.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
-  // fit the screen to the visual viewport (the keyboard shrinks it on iOS), then tell tmux
+  // Fit the screen to the visual viewport (the keyboard shrinks it on iOS), then tell tmux.
+  // Root cause of the screen staying shifted after the keyboard closes: focusing the textarea
+  // makes iOS scroll the layout viewport (the document) to reveal it. On dismiss,
+  // visualViewport.offsetTop/height update late or not at all and the document stays
+  // scrolled, so a fixed screen placed at the old offsetTop sits shifted down by about the
+  // keyboard height. So the document can't scroll while this screen is shown (html.session-lock),
+  // and layout() is re-derived after the keyboard settles: with no keyboard it scrolls back to
+  // 0 and drops the inline top/height, so CSS (top 0, 100dvh) applies.
   let resizeTimer = null;
+  const settleTimers = [];
   const vv = window.visualViewport;
-  const onResize = () => {
-    if (vv) { screen.style.height = `${vv.height}px`; screen.style.top = `${vv.offsetTop}px`; }
+  const keyboardShown = () => !!vv && vv.height < window.innerHeight - 1;
+  const layout = () => {
+    if (keyboardShown()) {
+      screen.style.height = `${vv.height}px`;
+      screen.style.top = `${vv.offsetTop}px`;
+    } else {
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+      screen.style.height = '';
+      screen.style.top = '';
+    }
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       fit.fit();
       control({ type: 'resize', cols: term.cols, rows: term.rows });
     }, 100);
   };
+  // settle lays out now and again once iOS has finished moving the viewport
+  const settle = () => {
+    layout();
+    settleTimers.forEach(clearTimeout);
+    settleTimers.length = 0;
+    settleTimers.push(setTimeout(layout, 100), setTimeout(layout, 400));
+  };
+  const onResize = () => { if (keyboardShown()) layout(); else settle(); };
   if (vv) { vv.addEventListener('resize', onResize); vv.addEventListener('scroll', onResize); }
   window.addEventListener('resize', onResize);
-  onResize();
+  input.addEventListener('focus', settle);
+  input.addEventListener('focusout', settle);
+  layout();
 
   // back in the foreground or back online: reconnect a dropped socket at once
   const onVis = () => {
@@ -282,9 +309,13 @@ export function showSession(root, project, num) {
       closed = true;
       clearTimeout(retry);
       clearTimeout(resizeTimer);
+      settleTimers.forEach(clearTimeout);
       stopPoll();
       if (vv) { vv.removeEventListener('resize', onResize); vv.removeEventListener('scroll', onResize); }
       window.removeEventListener('resize', onResize);
+      input.removeEventListener('focus', settle);
+      input.removeEventListener('focusout', settle);
+      document.documentElement.classList.remove('session-lock');
       document.removeEventListener('visibilitychange', onVis);
       window.removeEventListener('online', reconnectNow);
       if (ws) ws.close(1000, 'bye');

@@ -40,7 +40,11 @@ dialog.sheet[open] { display: flex; flex-direction: column; gap: 8px; }
 .checks label { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
 .toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #333; padding: 10px 16px; border-radius: 8px; z-index: 10; max-width: 90vw; }
 
-/* session screen: fills the visual viewport (JS sets height/top when the keyboard opens) */
+/* session screen: fills the visual viewport (JS sets height/top while the keyboard is open).
+   The document must not scroll under it: iOS scrolls it to reveal the focused input and may
+   leave it scrolled after the keyboard closes, which shifts the screen down (see session.js layout) */
+html.session-lock, html.session-lock body { overflow: hidden; height: 100%; overscroll-behavior: none; }
+html.session-lock body { position: fixed; inset: 0; }
 .session { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--bg); padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 .term-wrap { flex: 1; position: relative; min-height: 0; }
 .term { position: absolute; inset: 0; padding: 2px; touch-action: none; }
