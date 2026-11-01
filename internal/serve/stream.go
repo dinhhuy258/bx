@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/coder/websocket"
@@ -73,7 +74,11 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log("stream %s [%d]: open (%dx%d)", p.Name, num, cols, rows)
 	defer func() {
-		_ = f.Close() // hangs up tmux attach, which detaches
+		_ = f.Close()
+		// The pty → socket goroutine is still blocked reading the pty, so the close above
+		// waits for that read and tmux attach gets no hangup until the pane prints. Hang it
+		// up directly: tmux attach detaches on SIGHUP, the session keeps running.
+		_ = cmd.Process.Signal(syscall.SIGHUP)
 		_ = cmd.Wait()
 		s.Log("stream %s [%d]: closed", p.Name, num)
 	}()

@@ -52,6 +52,13 @@ func (attachFake) Command(...string) *exec.Cmd {
 	return exec.Command("sh", "-c", "while :; do echo x; sleep 0.1; done")
 }
 
+// silentFake is a fake tmux whose attach prints nothing, like tmux on an idle pane.
+type silentFake struct{ *tmux.Fake }
+
+func (silentFake) Command(...string) *exec.Cmd {
+	return exec.Command("sh", "-c", "exec sleep 30")
+}
+
 // endingFake is a fake tmux whose attach exits after 200 ms: the session ends.
 type endingFake struct{ *tmux.Fake }
 
@@ -101,6 +108,22 @@ func pingStreamWith(t *testing.T, interval, timeout time.Duration, fake func(*tm
 		}
 	})
 	return c, logs
+}
+
+func TestStreamClosingDetachesASilentAttach(t *testing.T) {
+	c, logs := pingStreamWith(t, time.Minute, time.Minute, func(f *tmux.Fake) tmux.Exec { return silentFake{f} })
+	c.Close(websocket.StatusNormalClosure, "bye")
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case l := <-logs:
+			if strings.HasSuffix(l, ": closed") {
+				return
+			}
+		case <-deadline:
+			t.Fatal("tmux attach still running 2 s after the client left")
+		}
+	}
 }
 
 func TestStreamPingKeepsAReadingClient(t *testing.T) {
