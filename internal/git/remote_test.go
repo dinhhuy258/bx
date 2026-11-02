@@ -200,6 +200,13 @@ func TestWorktreeAddTracking(t *testing.T) {
 	if dir, ok, _ := g.WorktreeOf(r.clone, "local-only"); !ok || !sameDir(dir, wt) {
 		t.Fatalf("worktree of local-only = %q %v", dir, ok)
 	}
+	used, err := g.CheckedOut(r.clone)
+	if err != nil || len(used) != 4 || !sameDir(used["local-only"], wt) || !sameDir(used["main"], filepath.Join(root, "b")) {
+		t.Fatalf("checked out %v %v", used, err)
+	}
+	if _, ok := used["develop"]; !ok {
+		t.Fatalf("checked out %v: no develop", used)
+	}
 }
 
 // commitAt commits file in dir with a committer date days after the first commit.

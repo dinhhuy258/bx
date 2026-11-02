@@ -155,20 +155,32 @@ func (g *Git) IsAncestor(repo, a, b string) bool {
 
 // WorktreeOf finds the worktree, the main one included, that has branch checked out.
 func (g *Git) WorktreeOf(repo, branch string) (dir string, ok bool, err error) {
-	out, err := g.run(repo, "worktree", "list", "--porcelain")
+	m, err := g.CheckedOut(repo)
 	if err != nil {
 		return "", false, err
 	}
+	dir, ok = m[branch]
+	return dir, ok, nil
+}
+
+// CheckedOut maps each branch checked out in a worktree of repo, the main one included, to that
+// worktree's folder.
+func (g *Git) CheckedOut(repo string) (map[string]string, error) {
+	out, err := g.run(repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]string{}
 	var cur string
 	for _, l := range strings.Split(out, "\n") {
 		switch {
 		case strings.HasPrefix(l, "worktree "):
 			cur = strings.TrimPrefix(l, "worktree ")
-		case l == "branch refs/heads/"+branch:
-			return cur, true, nil
+		case strings.HasPrefix(l, "branch refs/heads/"):
+			m[strings.TrimPrefix(l, "branch refs/heads/")] = cur
 		}
 	}
-	return "", false, nil
+	return m, nil
 }
 
 // FastForward moves local branch b to origin/<b>, which must be ahead of it. b must not be

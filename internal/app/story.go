@@ -312,6 +312,9 @@ func (a *App) prepareExisting(ctx context.Context, p *state.Project, plan *Story
 			continue
 		}
 		local := a.Git.RefExists(t.repo, "refs/heads/"+b)
+		if dir, out, err := a.Git.WorktreeOf(t.repo, b); local && err == nil && out {
+			return fmt.Errorf("branch %s is checked out in %s · a story needs a branch no worktree has", b, dir)
+		}
 		if a.Git.HasRemote(t.repo) {
 			if err := a.fetch(ctx, t.repo, b); ctx.Err() != nil {
 				return err
@@ -853,7 +856,8 @@ type BranchList struct {
 }
 
 // Branches lists the branches of a project, newest first; in a workspace the union over its
-// repositories. With fetch it first runs `git fetch origin --prune` in each, a failure kept as a
+// repositories. A branch checked out in a worktree (the project folder's, a story's) is left
+// out: a story cannot check it out again. With fetch it first runs `git fetch origin --prune` in each, a failure kept as a
 // note.
 func (a *App) Branches(ctx context.Context, p *state.Project, fetch bool) (*BranchList, error) {
 	targets, err := a.allTargets(p)
@@ -862,6 +866,7 @@ func (a *App) Branches(ctx context.Context, p *state.Project, fetch bool) (*Bran
 	}
 	out := &BranchList{Branches: []BranchInfo{}}
 	byName := map[string]int{}
+	busy := map[string]bool{} // checked out in a worktree of some repository
 	var failed []string
 	for _, t := range targets {
 		if fetch && a.Git.HasRemote(t.repo) {
@@ -878,6 +883,13 @@ func (a *App) Branches(ctx context.Context, p *state.Project, fetch bool) (*Bran
 		bs, err := a.Git.Branches(t.repo)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", t.name, err)
+		}
+		used, err := a.Git.CheckedOut(t.repo)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", t.name, err)
+		}
+		for b := range used {
+			busy[b] = true
 		}
 		for _, b := range bs {
 			i, ok := byName[b.Name]
@@ -896,6 +908,8 @@ func (a *App) Branches(ctx context.Context, p *state.Project, fetch bool) (*Bran
 			}
 		}
 	}
+	// git checks a branch out in one worktree only, so a story cannot use these
+	out.Branches = slices.DeleteFunc(out.Branches, func(b BranchInfo) bool { return busy[b.Name] })
 	sort.SliceStable(out.Branches, func(i, j int) bool { return out.Branches[i].Time.After(out.Branches[j].Time) })
 	switch {
 	case len(failed) == 0:

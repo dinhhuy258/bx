@@ -794,7 +794,8 @@ func TestStoryInfoBranchesAndPullRequests(t *testing.T) {
 	for _, b := range bl.Branches {
 		names[b.Name] = b
 	}
-	if code != 200 || bl.Note != "" || !names["develop"].Remote || !names["develop"].Local || !names["feat/s1"].Local || names["feat/s1"].Remote || names["main"].Time == 0 {
+	// main (the project folder's) and feat/s1 (story s1's) are checked out: not offered
+	if _, ok := names["main"]; code != 200 || bl.Note != "" || !names["develop"].Remote || !names["develop"].Local || names["develop"].Time == 0 || ok || len(names) != 1 {
 		t.Fatalf("%d %+v", code, bl)
 	}
 	var dirs []string

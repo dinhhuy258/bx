@@ -316,6 +316,23 @@ func TestStoryFromAnExistingBranch(t *testing.T) {
 	if _, err := a.NewStory(context.Background(), p, StoryOpts{Source: SourceBranch, Branch: "--upload-pack=x"}); err == nil {
 		t.Fatal("option as branch accepted")
 	}
+	// main is the project folder's, topic/Local-One the first story's: neither listed, both refused
+	bl, err := a.Branches(context.Background(), p, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range bl.Branches {
+		if b.Name == "main" || b.Name == "topic/Local-One" || b.Name == "fix/remote-one" {
+			t.Fatalf("listed %s, which a worktree has", b.Name)
+		}
+	}
+	_, err = a.NewStory(context.Background(), p, StoryOpts{Source: SourceBranch, Branch: "main"})
+	if err == nil || !strings.HasPrefix(err.Error(), "branch main is checked out in ") || !strings.HasSuffix(err.Error(), " · a story needs a branch no worktree has") {
+		t.Fatalf("checked-out main: %v", err)
+	}
+	if _, ok := p.Stories["main"]; ok {
+		t.Fatal("story made on a checked-out branch")
+	}
 }
 
 // fakeGH answers gh by its args joined with spaces, and records the folder of each call.
@@ -445,6 +462,31 @@ func TestForkPRNeverWritesAnUnrelatedBranch(t *testing.T) {
 	}
 }
 
+func TestWorkspaceBranchesLeaveOutCheckedOutOnes(t *testing.T) {
+	a, p := newWorkspace(t)
+	api, web := filepath.Join(p.Path, "api"), filepath.Join(p.Path, "web")
+	gitIn(t, api, "branch", "shared")
+	gitIn(t, web, "branch", "shared")
+	gitIn(t, web, "checkout", "-q", "shared") // web's folder has it: not a story's in api either
+	gitIn(t, api, "branch", "spare")
+	bl, err := a.Branches(context.Background(), p, false)
+	if err != nil || len(bl.Branches) != 1 {
+		t.Fatalf("%+v %v", bl, err)
+	}
+	names := map[string][]string{}
+	for _, b := range bl.Branches {
+		names[b.Name] = b.Repos
+	}
+	// main is checked out in api and libs/auth; shared in web
+	if strings.Join(names["spare"], ",") != "api" || names["main"] != nil || names["shared"] != nil {
+		t.Fatalf("branches %v", names)
+	}
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Source: SourceBranch, Branch: "shared", Repos: []string{"api", "web"}}); err == nil ||
+		!strings.HasPrefix(err.Error(), "branch shared is checked out in ") {
+		t.Fatalf("checked-out shared: %v", err)
+	}
+}
+
 func TestStoryFromAPullRequestInAWorkspace(t *testing.T) {
 	a, p := newWorkspace(t)
 	api := filepath.Join(p.Path, "api")
@@ -563,11 +605,12 @@ func TestStoryInfoBranchesAndOverride(t *testing.T) {
 	for _, b := range bl.Branches {
 		seen[b.Name] = fmt.Sprint(b.Local, b.Remote)
 	}
-	if seen["develop"] != "true true" || seen["main"] != "true true" || seen["mine"] != "true false" || len(seen) != 3 {
+	// main is checked out in the project folder, so a story cannot have it
+	if seen["develop"] != "true true" || seen["mine"] != "true false" || len(seen) != 2 {
 		t.Fatalf("branches %v", seen)
 	}
 	gitIn(t, p.Path, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
-	if bl, _ = a.Branches(context.Background(), p, true); bl.Note != "fetch failed · showing the last fetched branches" || len(bl.Branches) != 3 {
+	if bl, _ = a.Branches(context.Background(), p, true); bl.Note != "fetch failed · showing the last fetched branches" || len(bl.Branches) != 2 {
 		t.Fatalf("%+v", bl)
 	}
 }
