@@ -508,9 +508,11 @@ func (a *App) planBase(ctx context.Context, p *state.Project, plan *StoryPlan, t
 	if err != nil {
 		return repoPlan{}, err
 	}
-	start, notes, err := a.freshBase(ctx, t.repo, base)
-	if err != nil {
-		return repoPlan{}, err
+	start, notes := base, []string(nil)
+	if !a.localOverride(t.repo, override, base) {
+		if start, notes, err = a.freshBase(ctx, t.repo, base); err != nil {
+			return repoPlan{}, err
+		}
 	}
 	if missing {
 		plan.notes = append(plan.notes, fmt.Sprintf("override %s not in %s · used %s", override, t.rel, start))
@@ -551,6 +553,14 @@ func (a *App) detectBase(ctx context.Context, t *target, override string, ws boo
 		return b, missing, nil
 	}
 	return "", false, fmt.Errorf("no default branch in %s · set a base override in settings › git", t.name)
+}
+
+// localOverride reports whether base is the override and only a local branch of repo (no
+// origin/<base> fetched): a new story starts from it as it is, with no fetch, and the preview
+// says <base>, not origin/<base>.
+func (a *App) localOverride(repo, override, base string) bool {
+	return override != "" && base == override && a.Git.RefExists(repo, "refs/heads/"+base) &&
+		!a.Git.RefExists(repo, "refs/remotes/origin/"+base)
 }
 
 // hasBranch reports whether b is a local branch of repo or a branch of its origin.
@@ -787,7 +797,7 @@ func (a *App) StoryInfo(ctx context.Context, p *state.Project) (*BaseInfo, error
 			if err != nil {
 				continue
 			}
-			if a.Git.HasRemote(t.repo) {
+			if a.Git.HasRemote(t.repo) && !a.localOverride(t.repo, override, b) {
 				b = "origin/" + b
 			}
 			if !slices.Contains(bases, b) {

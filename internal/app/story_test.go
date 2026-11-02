@@ -572,6 +572,37 @@ func TestStoryInfoBranchesAndOverride(t *testing.T) {
 	}
 }
 
+func TestStoryFromALocalOnlyOverride(t *testing.T) {
+	a, _, p := newApp(t)
+	withOrigin(t, p.Path)
+	gitIn(t, p.Path, "checkout", "-q", "-b", "release")
+	tip := commitFile(t, p.Path, "release.txt")
+	gitIn(t, p.Path, "checkout", "-q", "main")
+	if err := a.SetBaseOverride(p, "release"); err != nil {
+		t.Fatal(err)
+	}
+	info, err := a.StoryInfo(context.Background(), p)
+	if err != nil || info.Base != "release" || info.Detected != "origin/develop" {
+		t.Fatalf("preview %+v %v", info, err)
+	}
+	// no fetch of a branch origin does not have, so no "fetch failed" note
+	res := newStory(t, a, p, StoryOpts{Name: "rel"})
+	if res.Message() != "Created rel on feat/rel ← release" || p.Stories["rel"].Base != "release" {
+		t.Fatalf("%q %+v", res.Message(), p.Stories["rel"])
+	}
+	if gitIn(t, a.Dir(p, "rel"), "rev-parse", "HEAD") != tip {
+		t.Fatal("not started from the local release")
+	}
+	// once origin has it, it is fetched and used from origin like any base
+	gitIn(t, p.Path, "push", "-q", "origin", "release")
+	if info, _ = a.StoryInfo(context.Background(), p); info.Base != "origin/release" {
+		t.Fatalf("pushed: %+v", info)
+	}
+	if res = newStory(t, a, p, StoryOpts{Name: "rel2"}); res.Message() != "Created rel2 on feat/rel2 ← origin/release" {
+		t.Fatalf("pushed: %q", res.Message())
+	}
+}
+
 func TestRunGHIsKilledWithItsContext(t *testing.T) {
 	bin := t.TempDir()
 	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
