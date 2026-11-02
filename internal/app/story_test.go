@@ -233,6 +233,10 @@ func TestStoryNamesAndTypes(t *testing.T) {
 		{StoryOpts{Name: "lease", Type: "chore"}, "lease", "chore/lease"},
 		{StoryOpts{Name: "next"}, "next", "chore/next"}, // the last type
 		{StoryOpts{Name: "team/x/deep"}, "deep", "team/x/deep"},
+		// the clean branch has no "/": a plain name, with the picked type (saved as the last)
+		{StoryOpts{Name: "solo/", Type: "fix"}, "solo", "fix/solo"},
+		{StoryOpts{Name: "/!!!/alone/"}, "alone", "fix/alone"},
+		{StoryOpts{Name: "late/", Type: "chore"}, "late", "chore/late"},
 	} {
 		res := newStory(t, a, p, c.o)
 		if res.Story != c.story || res.Branch != c.branch || p.Stories[c.story].Branch != c.branch {

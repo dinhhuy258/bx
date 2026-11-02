@@ -31,7 +31,7 @@ const (
 // StoryOpts is a request for a new story.
 type StoryOpts struct {
 	// Name is what the user typed for a new branch: a name ("login timeout") made into
-	// <type>/<slug>, or a full branch when it has a "/" ("fix/login-timeout").
+	// <type>/<slug>, or a full branch when its naming.CleanBranch has a "/" ("fix/login-timeout").
 	Name string
 	// Type is the branch type of a new branch (one of naming.Types); "" is the project's last
 	// type, else feat.
@@ -203,8 +203,9 @@ func (a *App) storyTargets(p *state.Project, o *StoryOpts) ([]*target, error) {
 // nameNew turns the typed name into the story and its branch.
 func (a *App) nameNew(p *state.Project, o *StoryOpts, plan *StoryPlan) error {
 	name := strings.TrimSpace(o.Name)
-	if strings.Contains(name, "/") {
-		plan.Branch = naming.CleanBranch(name)
+	// decided on the cleaned branch, like the clients: "foo/" is the plain name foo
+	if b := naming.CleanBranch(name); strings.Contains(b, "/") {
+		plan.Branch = b
 		plan.Story = naming.StoryName(plan.Branch)
 	} else {
 		if o.Type != "" && !naming.ValidType(o.Type) {
