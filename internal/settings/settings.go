@@ -27,23 +27,25 @@ const (
 )
 
 // Field is one setting. Key is the section id, a dot, then the field id. For a choice, ""
-// first means no value: the program's own default.
+// first means no value: the program's own default. A choice with a Default has no "": no value
+// means Default. A TUIOnly field and its value are left out of what the web client gets (see
+// Visible).
 type Field struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
 	Help    string   `json:"help,omitempty"` // shown under the fields when the cursor is on it
 	Kind    Kind     `json:"kind"`
 	Choices []string `json:"choices,omitempty"`
+	Default string   `json:"default,omitempty"`
+	TUIOnly bool     `json:"-"`
 }
 
-// Section is a group of fields, one entry on the left of the screen. A TUIOnly section and its
-// values are left out of what the web client gets (see Visible).
+// Section is a group of fields, one entry on the left of the screen.
 type Section struct {
-	ID      string  `json:"id"`
-	Title   string  `json:"title"`
-	Help    string  `json:"help,omitempty"`
-	Fields  []Field `json:"fields"`
-	TUIOnly bool    `json:"-"`
+	ID     string  `json:"id"`
+	Title  string  `json:"title"`
+	Help   string  `json:"help,omitempty"`
+	Fields []Field `json:"fields"`
 }
 
 // Sections is every setting, in screen order.
@@ -58,16 +60,19 @@ var Sections = []Section{{
 			Choices: []string{"", "acceptEdits", "auto", "plan", "manual", "dontAsk", "bypassPermissions"}},
 	},
 }, {
-	ID: "notifications", Title: "Notifications", TUIOnly: true,
-	Help: "Push messages through ntfy when a session needs you. Not shown on the phone.",
+	ID: "notifications", Title: "Notifications",
+	Help: "Push messages through ntfy when a session needs you. The URLs are not shown on the phone.",
 	Fields: []Field{
-		{Key: "notifications.ntfy_url", Label: "ntfy URL", Kind: Text, Help: "ntfy URL: the topic bx posts to when a session needs you. Empty = notifications off"},
-		{Key: "notifications.open_url", Label: "Open URL", Kind: Text, Help: "Open URL: the web client a notification's tap opens, e.g. https://bx.example.ts.net. Empty = the serve.listen address"},
+		{Key: "notifications.enabled", Label: "Enabled", Kind: Choice, Help: "Send notifications to ntfy. Turn off to pause them; the URLs stay set.",
+			Choices: []string{"on", "off"}, Default: "on"},
+		{Key: "notifications.ntfy_url", Label: "ntfy URL", Kind: Text, TUIOnly: true, Help: "ntfy URL: the topic bx posts to when a session needs you. Empty = notifications off"},
+		{Key: "notifications.open_url", Label: "Open URL", Kind: Text, TUIOnly: true, Help: "Open URL: the web client a notification's tap opens, e.g. https://bx.example.ts.net. Empty = the serve.listen address"},
 	},
 }}
 
 // Visible returns the sections and values a client may see. The TUI (tui) gets everything; the
-// web client does not get the TUIOnly sections or their values: the ntfy URL holds a secret topic.
+// web client does not get the TUIOnly fields or their values (the ntfy URL holds a secret topic),
+// nor a section left with no field.
 func Visible(tui bool, values map[string]string) ([]Section, map[string]string) {
 	if tui {
 		return Sections, values
@@ -75,29 +80,28 @@ func Visible(tui bool, values map[string]string) ([]Section, map[string]string) 
 	var secs []Section
 	out := map[string]string{}
 	for _, s := range Sections {
-		if s.TUIOnly {
-			continue
-		}
-		secs = append(secs, s)
+		var fields []Field
 		for _, f := range s.Fields {
+			if f.TUIOnly {
+				continue
+			}
+			fields = append(fields, f)
 			if v, ok := values[f.Key]; ok {
 				out[f.Key] = v
 			}
+		}
+		if len(fields) > 0 {
+			s.Fields = fields
+			secs = append(secs, s)
 		}
 	}
 	return secs, out
 }
 
-// TUIOnlyKey reports whether key is a field of a TUIOnly section.
+// TUIOnlyKey reports whether key is a TUIOnly field.
 func TUIOnlyKey(key string) bool {
-	for _, s := range Sections {
-		for _, f := range s.Fields {
-			if f.Key == key {
-				return s.TUIOnly
-			}
-		}
-	}
-	return false
+	f, ok := field(key)
+	return ok && f.TUIOnly
 }
 
 func field(key string) (Field, bool) {

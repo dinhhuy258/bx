@@ -179,7 +179,8 @@ func (s *Settings) Key(key string) SettingsResult {
 	return SettingsKeep
 }
 
-// step moves the selected choice field to the previous or next allowed value, wrapping.
+// step moves the selected choice field to the previous or next allowed value, wrapping. No
+// value is the field's Default.
 func (s *Settings) step(delta int) {
 	f, ok := s.field()
 	if !ok {
@@ -188,13 +189,21 @@ func (s *Settings) step(delta int) {
 	if f.Kind != settings.Choice || len(f.Choices) == 0 {
 		return
 	}
-	i := max(slices.Index(f.Choices, s.value(f.Key)), 0)
+	i := max(slices.Index(f.Choices, orDefault(f, s.value(f.Key))), 0)
 	v := f.Choices[(i+delta+len(f.Choices))%len(f.Choices)]
-	if v == s.saved[f.Key] {
+	if v == orDefault(f, s.saved[f.Key]) {
 		delete(s.edits, f.Key)
 	} else {
 		s.edits[f.Key] = v
 	}
+}
+
+// orDefault is v, or the field's Default when v is "".
+func orDefault(f settings.Field, v string) string {
+	if v == "" {
+		return f.Default
+	}
+	return v
 }
 
 func shown(v string) string {
@@ -319,7 +328,7 @@ func (s *Settings) fieldLines(w int, pal palette) []string {
 				value = pal.blue.Render(v)
 			}
 		} else {
-			v := shown(s.value(f.Key))
+			v := shown(orDefault(f, s.value(f.Key)))
 			v += strings.Repeat(" ", max(valueW-runeWidth(v), 0))
 			value = pal.dim.Render("◂ ") + v + pal.dim.Render(" ▸")
 			if i == s.fld {

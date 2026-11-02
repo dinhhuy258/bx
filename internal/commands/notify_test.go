@@ -26,6 +26,30 @@ func TestNotifyTargetsReadTheSettings(t *testing.T) {
 	}
 }
 
+func TestNotifyTargetsOffSendsNothing(t *testing.T) {
+	cfg := config.Default(t.TempDir())
+	st, err := settings.Open(cfg.SettingsFile(), func(string, ...any) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	urls := map[string]string{"notifications.ntfy_url": "https://ntfy.sh/bx", "notifications.open_url": "https://bx.example.ts.net"}
+	if err := st.Set(urls); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Set(map[string]string{"notifications.enabled": "off"}); err != nil {
+		t.Fatal(err)
+	}
+	if ntfy, open := notifyTargets(cfg); ntfy != "" || open != "" {
+		t.Fatalf("off: %q %q", ntfy, open)
+	}
+	if err := st.Set(map[string]string{"notifications.enabled": "on"}); err != nil {
+		t.Fatal(err)
+	}
+	if ntfy, open := notifyTargets(cfg); ntfy != "https://ntfy.sh/bx" || open != "https://bx.example.ts.net" {
+		t.Fatalf("on: %q %q", ntfy, open)
+	}
+}
+
 func TestNotifyTargetsLeaveACorruptFile(t *testing.T) {
 	cfg := config.Default(t.TempDir())
 	path := cfg.SettingsFile()

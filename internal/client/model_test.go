@@ -1326,7 +1326,7 @@ func TestSettingsScreenEditsAndSaves(t *testing.T) {
 func TestSettingsEditsATextField(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.values = map[string]string{"notifications.ntfy_url": "https://ntfy.sh/a"}
-	h.press("S", "l", "Tab", "Tab") // an unsaved model change, then git, then the notifications section
+	h.press("S", "l", "Tab", "Tab", "j") // an unsaved model change, then git, then the ntfy URL under Enabled
 	if !strings.Contains(h.m.bar(), "⏎ edit") {
 		t.Fatalf("bar on a text field: %q", h.m.bar())
 	}

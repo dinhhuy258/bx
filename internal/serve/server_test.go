@@ -182,8 +182,12 @@ func put(t *testing.T, ts *httptest.Server, path string, body any) (api.Settings
 func TestSettingsGetPutAndFlags(t *testing.T) {
 	s, f, ts := newServer(t)
 	got, code := get[api.Settings](t, ts, "/api/settings")
-	if code != 200 || len(got.Sections) != 1 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
+	if code != 200 || len(got.Sections) != 2 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
 		t.Fatalf("%d %+v", code, got)
+	}
+	// the phone gets only the on/off switch of the notifications, never the URLs
+	if n := got.Sections[1]; n.ID != "notifications" || len(n.Fields) != 1 || n.Fields[0].Key != "notifications.enabled" {
+		t.Fatalf("web notifications: %+v", n)
 	}
 	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.effort": "huge"}}); code != 400 ||
 		res.Error != `claude.effort "huge": want one of low, medium, high, xhigh, max` {
@@ -193,22 +197,24 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 		t.Fatal("a refused PUT saved a value")
 	}
 	saved, _, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.permission_mode": "acceptEdits"}})
-	if code != 200 || saved.Values["claude.model"] != "opus" || len(saved.Sections) != 1 {
+	if code != 200 || saved.Values["claude.model"] != "opus" || len(saved.Sections) != 2 {
 		t.Fatalf("%d %+v", code, saved)
 	}
 	if _, err := os.Stat(s.Cfg.SettingsFile()); err != nil {
 		t.Fatal(err)
 	}
-	// notifications are for the TUI only: the phone never gets the section or the ntfy secret
+	// the notification URLs are for the TUI only: the phone never gets the ntfy secret
 	if _, res, code := put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.ntfy_url": "nope"}}); code != 400 || res.Error != "notifications.ntfy_url: want an http:// or https:// URL" {
 		t.Fatalf("bad URL: %d %+v", code, res)
 	}
 	secret := "https://ntfy.sh/bx-secret"
 	// the web client may not write them either: a 400, and nothing saved
-	for _, v := range []string{"https://ntfy.sh/attacker", ""} {
-		if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "sonnet", "notifications.ntfy_url": v}}); code != 400 ||
-			res.Error != "notifications.ntfy_url can only be changed from the TUI" {
-			t.Fatalf("web PUT of a TUI-only key: %d %+v", code, res)
+	for _, k := range []string{"notifications.ntfy_url", "notifications.open_url"} {
+		for _, v := range []string{"https://ntfy.sh/attacker", ""} {
+			if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "sonnet", k: v}}); code != 400 ||
+				res.Error != k+" can only be changed from the TUI" {
+				t.Fatalf("web PUT of a TUI-only key: %d %+v", code, res)
+			}
 		}
 	}
 	if s.App.Settings.Get("claude.model") != "opus" || s.App.Settings.Get("notifications.ntfy_url") != "" {
@@ -222,14 +228,24 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 		s.App.Settings.Get("notifications.ntfy_url") != secret {
 		t.Fatalf("web PUT cleared the secret: %d %+v", code, res)
 	}
-	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 1 || len(web.Values) != 2 {
+	// the phone may turn the notifications off and on
+	web, _, code = put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"notifications.enabled": "off"}})
+	if code != 200 || s.App.Settings.Get("notifications.enabled") != "off" || web.Values["notifications.enabled"] != "off" || web.Values["notifications.ntfy_url"] != "" {
+		t.Fatalf("web PUT of enabled: %d %+v", code, web)
+	}
+	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 2 || len(web.Values) != 3 || web.Values["notifications.ntfy_url"] != "" {
 		t.Fatalf("web GET: %+v", web)
 	}
 	tui, _ := get[api.Settings](t, ts, "/api/settings?tui=1")
-	if len(tui.Sections) != 2 || tui.Sections[1].ID != "notifications" || tui.Values["notifications.ntfy_url"] != secret {
+	if len(tui.Sections) != 2 || tui.Sections[1].ID != "notifications" || len(tui.Sections[1].Fields) != 3 ||
+		tui.Values["notifications.ntfy_url"] != secret || tui.Values["notifications.enabled"] != "off" {
 		t.Fatalf("tui GET: %+v", tui)
 	}
-	put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.ntfy_url": ""}})
+	if tui, _, code = put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.enabled": "on", "notifications.open_url": "https://bx.example.ts.net"}}); code != 200 ||
+		tui.Values["notifications.enabled"] != "on" || tui.Values["notifications.open_url"] != "https://bx.example.ts.net" {
+		t.Fatalf("tui PUT: %d %+v", code, tui)
+	}
+	put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.ntfy_url": "", "notifications.open_url": "", "notifications.enabled": ""}})
 	// the next session starts with the saved values, and keeps them
 	if _, code := post(t, ts, "/api/projects/home-network/sessions", api.Action{Title: "chat"}); code != 200 {
 		t.Fatal(code)

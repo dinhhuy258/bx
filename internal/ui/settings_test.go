@@ -91,6 +91,7 @@ func TestSettingsTextField(t *testing.T) {
 	}
 	s.Key("Tab") // git
 	s.Key("Tab") // notifications
+	s.Key("j")   // past Enabled
 	f, ok := s.TextField()
 	if !ok || f.Key != "notifications.ntfy_url" {
 		t.Fatalf("text field = %v %v", f, ok)
@@ -110,6 +111,39 @@ func TestSettingsTextField(t *testing.T) {
 	s.Key("l")
 	if s.Value("claude.model") != "opus" {
 		t.Fatal("Value reads the edits first")
+	}
+}
+
+func TestSettingsNotificationsEnabled(t *testing.T) {
+	s := NewSettings("dev")
+	s.Load(settings.Sections, nil)
+	s.Key("Tab") // git
+	s.Key("Tab") // notifications
+	if f, ok := s.field(); !ok || f.Key != "notifications.enabled" {
+		t.Fatalf("first field = %v %v", f, ok)
+	}
+	if out := s.Render(120, 14, true, ""); !strings.Contains(out, "Enabled   ◂ on  ▸") {
+		t.Fatalf("no value is on:\n%s", out)
+	}
+	s.Key("l")
+	if got := s.Changes(); len(got) != 1 || got["notifications.enabled"] != "off" {
+		t.Fatalf("changes = %v", got)
+	}
+	s.Key("l") // back to on, the default: no change
+	if len(s.Changes()) != 0 {
+		t.Fatalf("changes = %v", s.Changes())
+	}
+	s.Key("h")
+	if s.Changes()["notifications.enabled"] != "off" || s.Key("Enter") != SettingsSave {
+		t.Fatalf("h: %v", s.Changes())
+	}
+	s.Load(nil, map[string]string{"notifications.enabled": "off"}) // the save's reply
+	if len(s.Changes()) != 0 || !strings.Contains(s.Render(120, 14, true, ""), "Enabled   ◂ off ▸") {
+		t.Fatalf("after save: %v", s.Changes())
+	}
+	s.Key("l")
+	if s.Changes()["notifications.enabled"] != "on" {
+		t.Fatalf("off → on: %v", s.Changes())
 	}
 }
 

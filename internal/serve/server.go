@@ -440,7 +440,7 @@ func (s *Server) githubRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 // getSettings sends the sections and values. Only the TUI asks with ?tui=1; the web client
-// never gets the TUI-only sections (notifications: the ntfy URL holds a secret topic).
+// never gets the TUI-only fields (the notification URLs: the ntfy URL holds a secret topic).
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	secs, values := settings.Visible(r.URL.Query().Get("tui") == "1", s.App.Settings.Values())
 	writeJSON(w, api.Settings{Sections: secs, Values: values})
@@ -467,7 +467,8 @@ func loggable(values map[string]string) map[string]string {
 }
 
 // putSettings saves the changed values, all or none. The next new session uses them. Only the
-// TUI (?tui=1) may change the TUI-only keys, so the web client cannot replace the ntfy secret.
+// TUI (?tui=1) may change the TUI-only keys, so the web client cannot replace the ntfy secret;
+// it may still turn notifications on and off.
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	var req api.Settings
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

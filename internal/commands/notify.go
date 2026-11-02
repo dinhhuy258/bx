@@ -54,9 +54,10 @@ func runNotify(args []string, out, errOut io.Writer) int {
 }
 
 // notifyTargets are the ntfy URL ("" = off) and the Open URL from the settings bx serve saves.
+// Notifications turned off in the settings give no URLs, so nothing is sent.
 func notifyTargets(cfg *config.Config) (ntfyURL, openURL string) {
 	st, err := settings.Read(cfg.SettingsFile()) // never moves a corrupt file: that is bx serve's
-	if err != nil {
+	if err != nil || st.Get("notifications.enabled") == "off" {
 		return "", ""
 	}
 	return st.Get("notifications.ntfy_url"), st.Get("notifications.open_url")

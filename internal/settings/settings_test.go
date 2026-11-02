@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -155,24 +156,45 @@ func TestOpenDropsBadURL(t *testing.T) {
 }
 
 func TestTUIOnlyKey(t *testing.T) {
-	for key, want := range map[string]bool{"notifications.ntfy_url": true, "notifications.open_url": true, "claude.model": false, "nope": false} {
+	for key, want := range map[string]bool{"notifications.ntfy_url": true, "notifications.open_url": true, "notifications.enabled": false, "claude.model": false, "nope": false} {
 		if got := TUIOnlyKey(key); got != want {
 			t.Errorf("TUIOnlyKey(%q) = %v", key, got)
 		}
 	}
 }
 
-func TestVisibleHidesTUIOnly(t *testing.T) {
-	values := map[string]string{"claude.model": "opus", "notifications.ntfy_url": "https://ntfy.sh/secret"}
-	secs, got := Visible(false, values)
-	if len(secs) != 1 || secs[0].ID != "claude" {
-		t.Fatalf("web sections = %v", secs)
+func TestNotificationsEnabled(t *testing.T) {
+	f, ok := field("notifications.enabled")
+	if !ok || f.Kind != Choice || f.Label != "Enabled" || f.Default != "on" || !slices.Equal(f.Choices, []string{"on", "off"}) || f.TUIOnly {
+		t.Fatalf("field = %+v", f)
 	}
-	if len(got) != 1 || got["claude.model"] != "opus" {
+	if Sections[1].ID != "notifications" || Sections[1].Fields[0].Key != "notifications.enabled" {
+		t.Fatalf("not first in notifications: %+v", Sections[1])
+	}
+	for _, v := range []string{"", "on", "off"} {
+		if err := Validate(f.Key, v); err != nil {
+			t.Errorf("%q: %v", v, err)
+		}
+	}
+	if err := Validate(f.Key, "yes"); err == nil || err.Error() != `notifications.enabled "yes": want one of on, off` {
+		t.Errorf("yes: %v", err)
+	}
+}
+
+func TestVisibleHidesTUIOnly(t *testing.T) {
+	values := map[string]string{"claude.model": "opus", "notifications.enabled": "off", "notifications.ntfy_url": "https://ntfy.sh/secret", "notifications.open_url": "https://bx.example"}
+	secs, got := Visible(false, values)
+	if len(secs) != 2 || secs[0].ID != "claude" || secs[1].ID != "notifications" || len(secs[1].Fields) != 1 || secs[1].Fields[0].Key != "notifications.enabled" {
+		t.Fatalf("web sections = %+v", secs)
+	}
+	if len(got) != 2 || got["claude.model"] != "opus" || got["notifications.enabled"] != "off" {
 		t.Fatalf("web values = %v", got)
 	}
+	if len(Sections[1].Fields) != 3 {
+		t.Fatal("Visible changed Sections")
+	}
 	secs, got = Visible(true, values)
-	if len(secs) != 2 || secs[1].ID != "notifications" || got["notifications.ntfy_url"] != "https://ntfy.sh/secret" {
+	if len(secs) != 2 || len(secs[1].Fields) != 3 || len(got) != 4 || got["notifications.ntfy_url"] != "https://ntfy.sh/secret" {
 		t.Fatalf("tui = %v %v", secs, got)
 	}
 }

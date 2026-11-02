@@ -1,7 +1,8 @@
 import { api } from './api.js';
 import { h, bar, toast } from './ui.js';
 
-// Drawn from GET /api/settings. A choice saves on change; "" is the program's default.
+// Drawn from GET /api/settings. A choice saves on change; "" is the program's default, or the
+// field's default when it has one.
 export function showSettings(root) {
   const body = h('div');
   root.append(bar(h('a', { href: '#/', class: 'icon', 'aria-label': 'Back' }, '‹'), 'Settings'), body);
@@ -13,7 +14,7 @@ export function showSettings(root) {
       sec.help ? h('p', { class: 'help' }, sec.help) : null,
       h('div', { style: 'padding: 0 14px' }, sec.fields.map((f) => {
         const sel = h('select', { onchange: () => save(f.key, sel.value) },
-          (f.choices || []).map((c) => h('option', { value: c, selected: (s.values[f.key] || '') === c }, c || '(default)')));
+          (f.choices || []).map((c) => h('option', { value: c, selected: (s.values[f.key] || f.default || '') === c }, c || '(default)')));
         return h('label', { class: 'field' }, h('span', {}, f.label), sel, f.help ? h('small', {}, f.help) : null);
       })))));
   }
