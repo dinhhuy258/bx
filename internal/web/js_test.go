@@ -100,6 +100,53 @@ func TestShellHelpers(t *testing.T) {
 	runJS(t, shellScript)
 }
 
+// sheetScript opens a sheet on a fake DOM: danger rows go in their own group after the others,
+// a setter fills in a row's hint and badge, a tap runs the item and a tap on the backdrop
+// (the dialog itself) only closes it.
+const sheetScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; this.hidden = false; this.open = false; this.textContent = ''; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  fire(k, e = {}) { for (const f of this.on[k] || []) f(e); }
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+  showModal() { this.open = true; }
+  close() { this.open = false; this.fire('close'); }
+  remove() {}
+}
+const made = [];
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => { const e = new El(t); made.push(e); return e; },
+  createElementNS: (_, t) => new El(t), body: new El('body') };
+
+const { sheet } = await import(process.argv[2] + '/ui.js');
+const fail = (m) => { console.error(m); process.exit(1); };
+const ran = [];
+const [setA] = sheet('s', [{ label: 'Delete', danger: true, icon: 'trash', run: () => ran.push('d') },
+  { label: 'Artifacts', icon: 'doc', hint: 'Loading…', chevron: true, run: () => ran.push('a') }], { meta: 'idle · #1' });
+const groups = made.filter((e) => e.className === 'sheet-group');
+const label = (g) => g.children[0].children.find((c) => c.className === 'sheet-label').children[0].children[0];
+if (groups.length !== 2 || label(groups[0]) !== 'Artifacts' || label(groups[1]) !== 'Delete') fail('groups: ' + groups.map(label));
+setA({ hint: 'a.html · 2m ago', badge: 2 });
+const hint = made.find((e) => e.className === 'sheet-hint');
+const badge = made.find((e) => e.className === 'sheet-badge');
+if (hint.textContent !== 'a.html · 2m ago' || hint.hidden || badge.textContent !== 2 || badge.hidden) fail('setter');
+const dlg = made.find((e) => e.tag === 'dialog');
+dlg.fire('click', { target: groups[0] });
+if (!dlg.open) fail('a tap inside closed the sheet');
+groups[0].children[0].fire('click');
+if (dlg.open || ran.join() !== 'a') fail('row tap: ' + ran);
+sheet('t', [{ label: 'x', run: () => ran.push('x') }]);
+const dlg2 = made.filter((e) => e.tag === 'dialog').pop();
+dlg2.fire('click', { target: dlg2 });
+if (dlg2.open || ran.includes('x')) fail('backdrop tap');
+`
+
+func TestSheetGroupsAndFillsRows(t *testing.T) {
+	runJS(t, sheetScript)
+}
+
 // runJS runs an ES-module script with node; the script gets the file:// URL of static/js as
 // its first argument and fails by exiting non-zero.
 func runJS(t *testing.T, src string) {

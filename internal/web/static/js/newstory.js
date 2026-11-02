@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { ask, confirmBox, pickFrom, sheet, toast } from './ui.js';
+import { ago, ask, confirmBox, pickFrom, sheet, toast } from './ui.js';
 
 const enc = encodeURIComponent;
 
@@ -23,15 +23,6 @@ export const directPR = (q) => /^(#\d+|https?:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pul
 
 // storyBranches leaves out the branches a worktree has checked out: git checks a branch out once.
 export const storyBranches = (branches) => branches.filter((b) => !b.checkedOut);
-
-// ago is ui.Ago: how long ago unix time t was, in the largest whole unit.
-function ago(t) {
-  const s = Date.now() / 1000 - t;
-  if (s < 60) return 'now';
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
 
 // newStoryMenu asks where a new story of project starts: a new branch, an existing branch or a
 // pull request. snap is the project's snapshot; refresh reloads the project screen. The new

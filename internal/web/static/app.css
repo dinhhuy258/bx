@@ -45,7 +45,31 @@ dialog { background: #1a1a1a; color: var(--fg); border: 1px solid var(--line); b
 dialog::backdrop { background: rgba(0, 0, 0, .6); }
 dialog h2 { font-size: 16px; margin: 0 0 12px; word-break: break-word; }
 dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 16px 0 0; }
-dialog.sheet[open] { display: flex; flex-direction: column; gap: 8px; }
+/* sheet: a bottom sheet of grouped action rows. The dialog itself has no padding, so a tap on it
+   is a tap on the backdrop; .sheet-body holds everything. */
+dialog.sheet { padding: 0; width: 100%; max-width: 520px; max-height: 90dvh; margin: auto auto 0; border-bottom: 0; border-radius: 16px 16px 0 0; }
+dialog.sheet[open] { display: flex; animation: sheet-up .18s ease-out; }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { dialog.sheet[open] { animation: none; } }
+.sheet-body { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 8px 12px calc(16px + env(safe-area-inset-bottom)); overflow-y: auto; }
+.sheet-handle { width: 36px; height: 5px; border-radius: 3px; background: #3a3a3a; margin: 0 auto 4px; flex: none; }
+.sheet-head { padding: 0 4px; }
+.sheet-head h2 { font-size: 17px; margin: 0; }
+.sheet-head p { margin: 2px 0 0; font-size: 13px; color: var(--dim); }
+.sheet-group { background: #222; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; flex: none; }
+.sheet-group > * + * { border-top: 1px solid var(--line); }
+.sheet-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 10px 14px; background: none; border: 0; border-radius: 0; text-align: left; }
+.sheet-row:active { background: var(--line); }
+.sheet-row.is-danger { color: var(--gone); }
+.sheet-label { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.sheet-hint { font-size: 13px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-badge { font-size: 13px; color: var(--dim); background: var(--line); border-radius: 10px; padding: 1px 8px; }
+.sheet-icon, .sheet-chev { flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.sheet-icon { width: 20px; height: 20px; color: #bbb; }
+.sheet-icon.icon-doc { color: var(--accent); }
+.sheet-row.is-danger .sheet-icon { color: var(--gone); }
+.sheet-chev { width: 16px; height: 16px; color: #666; stroke-width: 2; }
+.sheet-cancel { width: 100%; min-height: 52px; background: #222; border-radius: 12px; font-weight: 600; flex: none; }
 .field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .field small { color: var(--dim); }
 .field .help { padding: 0; font-size: 13px; overflow-wrap: anywhere; }

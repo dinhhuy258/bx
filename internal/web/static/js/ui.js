@@ -130,14 +130,72 @@ export function ask(title, fields, ok = 'OK', opts = {}) {
 // confirmBox asks a yes/no question and resolves to true on OK. opts as for ask.
 export const confirmBox = (title, ok, opts) => ask(title, [], ok, opts).then((v) => v !== null);
 
-// sheet is a list of actions: items [{label, run, danger?}]; danger items are red.
-export function sheet(title, items) {
-  const dlg = h('dialog', { class: 'sheet' }, h('h2', {}, title),
-    items.map((it) => h('button', { class: it.danger ? 'danger' : '', onclick: () => { dlg.close(); it.run(); } }, it.label)),
-    h('button', { onclick: () => dlg.close() }, 'Cancel'));
+// ago is ui.Ago: how long ago unix time t was, in the largest whole unit.
+export function ago(t) {
+  const s = Date.now() / 1000 - t;
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+// Stroke icons for sheet rows, 24x24 paths. They are built only when a sheet opens.
+const ICONS = {
+  doc: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4',
+  pen: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  stop: 'M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
+  play: 'M8 5l11 7-11 7z',
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+  chev: 'M9 6l6 6-6 6',
+};
+function icon(name, cls) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', cls);
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', ICONS[name]);
+  svg.append(path);
+  return svg;
+}
+
+// sheet is a bottom sheet of actions: items [{label, run, danger?, icon?, hint?, badge?,
+// chevron?}]. icon names an ICONS entry, hint is a dim second line, badge a count pill and
+// chevron says the row opens more. Danger items go in their own group at the bottom, in red.
+// opts.meta is a dim line under the title. sheet returns one setter per item,
+// set({hint?, badge?}), to fill in a row once its data has loaded.
+export function sheet(title, items, opts = {}) {
+  const rows = items.map((it) => sheetRow(it, () => { dlg.close(); it.run(); }));
+  const group = (keep) => {
+    const els = rows.filter((_, i) => !!items[i].danger === keep).map((r) => r.el);
+    return els.length ? h('div', { class: 'sheet-group' }, els) : null;
+  };
+  // the dialog has no padding, so a tap on it (not on .sheet-body) is a tap on the backdrop
+  const dlg = h('dialog', { class: 'sheet', onclick: (e) => { if (e.target === dlg) dlg.close(); } },
+    h('div', { class: 'sheet-body' },
+      h('div', { class: 'sheet-handle' }),
+      h('header', { class: 'sheet-head' }, h('h2', {}, title), opts.meta ? h('p', {}, opts.meta) : null),
+      group(false), group(true),
+      h('button', { class: 'sheet-cancel', onclick: () => dlg.close() }, 'Cancel')));
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
   dlg.showModal();
+  return rows.map((r) => r.set);
+}
+
+function sheetRow(it, onTap) {
+  const hint = h('small', { class: 'sheet-hint', hidden: !it.hint }, it.hint || '');
+  const badge = h('span', { class: 'sheet-badge', hidden: it.badge == null }, it.badge ?? '');
+  const el = h('button', { class: it.danger ? 'sheet-row is-danger' : 'sheet-row', onclick: onTap },
+    it.icon ? icon(it.icon, `sheet-icon icon-${it.icon}`) : null,
+    h('span', { class: 'sheet-label' }, h('span', {}, it.label), hint),
+    badge, it.chevron ? icon('chev', 'sheet-chev') : null);
+  const set = (v) => {
+    if ('hint' in v) { hint.textContent = v.hint || ''; hint.hidden = !v.hint; }
+    if ('badge' in v) { badge.textContent = v.badge ?? ''; badge.hidden = v.badge == null; }
+  };
+  return { el, set };
 }
 
 // pickFrom lists items [{label, ...}] under a search box that filters them by label, and
