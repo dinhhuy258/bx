@@ -816,7 +816,9 @@ func TestBaseOverride(t *testing.T) {
 func TestDiffUsesTheRecordedBase(t *testing.T) {
 	s, _, ts := newServer(t)
 	seed := withOrigin(t, s.Cfg.ProjectDir("home-network"))
-	os.WriteFile(filepath.Join(seed, "dev.txt"), []byte("1\n2\n3\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(seed, "dev.txt"), []byte("1\n2\n3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	gitIn(t, seed, "add", ".")
 	gitIn(t, seed, "commit", "-qm", "dev")
 	gitIn(t, seed, "push", "-q", "origin", "develop")
@@ -824,7 +826,9 @@ func TestDiffUsesTheRecordedBase(t *testing.T) {
 		t.Fatalf("%d %+v", code, res)
 	}
 	wt := s.Cfg.WorktreeDir("home-network", "login")
-	os.WriteFile(filepath.Join(wt, "mine.txt"), []byte("x\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(wt, "mine.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	gitIn(t, wt, "add", ".")
 	gitIn(t, wt, "commit", "-qm", "mine")
 	// against main (the old default) the story would also count develop's 3 lines

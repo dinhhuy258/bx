@@ -26,7 +26,9 @@ func gitRun(t *testing.T, dir string, args ...string) string {
 // commit writes file in dir and commits it.
 func commit(t *testing.T, dir, file string) string {
 	t.Helper()
-	os.WriteFile(filepath.Join(dir, file), []byte(file+"\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(file+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	gitRun(t, dir, "add", file)
 	gitRun(t, dir, "commit", "-qm", file)
 	return gitRun(t, dir, "rev-parse", "HEAD")
@@ -203,7 +205,9 @@ func TestWorktreeAddTracking(t *testing.T) {
 // commitAt commits file in dir with a committer date days after the first commit.
 func commitAt(t *testing.T, dir, file string, days int) {
 	t.Helper()
-	os.WriteFile(filepath.Join(dir, file), []byte(file+"\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(file+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	gitRun(t, dir, "add", file)
 	date := time.Now().Add(time.Duration(days) * 24 * time.Hour).Format(time.RFC3339)
 	cmd := exec.Command("git", "commit", "-qm", file)

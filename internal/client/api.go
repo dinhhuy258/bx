@@ -68,10 +68,11 @@ func (c *API) NewStory(ctx context.Context, project string, a api.Action) (api.R
 	return res, err
 }
 
-// StoryInfo is GET /api/projects/{name}/storyinfo: the base and last type of a new story.
+// StoryInfo is GET /api/projects/{name}/storyinfo: the base and last type of a new story. The
+// server may ask origin for its HEAD (git remote set-head), so it gets longer than a poll.
 func (c *API) StoryInfo(ctx context.Context, project string) (api.StoryInfo, error) {
 	var out api.StoryInfo
-	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/storyinfo", nil, &out)
+	return out, c.call(ctx, reposTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/storyinfo", nil, &out)
 }
 
 // Branches is GET /api/projects/{name}/branches. With fetch the server fetches origin first,

@@ -46,7 +46,9 @@ func (u upstream) push(t *testing.T, branch, file string) string {
 
 func commitFile(t *testing.T, dir, file string) string {
 	t.Helper()
-	os.WriteFile(filepath.Join(dir, file), []byte(file+"\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(file+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	gitIn(t, dir, "add", file)
 	gitIn(t, dir, "commit", "-qm", file)
 	return gitIn(t, dir, "rev-parse", "HEAD")
@@ -199,7 +201,9 @@ func TestStoryFastForwardsTheLocalBase(t *testing.T) {
 		t.Fatal("checked-out develop not merged")
 	}
 	// checked out with changes: left alone
-	os.WriteFile(filepath.Join(p.Path, "wip.txt"), []byte("x"), 0o644)
+	if err := os.WriteFile(filepath.Join(p.Path, "wip.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	u.push(t, "develop", "c.txt")
 	res := newStory(t, a, p, StoryOpts{Name: "s3"})
 	if strings.Join(res.Notes, "|") != "local develop has uncommitted changes · not updated" || gitIn(t, p.Path, "rev-parse", "HEAD") != sha {
@@ -438,7 +442,9 @@ func TestWorkspacePullRequests(t *testing.T) {
 
 func TestStoryCopiesEnvAndRecordsBase(t *testing.T) {
 	a, _, p := newApp(t)
-	os.WriteFile(filepath.Join(p.Path, ".env"), []byte("KEY=1\n"), 0o600)
+	if err := os.WriteFile(filepath.Join(p.Path, ".env"), []byte("KEY=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	newStory(t, a, p, StoryOpts{Name: "s1"})
 	if b, err := os.ReadFile(filepath.Join(a.Dir(p, "s1"), ".env")); err != nil || string(b) != "KEY=1\n" {
 		t.Fatalf(".env = %q %v", b, err)

@@ -68,7 +68,9 @@ func TestBaseOverrideLastTypeAndStoryBase(t *testing.T) {
 	}
 	// a version 2 file from before the fields: no override, no last type, no base
 	old := filepath.Join(t.TempDir(), "old.json")
-	os.WriteFile(old, []byte(`{"version":2,"path":"/p","stories":{"s1":{"branch":"feat/s1"}},"sessions":{},"next_num":1}`), 0o644)
+	if err := os.WriteFile(old, []byte(`{"version":2,"path":"/p","stories":{"s1":{"branch":"feat/s1"}},"sessions":{},"next_num":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	got, err = Load(old, "old")
 	if err != nil {
 		t.Fatal(err)
