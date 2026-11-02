@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,7 +42,7 @@ func TestPostToNtfy(t *testing.T) {
 		gotBody = string(b[:n])
 	}))
 	defer srv.Close()
-	if err := Post(srv.URL, "t", "b"); err != nil {
+	if err := Post(srv.URL, "t", "b", ""); err != nil {
 		t.Fatal(err)
 	}
 	if gotTitle != "t" || gotBody != "b" {
@@ -50,7 +51,84 @@ func TestPostToNtfy(t *testing.T) {
 }
 
 func TestPostSkipsWhenURLEmpty(t *testing.T) {
-	if err := Post("", "t", "b"); err != nil {
+	if err := Post("", "t", "b", "http://h/#/p/x/s/1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// clickHeader posts through a test ntfy and returns the Click header values it saw.
+func clickHeader(t *testing.T, click string) []string {
+	t.Helper()
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Values("Click")
+	}))
+	defer srv.Close()
+	if err := Post(srv.URL, "t", "b", click); err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func TestPostSendsClick(t *testing.T) {
+	if got := clickHeader(t, "http://h/#/p/x/s/1"); len(got) != 1 || got[0] != "http://h/#/p/x/s/1" {
+		t.Fatalf("Click = %q", got)
+	}
+}
+
+func TestPostOmitsClick(t *testing.T) {
+	if got := clickHeader(t, ""); len(got) != 0 {
+		t.Fatalf("Click = %q, want no header", got)
+	}
+}
+
+func TestSessionURLEscapes(t *testing.T) {
+	for _, c := range []struct {
+		base, project string
+		num           int
+		want          string
+	}{
+		{"http://h:7357", "home-network", 2, "http://h:7357/#/p/home-network/s/2"},
+		{"http://h:7357/", "home-network", 2, "http://h:7357/#/p/home-network/s/2"},
+		{"https://bx.tail1234.ts.net", "my proj#1/x?", 10, "https://bx.tail1234.ts.net/#/p/my%20proj%231%2Fx%3F/s/10"},
+	} {
+		if got := SessionURL(c.base, c.project, c.num); got != c.want {
+			t.Errorf("SessionURL(%q, %q, %d) = %q, want %q", c.base, c.project, c.num, got, c.want)
+		}
+	}
+}
+
+func TestClickBaseOrder(t *testing.T) {
+	noResolve := func(string) (string, error) {
+		t.Fatal("resolver called although open_url is set")
+		return "", nil
+	}
+	if got, err := ClickBase(" https://bx.tail1234.ts.net/ ", "auto", noResolve); err != nil || got != "https://bx.tail1234.ts.net" {
+		t.Errorf("open_url: %q %v", got, err)
+	}
+
+	var gotListen string
+	resolve := func(addr string) func(string) (string, error) {
+		return func(l string) (string, error) { gotListen = l; return addr, nil }
+	}
+	if got, err := ClickBase("", "auto", resolve("100.64.1.2:7357")); err != nil || got != "http://100.64.1.2:7357" {
+		t.Errorf("listen fallback: %q %v", got, err)
+	}
+	if gotListen != "auto" {
+		t.Errorf("resolver got %q, want auto", gotListen)
+	}
+	if got, err := ClickBase("", "auto", resolve("[fd7a::1]:7357")); err != nil || got != "http://[fd7a::1]:7357" {
+		t.Errorf("ipv6: %q %v", got, err)
+	}
+
+	failing := func(string) (string, error) { return "", errors.New("no Tailscale address") }
+	if got, err := ClickBase("", "auto", failing); err != nil || got != "" {
+		t.Errorf("no base: %q %v", got, err)
+	}
+
+	for _, bad := range []string{"100.64.1.2:7357", "ftp://x", "http://"} {
+		if got, err := ClickBase(bad, "auto", noResolve); err == nil || got != "" {
+			t.Errorf("open_url %q: %q %v, want an error", bad, got, err)
+		}
 	}
 }

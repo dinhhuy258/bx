@@ -50,6 +50,9 @@ type List struct {
 // Notify holds push settings. Empty NtfyURL means off.
 type Notify struct {
 	NtfyURL string `toml:"ntfy_url"`
+	// OpenURL is the base URL of the web client for a notification's tap, e.g. http://100.x.y.z:7357
+	// or an https ts.net name. Empty: the serve.listen address.
+	OpenURL string `toml:"open_url"`
 }
 
 // DefaultRoot is $BX_ROOT or ~/.bx.
@@ -115,6 +118,7 @@ type rawConfig struct {
 	} `toml:"list"`
 	Notify struct {
 		NtfyURL *string `toml:"ntfy_url"`
+		OpenURL *string `toml:"open_url"`
 	} `toml:"notify"`
 	Serve struct {
 		Listen *string `toml:"listen"`
@@ -134,6 +138,9 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 	if r.Notify.NtfyURL != nil {
 		c.Notify.NtfyURL = *r.Notify.NtfyURL
+	}
+	if r.Notify.OpenURL != nil {
+		c.Notify.OpenURL = *r.Notify.OpenURL
 	}
 	if r.Serve.Listen != nil {
 		c.Serve.Listen = *r.Serve.Listen

@@ -147,3 +147,21 @@ func TestServeAndClientSections(t *testing.T) {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
 	}
 }
+
+func TestNotifyOpenURL(t *testing.T) {
+	root := t.TempDir()
+	if got := Default(root).Notify.OpenURL; got != "" {
+		t.Errorf("default open_url = %q", got)
+	}
+	toml := "[notify]\nntfy_url = \"https://ntfy.example/x\"\nopen_url = \"https://bx.tail1234.ts.net\"\n"
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Notify.NtfyURL != "https://ntfy.example/x" || c.Notify.OpenURL != "https://bx.tail1234.ts.net" {
+		t.Fatalf("notify = %+v", c.Notify)
+	}
+}
