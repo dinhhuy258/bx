@@ -101,10 +101,14 @@ func (a *App) options(p *state.Project, s *state.Session) claude.Options {
 	return o
 }
 
-// launch runs args in a new tmux session for session num, in its story's folder.
+// launch runs args in a new tmux session for session num, in its story's folder, and keeps
+// the tmux server up after its last session ends, so bx serve can tell that Claude exited.
 func (a *App) launch(p *state.Project, num int, args []string) error {
-	_, err := a.Tmux.NewSession(TmuxName(p.Name, num), a.Dir(p, p.Sessions[num].Story), shellJoin(args))
-	return err
+	if _, err := a.Tmux.NewSession(TmuxName(p.Name, num), a.Dir(p, p.Sessions[num].Story), shellJoin(args)); err != nil {
+		return err
+	}
+	_ = a.Tmux.KeepServer() // best effort: a Claude that exits at once may take the server with it
+	return nil
 }
 
 // Resume restarts a session that is not running with `claude --resume <uuid>` and the

@@ -85,7 +85,9 @@ func TestNewSessionStartsItsOwnTmuxSession(t *testing.T) {
 	if err != nil || num != 1 {
 		t.Fatalf("%d %v", num, err)
 	}
-	want := "new-session -d -s bx-home-network-1 -c " + a.Cfg.WorktreeDir("home-network", "s1") + " -P -F #{session_id} claude --session-id fixed-uuid"
+	// exit-empty off: the tmux server outlives its last session, so an exit is seen as one
+	want := "new-session -d -s bx-home-network-1 -c " + a.Cfg.WorktreeDir("home-network", "s1") + " -P -F #{session_id} claude --session-id fixed-uuid\n" +
+		"set-option -s exit-empty off"
 	if calls(f) != want {
 		t.Fatalf("calls:\n%s", calls(f))
 	}
@@ -146,7 +148,7 @@ func TestResumeAllSkipsDoneLiveAndForeign(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("%d %v", n, err)
 	}
-	if calls(f) != "new-session -d -s bx-home-network-4 -c "+p.Path+" -P -F #{session_id} claude --resume u4" {
+	if calls(f) != "new-session -d -s bx-home-network-4 -c "+p.Path+" -P -F #{session_id} claude --resume u4\nset-option -s exit-empty off" {
 		t.Fatalf("calls:\n%s", calls(f))
 	}
 }

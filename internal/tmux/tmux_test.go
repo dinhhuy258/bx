@@ -133,7 +133,7 @@ func TestWriteConfOnlyOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
-	for _, want := range []string{"set -g prefix None", "set -g status off", "set -g escape-time 0", "window-size latest"} {
+	for _, want := range []string{"set -g prefix None", "set -g status off", "set -g escape-time 0", "window-size latest", "set -s exit-empty off"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("missing %q", want)
 		}

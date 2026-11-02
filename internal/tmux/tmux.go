@@ -156,6 +156,15 @@ func (t *Tmux) PrepareCopy() error {
 	return nil
 }
 
+// KeepServer keeps bx's server running with no sessions (exit-empty off). By default tmux
+// exits with its last session, and bx serve could not tell a Claude that exited from a server
+// that is gone. It is idempotent. bx runs it after every new session: conf sets it too, but
+// bx never rewrites an existing conf.
+func (t *Tmux) KeepServer() error {
+	_, err := t.x.Run("set-option", "-s", "exit-empty", "off")
+	return err
+}
+
 // CopyMode puts a session in copy-mode; it stays there until q, y or Enter.
 func (t *Tmux) CopyMode(sid string) error {
 	_, err := t.x.Run("copy-mode", "-t", sid)
@@ -191,6 +200,7 @@ set -ga terminal-features ",xterm-256color:RGB"
 set-environment -g COLORTERM truecolor
 set -g window-size latest
 set -g history-limit 50000
+set -s exit-empty off
 `
 
 // WriteConf writes the bx tmux.conf when path does not exist yet.
