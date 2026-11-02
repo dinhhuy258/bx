@@ -75,6 +75,7 @@ func init() {
 		{Name: "serve", Help: "the daemon: projects, stories, sessions and their streams (run by systemd)"},
 		{Name: "notify", Help: "internal: Claude Code hook callback, posts to ntfy"},
 		{Name: "hooks", Help: "hooks install: add the bx notify hooks to ~/.claude/settings.json"},
+		{Name: "claude", Help: "claude sync [folders] [--dry-run] [--yes]: copy Claude skills, agents, commands and rules to bx serve"},
 	} {
 		if _, exists := commands[c.Name]; !exists {
 			c.Run = notImplemented(c.Name)

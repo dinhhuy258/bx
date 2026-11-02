@@ -64,3 +64,21 @@ func TestSettingsAgainstServe(t *testing.T) {
 		t.Fatalf("want the server's message, got %v", err)
 	}
 }
+
+func TestClaudeSyncAgainstServe(t *testing.T) {
+	s, _, ts := servetest.New(t)
+	s.ClaudeDir = t.TempDir()
+	c := NewAPI(ts.URL)
+	ctx := context.Background()
+	plan, err := c.SyncPlan(ctx, api.SyncPlanRequest{Folders: []string{"skills"}, Files: []api.SyncFile{{Path: "skills/a/SKILL.md", SHA256: "x", Size: 1}}})
+	if err != nil || len(plan.Add) != 1 || plan.Add[0] != "skills/a/SKILL.md" || plan.Dir != s.ClaudeDir {
+		t.Fatalf("%+v %v", plan, err)
+	}
+	res, err := c.SyncApply(ctx, api.SyncApplyRequest{Folders: []string{"skills"}, Paths: []string{"skills/a/SKILL.md"}, Files: []api.SyncFile{{Path: "skills/a/SKILL.md", Content: []byte("a")}}})
+	if err != nil || res.Added != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if _, err := c.SyncPlan(ctx, api.SyncPlanRequest{Folders: []string{"other"}}); err == nil || !strings.Contains(err.Error(), "unknown folder") {
+		t.Fatalf("want the server's error text, got %v", err)
+	}
+}

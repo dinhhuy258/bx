@@ -27,6 +27,7 @@ const (
 	pollTimeout   = 5 * time.Second
 	reposTimeout  = 30 * time.Second
 	createTimeout = 10 * time.Minute
+	syncTimeout   = 2 * time.Minute
 )
 
 // NewAPI builds a client for base.
@@ -87,6 +88,18 @@ func (c *API) Settings(ctx context.Context) (api.Settings, error) {
 func (c *API) SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error) {
 	var out api.Settings
 	return out, c.call(ctx, pollTimeout, http.MethodPut, "/api/settings", api.Settings{Values: values}, &out)
+}
+
+// SyncPlan is POST /api/claude/sync/plan: what a Claude sync would change on the server.
+func (c *API) SyncPlan(ctx context.Context, r api.SyncPlanRequest) (api.SyncPlan, error) {
+	var out api.SyncPlan
+	return out, c.call(ctx, reposTimeout, http.MethodPost, "/api/claude/sync/plan", r, &out)
+}
+
+// SyncApply is POST /api/claude/sync: write the files and deletes of a Claude sync.
+func (c *API) SyncApply(ctx context.Context, r api.SyncApplyRequest) (api.SyncResult, error) {
+	var out api.SyncResult
+	return out, c.call(ctx, syncTimeout, http.MethodPost, "/api/claude/sync", r, &out)
 }
 
 // StreamURL is the WebSocket address of one session's terminal at a given size.

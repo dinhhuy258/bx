@@ -31,7 +31,7 @@ func TestRunHelpListsCommands(t *testing.T) {
 	if code := Run([]string{"help"}, &out, &errOut); code != 0 {
 		t.Fatalf("code=%d", code)
 	}
-	for _, name := range []string{"client", "serve", "notify", "hooks"} {
+	for _, name := range []string{"client", "serve", "notify", "hooks", "claude"} {
 		if !bytes.Contains(out.Bytes(), []byte("  "+name)) {
 			t.Errorf("help does not list %q:\n%s", name, out.String())
 		}
