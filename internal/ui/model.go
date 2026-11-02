@@ -175,11 +175,7 @@ func (m *Model) StoryNames() []string {
 
 // IsOpen reports whether a group shows its sessions.
 func (m *Model) IsOpen(story string) bool {
-	if story == "" {
-		return true
-	}
-	st := m.P.Stories[story]
-	if st == nil {
+	if story != "" && m.P.Stories[story] == nil {
 		return false
 	}
 	if !m.folded[story] {
@@ -385,15 +381,12 @@ func (m *Model) SelectSession(num int) {
 	}
 }
 
-// ToggleFold folds or unfolds the selected story (or the story of the selected session).
-// A story with a waiting session stays open. Selection stays on the story row.
+// ToggleFold folds or unfolds the selected group: a story or chats (or the group of the
+// selected session). A group with a waiting session stays open. Selection stays on the
+// group row.
 func (m *Model) ToggleFold() {
 	r := m.Selected()
-	if r.Story == "" {
-		return
-	}
-	st := m.P.Stories[r.Story]
-	if st == nil {
+	if r.Story != "" && m.P.Stories[r.Story] == nil {
 		return
 	}
 	if m.IsOpen(r.Story) {
@@ -407,15 +400,16 @@ func (m *Model) ToggleFold() {
 	m.SelectStory(r.Story)
 }
 
-// FoldAll unfolds every story when all are folded, otherwise folds all.
+// FoldAll unfolds every group (stories and chats) when all are folded, otherwise folds all.
 func (m *Model) FoldAll() {
+	names := m.StoryNames()
 	allFolded := true
-	for name := range m.P.Stories {
+	for _, name := range names {
 		if !m.folded[name] {
 			allFolded = false
 		}
 	}
-	for name := range m.P.Stories {
+	for _, name := range names {
 		m.SetFolded(name, !allFolded)
 	}
 	m.clamp()

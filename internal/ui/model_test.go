@@ -85,6 +85,38 @@ func TestFoldAllToggles(t *testing.T) {
 	}
 }
 
+func TestChatsFold(t *testing.T) {
+	m, p := sampleModel()
+	if len(p.SessionsOf("")) == 0 {
+		t.Fatal("the sample needs chats")
+	}
+	m.SelectStory("")
+	m.ToggleFold()
+	if m.IsOpen("") && !m.HasWaiting("") {
+		t.Fatal("chats should fold")
+	}
+	for _, r := range m.Rows() {
+		if r.Story == "" && r.Kind != RowStory && !m.HasWaiting("") {
+			t.Fatalf("folded chats still lists %+v", r)
+		}
+	}
+	if r := m.Selected(); r.Kind != RowStory || r.Story != "" {
+		t.Fatalf("selection moved: %+v", r)
+	}
+	m.ToggleFold()
+	if !m.IsOpen("") {
+		t.Fatal("chats should unfold")
+	}
+	m.FoldAll()
+	if !m.Folded("") {
+		t.Error("Z folds chats too")
+	}
+	m.FoldAll()
+	if m.Folded("") {
+		t.Error("Z unfolds chats too")
+	}
+}
+
 func TestStateText(t *testing.T) {
 	p, live := sampleHomeNetwork()
 	m := NewModel(p)

@@ -66,7 +66,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 	r := m.Selected()
 	parts = append(parts, "j/k move")
 	num, _ := m.SelectedSession()
-	if r.Kind == RowStory && r.Story != "" {
+	if r.Kind == RowStory {
 		if m.IsOpen(r.Story) {
 			parts = append(parts, "⏎ collapse")
 		} else {
