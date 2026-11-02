@@ -486,7 +486,7 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 	}
 	um := m.models[msg.project]
 	if um == nil {
-		um = ui.NewModel(msg.snap.Project, ui.Options{AutoExpandWaiting: m.cfg.List.AutoExpandWaiting})
+		um = ui.NewModel(msg.snap.Project)
 		m.models[msg.project] = um
 	} else {
 		um.SetProject(msg.snap.Project)

@@ -30,9 +30,6 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if c.Keys.First(c.Keys.List, "activity") != "A" || c.Keys.First(c.Keys.List, "prev_project") != "[" || c.Keys.First(c.Keys.List, "next_project") != "]" {
 		t.Errorf("project keys: %+v", c.Keys.List)
 	}
-	if !c.List.AutoExpandWaiting {
-		t.Error("AutoExpandWaiting should default to true")
-	}
 }
 
 func TestFileOverridesAndUnbind(t *testing.T) {
@@ -70,9 +67,6 @@ ntfy_url = "https://ntfy.example/bx-secret"
 	}
 	if c.Keys.List["fold_all"][0] != "z M" {
 		t.Errorf("fold_all = %v", c.Keys.List["fold_all"])
-	}
-	if c.List.AutoExpandWaiting {
-		t.Error("AutoExpandWaiting should be false")
 	}
 }
 

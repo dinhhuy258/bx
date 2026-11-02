@@ -43,9 +43,9 @@ func sampleHomeNetwork() (*state.Project, Live) {
 }
 
 // sampleModel is the sample with zigbee-map-docs folded, as in the prototype.
-func sampleModel(opt Options) (*Model, *state.Project) {
+func sampleModel() (*Model, *state.Project) {
 	p, live := sampleHomeNetwork()
-	m := NewModel(p, opt)
+	m := NewModel(p)
 	m.SetFolded("zigbee-map-docs", true)
 	m.SetLive(live)
 	return m, p

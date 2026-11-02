@@ -15,7 +15,6 @@ import (
 type Config struct {
 	Root   string `toml:"-"`
 	Keys   Keys   `toml:"keys"`
-	List   List   `toml:"list"`
 	Serve  Serve  `toml:"serve"`
 	Client Client `toml:"client"`
 }
@@ -39,11 +38,6 @@ type Client struct {
 // Keys holds the list binds. A bind is a list of key names; "z M" is a two-key sequence.
 type Keys struct {
 	List map[string][]string `toml:"list"`
-}
-
-// List holds list pane options.
-type List struct {
-	AutoExpandWaiting bool `toml:"auto_expand_waiting"`
 }
 
 // DefaultRoot is $BX_ROOT or ~/.bx.
@@ -73,7 +67,6 @@ func Default(root string) *Config {
 				"settings": {"S"}, "stop": {"s"}, "delete": {"X"}, "cleanup": {"C"},
 			},
 		},
-		List:   List{AutoExpandWaiting: true},
 		Serve:  Serve{Listen: "auto"},
 		Client: Client{PaneLeft: "C-h", PaneRight: "C-l", CopyMode: "M-c"},
 	}
@@ -103,9 +96,6 @@ type rawConfig struct {
 	Keys struct {
 		List map[string]bind `toml:"list"`
 	} `toml:"keys"`
-	List struct {
-		AutoExpandWaiting *bool `toml:"auto_expand_waiting"`
-	} `toml:"list"`
 	Serve struct {
 		Listen *string `toml:"listen"`
 	} `toml:"serve"`
@@ -119,9 +109,6 @@ type rawConfig struct {
 
 func (r rawConfig) applyTo(c *Config) {
 	applyBinds(c.Keys.List, r.Keys.List)
-	if r.List.AutoExpandWaiting != nil {
-		c.List.AutoExpandWaiting = *r.List.AutoExpandWaiting
-	}
 	if r.Serve.Listen != nil {
 		c.Serve.Listen = *r.Serve.Listen
 	}

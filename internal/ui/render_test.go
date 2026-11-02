@@ -15,7 +15,7 @@ import (
 var update = flag.Bool("update", false, "rewrite golden files")
 
 func TestRenderGolden46x30(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	got := Render(m, 46, 30, RenderOptions{Plain: true})
 	golden := "testdata/home-network-46x30.txt"
 	if *update {
@@ -43,7 +43,7 @@ func TestRenderEmptyProject(t *testing.T) {
 	for k := range p.Sessions {
 		delete(p.Sessions, k)
 	}
-	m := NewModel(p, Options{})
+	m := NewModel(p)
 	m.SetLive(live)
 	out := Render(m, 46, 20, RenderOptions{Plain: true})
 	if !strings.Contains(out, "No stories yet.") || !strings.Contains(out, "no chats · c to start one") {
@@ -61,7 +61,7 @@ func TestRenderChatsWithoutStories(t *testing.T) {
 	}
 	p.AddSession(&state.Session{UUID: "c1", Title: "first chat", Created: live.Now})
 	p.AddSession(&state.Session{UUID: "c2", Title: "second chat", Created: live.Now})
-	m := NewModel(p, Options{})
+	m := NewModel(p)
 	m.SetLive(live)
 	out := Render(m, 46, 20, RenderOptions{Plain: true})
 	if !strings.Contains(out, "first chat") || !strings.Contains(out, "second chat") || !strings.Contains(out, "No stories yet.") {
@@ -70,14 +70,14 @@ func TestRenderChatsWithoutStories(t *testing.T) {
 }
 
 func TestRenderTooNarrow(t *testing.T) {
-	m, _ := sampleModel(Options{})
+	m, _ := sampleModel()
 	if out := Render(m, 24, 10, RenderOptions{Plain: true}); !strings.Contains(out, "bx: terminal too narrow") {
 		t.Fatal(out)
 	}
 }
 
 func TestKeyBar(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	cfg := config.Default("/x")
 	kb := KeyBar(m, cfg, BarContext{})
 	for _, want := range []string{"j/k move", "⏎ type in Claude", "Z fold all", "F focus", "c new chat", "a jump to waiting", "o projects"} {
@@ -131,7 +131,7 @@ func TestKeyBar(t *testing.T) {
 }
 
 func TestFocusLine(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	m.SelectSession(1)
 	line := FocusLine(m, "a", "C-h", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
 	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · a jump · ● 1 running · ^h exit"
@@ -143,7 +143,7 @@ func TestFocusLine(t *testing.T) {
 func TestRenderLongProjectPathNeverPanicsOrOverflows(t *testing.T) {
 	p, live := sampleHomeNetwork()
 	p.Path = "/Users/someone-with-a-long-name/Workspace/projects/clients/home-network-infrastructure"
-	m := NewModel(p, Options{})
+	m := NewModel(p)
 	m.SetLive(live)
 	for w := 25; w <= 60; w++ {
 		out := Render(m, w, 20, RenderOptions{Plain: true})
@@ -166,7 +166,7 @@ func TestShortPathUsesHome(t *testing.T) {
 }
 
 func TestRenderProjectStrip(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	tabs := []ProjectTab{{Name: "bx", Waiting: 1}, {Name: "home-network", Waiting: 1, Running: 2}, {Name: "dotfiles"}, {Name: "lab"}}
 	lines := strings.Split(Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs}), "\n")
 	if lines[2] != "◆ bx  ◉ home-network  ○ dotfiles  ○ lab" {
@@ -185,11 +185,11 @@ func TestRenderProjectStrip(t *testing.T) {
 }
 
 func TestActivityRowsAndRender(t *testing.T) {
-	home, _ := sampleModel(Options{AutoExpandWaiting: true})
+	home, _ := sampleModel()
 	p, live := sampleHomeNetwork()
 	p.Name = "bx"
 	live.Agents["u2"] = claude.Agent{SessionID: "u2", Status: "idle"} // bx has nothing waiting
-	bx := NewModel(p, Options{})
+	bx := NewModel(p)
 	bx.SetLive(live)
 	rows := ActivityRows([]*Model{bx, home})
 	want := []ActivityRow{{"home-network", 0}, {"home-network", 2}, {"home-network", 1}, {"home-network", 4}, {"bx", 0}, {"bx", 1}, {"bx", 4}}

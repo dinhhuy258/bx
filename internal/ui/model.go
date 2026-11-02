@@ -33,9 +33,6 @@ type Live struct {
 	AgentsErr  bool                    `json:"agents_err"`  // claude agents --json failed; keep the last state
 }
 
-// Options are the list options from config.
-type Options struct{ AutoExpandWaiting bool }
-
 // RowKind tells what a row is.
 type RowKind int
 
@@ -54,7 +51,6 @@ type Row struct {
 // Model is the list state for one project.
 type Model struct {
 	P    *state.Project
-	Opt  Options
 	Live Live
 	sel  int
 	last Live
@@ -64,8 +60,8 @@ type Model struct {
 }
 
 // NewModel builds a model and selects the first session of the first story.
-func NewModel(p *state.Project, opt Options) *Model {
-	m := &Model{P: p, Opt: opt, folded: map[string]bool{}}
+func NewModel(p *state.Project) *Model {
+	m := &Model{P: p, folded: map[string]bool{}}
 	m.sel = -1
 	return m
 }
@@ -155,7 +151,7 @@ func (m *Model) IsOpen(story string) bool {
 	if !m.folded[story] {
 		return true
 	}
-	return m.Opt.AutoExpandWaiting && m.HasWaiting(story)
+	return m.HasWaiting(story) // a folded story opens while a session in it waits
 }
 
 // HasWaiting reports whether any session of the story waits.
@@ -254,7 +250,7 @@ func (m *Model) ToggleFold() {
 		return
 	}
 	if m.IsOpen(r.Story) {
-		if m.Opt.AutoExpandWaiting && m.HasWaiting(r.Story) {
+		if m.HasWaiting(r.Story) {
 			return
 		}
 		m.folded[r.Story] = true

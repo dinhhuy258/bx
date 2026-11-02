@@ -324,7 +324,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 			s.Log("projects: %s: %v", name, err)
 			continue
 		}
-		m := ui.NewModel(p, ui.Options{})
+		m := ui.NewModel(p)
 		m.SetLive(live)
 		sum := api.ProjectSummary{Name: name, BaseOverride: p.BaseOverride}
 		sum.Running, sum.Waiting = m.Counts()
@@ -511,7 +511,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 // session is gone even if `claude agents` lists it (a stream can't attach), and one with a
 // tmux session that `claude agents` doesn't list yet is starting, not gone.
 func sessionStates(p *state.Project, live ui.Live, tm map[int]string, tmuxOK bool) map[int]api.SessionState {
-	m := ui.NewModel(p, ui.Options{})
+	m := ui.NewModel(p)
 	m.SetLive(live)
 	out := make(map[int]api.SessionState, len(p.Sessions))
 	for n, s := range p.Sessions {

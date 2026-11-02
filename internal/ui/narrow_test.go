@@ -17,7 +17,7 @@ func TestNarrowThreshold(t *testing.T) {
 }
 
 func TestKeyBarNarrowHint(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	m.SelectSession(1)
 	bar := KeyBar(m, config.Default("/x"), BarContext{Narrow: true})
 	if !strings.Contains(bar, "⏎ Claude") {

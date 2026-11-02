@@ -6,7 +6,7 @@ import (
 )
 
 func TestRowsOrderAndKinds(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	var got []string
 	for _, r := range m.Rows() {
 		switch r.Kind {
@@ -23,14 +23,14 @@ func TestRowsOrderAndKinds(t *testing.T) {
 }
 
 func TestInitialSelectionIsFirstStorySession(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	if r := m.Selected(); r.Kind != RowSession || r.Num != 1 {
 		t.Fatalf("selected = %+v", r)
 	}
 }
 
 func TestMoveClampsAndFoldKeepsSelectionOnStory(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	for i := 0; i < 50; i++ {
 		m.Move(1)
 	}
@@ -54,7 +54,7 @@ func TestMoveClampsAndFoldKeepsSelectionOnStory(t *testing.T) {
 }
 
 func TestWaitingStoryCannotFold(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	m.SelectStory("guest-vlan-fix")
 	m.ToggleFold()
 	if m.IsOpen("guest-vlan-fix") != true {
@@ -67,12 +67,15 @@ func TestWaitingStoryCannotFold(t *testing.T) {
 }
 
 func TestFoldAllToggles(t *testing.T) {
-	m, p := sampleModel(Options{AutoExpandWaiting: false})
+	m, p := sampleModel()
 	m.FoldAll()
 	for name := range p.Stories {
 		if !m.Folded(name) {
 			t.Errorf("%s not folded", name)
 		}
+	}
+	if !m.IsOpen("guest-vlan-fix") || m.IsOpen("zigbee-map-docs") {
+		t.Error("a folded story with a waiting session stays open; the others close")
 	}
 	m.FoldAll()
 	for name := range p.Stories {
@@ -84,7 +87,7 @@ func TestFoldAllToggles(t *testing.T) {
 
 func TestStateText(t *testing.T) {
 	p, live := sampleHomeNetwork()
-	m := NewModel(p, Options{AutoExpandWaiting: true})
+	m := NewModel(p)
 	m.SetLive(live)
 	cases := map[int]string{
 		1: "running",
@@ -110,7 +113,7 @@ func TestStateText(t *testing.T) {
 func TestStartingIsNotGone(t *testing.T) {
 	p, live := sampleHomeNetwork()
 	delete(live.Agents, "u3")
-	m := NewModel(p, Options{AutoExpandWaiting: true})
+	m := NewModel(p)
 	m.SetLive(live)
 	if !m.Gone(3) {
 		t.Fatal("without states a session without an agent is gone")
@@ -123,7 +126,7 @@ func TestStartingIsNotGone(t *testing.T) {
 
 func TestAlive(t *testing.T) {
 	p, live := sampleHomeNetwork()
-	m := NewModel(p, Options{AutoExpandWaiting: true})
+	m := NewModel(p)
 	m.SetLive(live)
 	if !m.Alive(1) || !m.Alive(3) || m.Alive(5) || m.Alive(99) {
 		t.Fatalf("without states: 1=%v 3=%v 5(done)=%v 99=%v", m.Alive(1), m.Alive(3), m.Alive(5), m.Alive(99))
@@ -140,7 +143,7 @@ func TestAlive(t *testing.T) {
 }
 
 func TestCounts(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	run, wait := m.Counts()
 	if run != 2 || wait != 1 {
 		t.Fatalf("run=%d wait=%d", run, wait)
@@ -154,7 +157,7 @@ func TestCounts(t *testing.T) {
 }
 
 func TestNextWaiting(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	if n := m.NextWaiting(); n != 2 {
 		t.Fatalf("next waiting = %d", n)
 	}
@@ -174,7 +177,7 @@ func fmtInt(n int) string {
 }
 
 func TestSetProjectKeepsTheCursorRowAndFolds(t *testing.T) {
-	m, _ := sampleModel(Options{AutoExpandWaiting: true})
+	m, _ := sampleModel()
 	m.SelectSession(4)
 	p2, _ := sampleHomeNetwork()
 	delete(p2.Stories, "fstrim-cron") // sorts before the selected row: indexes shift
