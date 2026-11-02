@@ -55,7 +55,7 @@ func runNotify(args []string, out, errOut io.Writer) int {
 
 // notifyTargets are the ntfy URL ("" = off) and the Open URL from the settings bx serve saves.
 func notifyTargets(cfg *config.Config) (ntfyURL, openURL string) {
-	st, err := settings.Open(cfg.SettingsFile(), func(string, ...any) {})
+	st, err := settings.Read(cfg.SettingsFile()) // never moves a corrupt file: that is bx serve's
 	if err != nil {
 		return "", ""
 	}

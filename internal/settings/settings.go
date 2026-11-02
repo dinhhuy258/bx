@@ -146,6 +146,38 @@ type Store struct {
 // <name>.corrupt-<timestamp>.json and an unknown key or bad value is dropped; both are logged,
 // and the defaults are used, so bx serve still starts.
 func Open(path string, logf func(format string, args ...any)) (*Store, error) {
+	s, err := load(path, logf)
+	var ce *corruptError
+	if !errors.As(err, &ce) {
+		return s, err
+	}
+	q := strings.TrimSuffix(path, ".json") + ".corrupt-" + time.Now().Format("20060102-150405") + ".json"
+	if rerr := os.Rename(path, q); rerr != nil {
+		return nil, fmt.Errorf("settings file %s is corrupt and could not be moved: %v (%w)", path, rerr, ce.err)
+	}
+	logf("settings: %s is corrupt (moved to %s): %v · using the defaults", path, q, ce.err)
+	return &Store{path: path, values: map[string]string{}}, nil
+}
+
+// Read loads path like Open but never moves or writes it: a corrupt file is an error. It is
+// for short-lived readers such as the bx notify hook, which must leave the file to bx serve.
+func Read(path string) (*Store, error) {
+	return load(path, func(string, ...any) {})
+}
+
+// corruptError is a settings file that is not JSON.
+type corruptError struct {
+	path string
+	err  error
+}
+
+func (e *corruptError) Error() string {
+	return fmt.Sprintf("settings file %s is corrupt: %v", e.path, e.err)
+}
+
+// load reads path: no values when it is missing, a *corruptError when it is not JSON, and a
+// bad key or value dropped and logged.
+func load(path string, logf func(format string, args ...any)) (*Store, error) {
 	s := &Store{path: path, values: map[string]string{}}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -156,12 +188,7 @@ func Open(path string, logf func(format string, args ...any)) (*Store, error) {
 	}
 	var raw map[string]string
 	if err := json.Unmarshal(data, &raw); err != nil {
-		q := strings.TrimSuffix(path, ".json") + ".corrupt-" + time.Now().Format("20060102-150405") + ".json"
-		if rerr := os.Rename(path, q); rerr != nil {
-			return nil, fmt.Errorf("settings file %s is corrupt and could not be moved: %v (%w)", path, rerr, err)
-		}
-		logf("settings: %s is corrupt (moved to %s): %v · using the defaults", path, q, err)
-		return s, nil
+		return nil, &corruptError{path, err}
 	}
 	for k, v := range raw {
 		if err := Validate(k, v); err != nil {

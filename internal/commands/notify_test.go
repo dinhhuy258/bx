@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dinhhuy258/bx/internal/config"
@@ -21,5 +23,23 @@ func TestNotifyTargetsReadTheSettings(t *testing.T) {
 	}
 	if ntfy, open := notifyTargets(cfg); ntfy != "https://ntfy.sh/bx" || open != "https://bx.example.ts.net" {
 		t.Fatalf("set: %q %q", ntfy, open)
+	}
+}
+
+func TestNotifyTargetsLeaveACorruptFile(t *testing.T) {
+	cfg := config.Default(t.TempDir())
+	path := cfg.SettingsFile()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if ntfy, open := notifyTargets(cfg); ntfy != "" || open != "" {
+		t.Fatalf("corrupt: %q %q", ntfy, open)
+	}
+	entries, _ := os.ReadDir(filepath.Dir(path))
+	if data, err := os.ReadFile(path); err != nil || string(data) != "{not json" || len(entries) != 1 {
+		t.Fatalf("the hook touched the settings: %q %v %v", data, err, entries)
 	}
 }

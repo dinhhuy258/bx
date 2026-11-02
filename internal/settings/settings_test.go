@@ -176,3 +176,30 @@ func TestVisibleHidesTUIOnly(t *testing.T) {
 		t.Fatalf("tui = %v %v", secs, got)
 	}
 }
+
+func TestReadNeverMovesOrWrites(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if s, err := Read(path); err != nil || len(s.Values()) != 0 {
+		t.Fatalf("missing: %v %v", s, err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("Read made %v", entries)
+	}
+	if err := os.WriteFile(path, []byte(`{"claude.model":"opus","nope":"x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := Read(path); err != nil || s.Get("claude.model") != "opus" || len(s.Values()) != 1 {
+		t.Fatalf("good: %v %v", s, err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Read(path); err == nil {
+		t.Fatal("a corrupt file read without an error")
+	}
+	entries, _ := os.ReadDir(dir)
+	if data, _ := os.ReadFile(path); len(entries) != 1 || string(data) != "{not json" {
+		t.Fatalf("Read touched a corrupt file: %v %q", entries, data)
+	}
+}
