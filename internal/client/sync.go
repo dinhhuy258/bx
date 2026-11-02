@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -46,10 +47,7 @@ func (m *Model) scanSync() tea.Cmd {
 		if dir == "" {
 			return syncPlanMsg{seq: seq, err: errors.New("no Claude config dir: set HOME or CLAUDE_CONFIG_DIR")}
 		}
-		mac, err := claudesync.Scan(dir)
-		if err != nil {
-			return syncPlanMsg{seq: seq, err: fmt.Errorf("scan %s: %w", dir, err)}
-		}
+		mac := claudesync.Scan(dir)
 		files := make([]api.SyncFile, 0, len(mac.Files))
 		for _, f := range mac.Files {
 			files = append(files, api.SyncFile{Path: f.Path, SHA256: f.SHA256, Exec: f.Exec})
@@ -69,7 +67,7 @@ func syncError(err error) string {
 }
 
 // gotSyncPlan shows the plan in the sync list. A file over the size limit makes its item an
-// error, so it can't be selected.
+// error, and one the Mac couldn't read a warning, so either can't be selected.
 func (m *Model) gotSyncPlan(msg syncPlanMsg) {
 	if m.settings == nil || msg.seq != m.syncSeq {
 		return
@@ -86,20 +84,36 @@ func (m *Model) gotSyncPlan(msg syncPlanMsg) {
 		}
 	}
 	d := ui.SyncData{MacDir: msg.dir, ServerDir: msg.plan.Dir, At: time.Now(), Done: m.syncDone}
+	for _, f := range claudesync.Folders {
+		if w := msg.mac.FolderWarnings[f]; w != "" {
+			d.Warnings = append(d.Warnings, w)
+		}
+	}
 	seen := map[string]bool{}
 	for _, it := range msg.plan.Items {
-		if it.Status == claudesync.StatusServerOnly {
+		// an item the Mac couldn't read, or of a folder it couldn't read, is shown unselectable:
+		// the server would take its unread files as deleted on the Mac
+		w, blocked := msg.mac.Warnings[it.Name], msg.mac.Unreadable[it.Name]
+		folder, _, _ := strings.Cut(it.Name, "/")
+		if fw := msg.mac.FolderWarnings[folder]; fw != "" && it.Status != claudesync.StatusServerOnly {
+			w, blocked = fw, true
+		}
+		if it.Status == claudesync.StatusServerOnly && !blocked {
 			d.ServerOnly++
 			continue
 		}
 		seen[it.Name] = true
-		item := ui.SyncItem{Name: it.Name, Status: it.Status, Error: it.Error, Warning: msg.mac.Warnings[it.Name], Link: msg.mac.Links[it.Name]}
+		if blocked {
+			d.Items = append(d.Items, ui.SyncItem{Name: it.Name, Warning: w, Link: msg.mac.Links[it.Name]})
+			continue
+		}
+		item := ui.SyncItem{Name: it.Name, Status: it.Status, Error: it.Error, Warning: w, Link: msg.mac.Links[it.Name]}
 		if item.Error == "" {
 			item.Error = big[it.Name]
 		}
 		d.Items = append(d.Items, item)
 	}
-	for it, w := range msg.mac.Warnings { // an item whose every file was skipped
+	for it, w := range msg.mac.Warnings { // an item whose every file was skipped or unread
 		if !seen[it] {
 			d.Items = append(d.Items, ui.SyncItem{Name: it, Warning: w, Link: msg.mac.Links[it]})
 		}

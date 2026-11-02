@@ -198,6 +198,43 @@ func TestSyncBigFileIsAnItemError(t *testing.T) {
 	}
 }
 
+// A Mac file the scan can't read makes its item an amber warning that can't be selected, and
+// an unreadable folder a warning over the list; the other items still sync.
+func TestSyncUnreadableIsAWarning(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	h := syncStart(t, t.TempDir())
+	dir := os.Getenv("CLAUDE_CONFIG_DIR")
+	macFile(t, "skills/a/secret.md", "s")
+	macFile(t, "rules/r.md", "r")
+	for _, rel := range []string{"skills/a/secret.md", "rules"} {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.Chmod(p, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(p, 0o755) })
+	}
+	h.be.plan.Items = append(h.be.plan.Items, api.SyncItem{Name: "rules/old.md", Status: "removed", Delete: []string{"rules/old.md"}})
+	h.press("S")
+	var got []string
+	for _, f := range h.be.planReqs[0].Files {
+		got = append(got, f.Path)
+	}
+	if want := []string{"agents/b.md", "agents/x.md"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("manifest = %q", got)
+	}
+	v := view(h)
+	for _, want := range []string{"can't read skills/a/secret.md: permission denied", "can't read rules: permission denied", "1 server-only item kept", "• 2 to sync"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("no %q:\n%s", want, v)
+		}
+	}
+	if got, want := h.m.settings.SyncScope(), []string{"agents/b.md", "agents/x.md", "skills/gone"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("scope = %q, want %q", got, want)
+	}
+}
+
 func TestOpenedRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	o := opened{Projects: []string{"a", "b"}, Current: "b", SyncExclude: []string{"rules/x.md", "skills/a"}}

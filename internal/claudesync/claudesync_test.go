@@ -121,10 +121,7 @@ func TestScan(t *testing.T) {
 	link(t, "..", filepath.Join(mac, "skills/a/loop"))              // a loop back to skills/
 	link(t, "/nowhere/at/all", filepath.Join(mac, "skills/broken")) // a broken link
 
-	sc, err := Scan(mac) // commands and rules are missing
-	if err != nil {
-		t.Fatal(err)
-	}
+	sc := Scan(mac) // commands and rules are missing
 	want := []string{"agents/b.md", "agents/linked.md", "skills/a/SKILL.md", "skills/a/run.sh", "skills/linkdir/c.md"}
 	if got := paths(sc.Files); !reflect.DeepEqual(got, want) {
 		t.Fatalf("paths = %q, want %q", got, want)
@@ -142,8 +139,57 @@ func TestScan(t *testing.T) {
 	if want := map[string]bool{"agents/linked.md": true, "skills/linkdir": true}; !reflect.DeepEqual(sc.Links, want) {
 		t.Errorf("links = %v, want %v", sc.Links, want)
 	}
-	if len(sc.Warnings) != 0 {
-		t.Errorf("warnings = %v", sc.Warnings)
+	if len(sc.Warnings) != 0 || len(sc.Unreadable) != 0 || len(sc.FolderWarnings) != 0 {
+		t.Errorf("warnings = %v, unreadable = %v, folder warnings = %v", sc.Warnings, sc.Unreadable, sc.FolderWarnings)
+	}
+	if sc := Scan(filepath.Join(mac, "missing")); len(sc.Files)+len(sc.Warnings)+len(sc.FolderWarnings) != 0 {
+		t.Errorf("a missing dir: %+v", sc)
+	}
+}
+
+// chmod sets p's mode and restores it at the end of the test, so TempDir can remove it.
+func chmod(t *testing.T, p string, mode os.FileMode) {
+	t.Helper()
+	if err := os.Chmod(p, mode); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p, 0o755) })
+}
+
+// An unreadable file or folder is a warning on its item, which is left out; an unreadable
+// top folder is a folder warning; the rest still scans.
+func TestScanUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	mac := t.TempDir()
+	put(t, mac, "skills/a/SKILL.md", "a", 0o644)
+	put(t, mac, "skills/a/secret.md", "s", 0o644)
+	put(t, mac, "skills/b/SKILL.md", "b", 0o644)
+	put(t, mac, "skills/c/sub/x.md", "x", 0o644)
+	put(t, mac, "skills/c/SKILL.md", "c", 0o644)
+	put(t, mac, "agents/ok.md", "ok", 0o644)
+	put(t, mac, "rules/r.md", "r", 0o644)
+	chmod(t, filepath.Join(mac, "skills/a/secret.md"), 0o000)
+	chmod(t, filepath.Join(mac, "skills/c/sub"), 0o000)
+	chmod(t, filepath.Join(mac, "rules"), 0o000)
+
+	sc := Scan(mac)
+	if want := []string{"agents/ok.md", "skills/b/SKILL.md"}; !reflect.DeepEqual(paths(sc.Files), want) {
+		t.Fatalf("paths = %q, want %q", paths(sc.Files), want)
+	}
+	want := map[string]string{
+		"skills/a": "can't read skills/a/secret.md: permission denied",
+		"skills/c": "can't read skills/c/sub: permission denied",
+	}
+	if !reflect.DeepEqual(sc.Warnings, want) {
+		t.Errorf("warnings = %q, want %q", sc.Warnings, want)
+	}
+	if want := map[string]bool{"skills/a": true, "skills/c": true}; !reflect.DeepEqual(sc.Unreadable, want) {
+		t.Errorf("unreadable = %v, want %v", sc.Unreadable, want)
+	}
+	if want := map[string]string{"rules": "can't read rules: permission denied"}; !reflect.DeepEqual(sc.FolderWarnings, want) {
+		t.Errorf("folder warnings = %q, want %q", sc.FolderWarnings, want)
 	}
 }
 
@@ -155,10 +201,7 @@ func TestScanSymlinkedTopFolderAndBadName(t *testing.T) {
 	put(t, mac, `agents/sub/c\d.md`, "x", 0o644)
 	put(t, mac, `agents/sub/e\f.md`, "x", 0o644)
 	put(t, mac, "agents/sub/ok.md", "x", 0o644)
-	sc, err := Scan(mac)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sc := Scan(mac)
 	// the bad names are skipped, the rest of the scan still returns
 	if want := []string{"agents/sub/ok.md", "skills/x/SKILL.md"}; !reflect.DeepEqual(paths(sc.Files), want) {
 		t.Fatalf("paths = %q, want %q", paths(sc.Files), want)

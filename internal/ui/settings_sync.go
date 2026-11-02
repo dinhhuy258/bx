@@ -18,7 +18,7 @@ const syncHint = "space select · h/l fold · s sync… · r refresh"
 
 // SyncItem is one row of the sync list: "skills/<name>" or "<agents|commands|rules>/<entry>".
 // Status is "new", "changed", "same" or "removed" (removed on the Mac, still on the server);
-// "" is an item known only from Warning. Error says why it can't sync; such an item and one
+// "" is an item known only from Warning, or one the Mac couldn't read. Error says why it can't sync; such an item and one
 // with no Status can't be checked. Link marks an item that is a symlink on the Mac.
 type SyncItem struct {
 	Name, Status, Error, Warning string
@@ -26,11 +26,13 @@ type SyncItem struct {
 }
 
 // SyncData is what a scan and a plan found: the two Claude dirs, when, the items, and the
-// number of items only the server has (kept). Done is set after a sync.
+// number of items only the server has (kept). Warnings are the Mac folders that couldn't be
+// read. Done is set after a sync.
 type SyncData struct {
 	MacDir, ServerDir string
 	At                time.Time
 	Items             []SyncItem
+	Warnings          []string
 	ServerOnly        int
 	Done              bool
 }
@@ -322,6 +324,9 @@ func (s *Settings) syncHead(w int, pal palette) []string {
 		}
 		out = append(out, "   "+pal.dim.Render("r to try again"))
 	case syncReady:
+		for _, warn := range s.sync.data.Warnings {
+			out = append(out, truncate("   "+pal.amber.Render(warn), w))
+		}
 		if len(s.syncRows()) == 0 {
 			out = append(out, "   "+pal.dim.Render("nothing to sync: no skills, agents, commands or rules"))
 		}

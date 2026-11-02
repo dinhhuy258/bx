@@ -20,6 +20,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
 )
 
 // Folders are the folders of the Claude config dir that bx syncs, in display order.
@@ -85,20 +86,36 @@ type File struct {
 }
 
 // MacScan is a scan of the Mac. Links holds the items whose top entry ("skills/a",
-// "agents/x.md") is a symlink. Warnings holds, per item, the files skipped for a bad name.
+// "agents/x.md") is a symlink. Warnings holds, per item, the files skipped for a bad name, or
+// the files or folders that couldn't be read. Unreadable holds the items with something that
+// couldn't be read: their files are left out of Files, so they can't sync. FolderWarnings holds,
+// per folder of Folders, why the folder couldn't be read; none of its files are in Files.
 type MacScan struct {
-	Files    []File
-	Links    map[string]bool
-	Warnings map[string]string
+	Files          []File
+	Links          map[string]bool
+	Warnings       map[string]string
+	Unreadable     map[string]bool
+	FolderWarnings map[string]string
+}
+
+// macScan is a scan in progress: the files skipped for a bad name and those that couldn't be
+// read, by item.
+type macScan struct {
+	MacScan
+	skipped, failed map[string][]string
 }
 
 // Scan lists the files of Folders under dir on the Mac, sorted by path. It follows symlinked
 // files and directories (a directory already on the current path is skipped, so a loop ends),
 // and skips names starting with "." at any depth, broken links and non-regular files. A file
-// whose path isn't valid (a backslash in its name) is skipped with a warning on its item.
-func Scan(dir string) (MacScan, error) {
-	sc := MacScan{Links: map[string]bool{}, Warnings: map[string]string{}}
-	skipped := map[string][]string{}
+// whose path isn't valid (a backslash in its name) is skipped with a warning on its item. A
+// file or folder that can't be read is a warning on its item, which is then left out, or on
+// its folder of Folders; the rest of the scan goes on. A missing dir or folder is empty.
+func Scan(dir string) MacScan {
+	sc := macScan{
+		MacScan: MacScan{Links: map[string]bool{}, Warnings: map[string]string{}, Unreadable: map[string]bool{}, FolderWarnings: map[string]string{}},
+		skipped: map[string][]string{}, failed: map[string][]string{},
+	}
 	for _, f := range Folders {
 		top := filepath.Join(dir, f)
 		fi, err := os.Stat(top)
@@ -106,37 +123,66 @@ func Scan(dir string) (MacScan, error) {
 			continue
 		}
 		if err != nil {
-			return MacScan{}, err
+			sc.fail(f, err)
+			continue
 		}
 		if !fi.IsDir() {
 			continue
 		}
 		real, err := filepath.EvalSymlinks(top)
 		if err != nil {
-			return MacScan{}, err
+			sc.fail(f, err)
+			continue
 		}
-		if err := scanDir(top, f, map[string]bool{real: true}, &sc, skipped); err != nil {
-			return MacScan{}, err
+		sc.scanDir(top, f, map[string]bool{real: true})
+	}
+	warn := func(it, first string, n int) {
+		if n > 1 {
+			first += fmt.Sprintf(" (+%d more)", n-1)
+		}
+		sc.Warnings[it] = first
+	}
+	for it, rels := range sc.skipped {
+		warn(it, "skipped "+rels[0]+": bad name", len(rels))
+	}
+	for it, errs := range sc.failed { // over a bad-name warning: the item can't sync at all
+		warn(it, "can't read "+errs[0], len(errs))
+		sc.Unreadable[it] = true
+	}
+	files := sc.Files[:0]
+	for _, f := range sc.Files {
+		if !sc.Unreadable[ItemOf(f.Path)] {
+			files = append(files, f)
 		}
 	}
-	for it, rels := range skipped {
-		w := "skipped " + rels[0] + ": bad name"
-		if len(rels) > 1 {
-			w += fmt.Sprintf(" (+%d more)", len(rels)-1)
-		}
-		sc.Warnings[it] = w
-	}
+	sc.Files = files
 	sort.Slice(sc.Files, func(i, j int) bool { return sc.Files[i].Path < sc.Files[j].Path })
-	return sc, nil
+	return sc.MacScan
 }
 
-// scanDir adds the files below abs (rel is its slash path) to sc, and the files it skips for
-// a bad name to skipped by item. seen holds the real paths of the directories from the top
-// folder down to abs.
-func scanDir(abs, rel string, seen map[string]bool, sc *MacScan, skipped map[string][]string) error {
+// fail records that rel couldn't be read: on its folder when rel is one of Folders, else on
+// its item.
+func (sc *macScan) fail(rel string, err error) {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		err = pe.Err
+	}
+	if !strings.Contains(rel, "/") {
+		sc.FolderWarnings[rel] = "can't read " + rel + ": " + err.Error()
+		return
+	}
+	it := ItemOf(rel)
+	sc.failed[it] = append(sc.failed[it], rel+": "+err.Error())
+}
+
+// scanDir adds the files below abs (rel is its slash path) to sc, and records the files it
+// skips for a bad name and what it can't read. seen holds the real paths of the directories
+// from the top folder down to abs.
+func (sc *macScan) scanDir(abs, rel string, seen map[string]bool) {
 	entries, err := os.ReadDir(abs)
 	if err != nil {
-		return err
+		sc.fail(rel, err)
+		return
 	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".") {
@@ -144,8 +190,12 @@ func scanDir(abs, rel string, seen map[string]bool, sc *MacScan, skipped map[str
 		}
 		p, r := filepath.Join(abs, e.Name()), rel+"/"+e.Name()
 		fi, err := os.Stat(p) // follows a symlink
-		if err != nil {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ELOOP) {
 			continue // a broken link
+		}
+		if err != nil {
+			sc.fail(r, err)
+			continue
 		}
 		if !strings.Contains(rel, "/") && e.Type()&fs.ModeSymlink != 0 {
 			sc.Links[r] = true
@@ -157,25 +207,22 @@ func scanDir(abs, rel string, seen map[string]bool, sc *MacScan, skipped map[str
 				continue
 			}
 			seen[real] = true
-			err = scanDir(p, r, seen, sc, skipped)
+			sc.scanDir(p, r, seen)
 			delete(seen, real)
-			if err != nil {
-				return err
-			}
 		case fi.Mode().IsRegular():
 			if ValidPath(r) != nil {
 				it := ItemOf(r)
-				skipped[it] = append(skipped[it], r)
+				sc.skipped[it] = append(sc.skipped[it], r)
 				continue
 			}
 			sum, size, err := hashFile(p)
 			if err != nil {
-				return err
+				sc.fail(r, err)
+				continue
 			}
 			sc.Files = append(sc.Files, File{Path: r, SHA256: sum, Size: size, Exec: fi.Mode()&0o100 != 0, Src: p})
 		}
 	}
-	return nil
 }
 
 // ScanServer lists the files of Folders under dir on the server, by path. It never follows a
