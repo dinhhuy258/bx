@@ -19,6 +19,7 @@ import (
 
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/claude"
+	"github.com/dinhhuy258/bx/internal/claudesync"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
@@ -33,6 +34,8 @@ type Backend interface {
 	ProjectRepos(ctx context.Context, project string) ([]string, error)
 	Settings(ctx context.Context) (api.Settings, error)
 	SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error)
+	SyncPlan(ctx context.Context, r api.SyncPlanRequest) (api.SyncPlan, error)
+	SyncApply(ctx context.Context, r api.SyncApplyRequest) (api.SyncResult, error)
 }
 
 // Conn is one open session stream.
@@ -133,6 +136,10 @@ type Model struct {
 
 	settings     *ui.Settings // the settings screen, full screen while open
 	settingsNote string       // shown in its place until the server's sections arrive
+	syncSeq      int          // bumped on every sync scan or apply; older replies are dropped
+	syncMac      claudesync.MacScan
+	syncPlan     api.SyncPlan
+	syncDone     bool // a sync succeeded since the screen opened or the last r
 
 	activity bool        // the list pane shows the activity list of every project
 	act      ui.Activity // its cursor
@@ -322,6 +329,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case settingsMsg:
 		m.gotSettings(msg)
 		return m, nil
+	case syncPlanMsg:
+		m.gotSyncPlan(msg)
+		return m, nil
+	case syncAppliedMsg:
+		return m, m.gotSyncApplied(msg)
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case copyEndMsg:
@@ -864,7 +876,8 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 	return nil
 }
 
-// openSettings shows the settings screen and asks the server for its sections and values.
+// openSettings shows the settings screen, asks the server for its sections and values, and
+// scans for the Claude sync list.
 func (m *Model) openSettings() tea.Cmd {
 	host := ""
 	if a, ok := m.be.(*API); ok {
@@ -872,8 +885,8 @@ func (m *Model) openSettings() tea.Cmd {
 			host = "server " + u.Hostname()
 		}
 	}
-	m.settings, m.settingsNote = ui.NewSettings(host), "loading settings…"
-	return m.loadSettings()
+	m.settings, m.settingsNote, m.syncDone = ui.NewSettings(host), "loading settings…", false
+	return tea.Batch(m.loadSettings(), m.scanSync())
 }
 
 func (m *Model) loadSettings() tea.Cmd {
@@ -925,6 +938,15 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 			s, err := be.SaveSettings(ctx, changes)
 			return settingsMsg{s: s, err: err, saved: true}
 		}
+	case ui.SettingsSelect:
+		m.saveSyncExclude()
+	case ui.SettingsRescan:
+		m.syncDone = false
+		return m.scanSync()
+	case ui.SettingsUpToDate:
+		m.setFlash("Up to date")
+	case ui.SettingsSyncApply:
+		return m.applySync()
 	}
 	return nil
 }

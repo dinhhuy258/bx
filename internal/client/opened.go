@@ -7,11 +7,13 @@ import (
 	"slices"
 )
 
-// opened is what this client keeps between runs: the projects it has open, in name order, and the
-// one shown last. It lives in <root>/client.json on the client machine; the server never sees it.
+// opened is what this client keeps between runs: the projects it has open, in name order, the
+// one shown last, and the Claude sync items left unselected (sorted). It lives in
+// <root>/client.json on the client machine; the server never sees it.
 type opened struct {
-	Projects []string `json:"projects"`
-	Current  string   `json:"current,omitempty"`
+	Projects    []string `json:"projects"`
+	Current     string   `json:"current,omitempty"`
+	SyncExclude []string `json:"sync_exclude,omitempty"`
 }
 
 func openedFile(root string) string { return filepath.Join(root, "client.json") }

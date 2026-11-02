@@ -31,7 +31,23 @@ type fakeBackend struct {
 	values    map[string]string // the server's settings
 	saves     []map[string]string
 	saveErr   error
-	origDirty int // stories/repos without force is refused with this many files
+	origDirty int          // stories/repos without force is refused with this many files
+	plan      api.SyncPlan // the reply of every sync plan
+	planErr   error
+	planReqs  []api.SyncPlanRequest
+	applyRes  api.SyncResult
+	applyErr  error
+	applies   []api.SyncApplyRequest
+}
+
+func (f *fakeBackend) SyncPlan(_ context.Context, r api.SyncPlanRequest) (api.SyncPlan, error) {
+	f.planReqs = append(f.planReqs, r)
+	return f.plan, f.planErr
+}
+
+func (f *fakeBackend) SyncApply(_ context.Context, r api.SyncApplyRequest) (api.SyncResult, error) {
+	f.applies = append(f.applies, r)
+	return f.applyRes, f.applyErr
 }
 
 func (f *fakeBackend) ProjectRepos(context.Context, string) ([]string, error) {
@@ -157,6 +173,7 @@ func start(t *testing.T, w, h int, statuses ...string) *harness {
 // asked for on the command line ("" = none).
 func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *harness {
 	t.Helper()
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir()) // the settings screen scans it; never the real one
 	be := &fakeBackend{snaps: map[string]api.Snapshot{}}
 	names := []string{"home-network", "lab"}
 	for i, st := range statuses {

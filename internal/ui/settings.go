@@ -14,13 +14,13 @@ import (
 type SettingsResult int
 
 const (
-	SettingsKeep  SettingsResult = iota // still editing
-	SettingsSave                        // Enter: send Changes
-	SettingsClose                       // Esc or C-c: the caller asks first when Changes is not empty
-	SettingsSelect                      // Space changed the sync selection: save SyncExclude
-	SettingsRescan                      // r: scan and plan again
-	SettingsUpToDate                    // s with nothing to sync
-	SettingsSyncApply                   // y in the confirmation: sync SyncScope
+	SettingsKeep      SettingsResult = iota // still editing
+	SettingsSave                            // Enter: send Changes
+	SettingsClose                           // Esc or C-c: the caller asks first when Changes is not empty
+	SettingsSelect                          // Space changed the sync selection: save SyncExclude
+	SettingsRescan                          // r: scan and plan again
+	SettingsUpToDate                        // s with nothing to sync
+	SettingsSyncApply                       // y in the confirmation: sync SyncScope
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
