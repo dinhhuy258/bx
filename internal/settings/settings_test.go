@@ -154,6 +154,14 @@ func TestOpenDropsBadURL(t *testing.T) {
 	}
 }
 
+func TestTUIOnlyKey(t *testing.T) {
+	for key, want := range map[string]bool{"notifications.ntfy_url": true, "notifications.open_url": true, "claude.model": false, "nope": false} {
+		if got := TUIOnlyKey(key); got != want {
+			t.Errorf("TUIOnlyKey(%q) = %v", key, got)
+		}
+	}
+}
+
 func TestVisibleHidesTUIOnly(t *testing.T) {
 	values := map[string]string{"claude.model": "opus", "notifications.ntfy_url": "https://ntfy.sh/secret"}
 	secs, got := Visible(false, values)

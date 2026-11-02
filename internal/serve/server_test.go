@@ -200,13 +200,27 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	// notifications are for the TUI only: the phone never gets the section or the ntfy secret
-	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"notifications.ntfy_url": "nope"}}); code != 400 || res.Error == "" {
+	if _, res, code := put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.ntfy_url": "nope"}}); code != 400 || res.Error != "notifications.ntfy_url: want an http:// or https:// URL" {
 		t.Fatalf("bad URL: %d %+v", code, res)
 	}
 	secret := "https://ntfy.sh/bx-secret"
-	web, _, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"notifications.ntfy_url": secret}})
-	if code != 200 || len(web.Sections) != 1 || web.Values["notifications.ntfy_url"] != "" || web.Values["claude.model"] != "opus" {
-		t.Fatalf("web PUT reply: %d %+v", code, web)
+	// the web client may not write them either: a 400, and nothing saved
+	for _, v := range []string{"https://ntfy.sh/attacker", ""} {
+		if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "sonnet", "notifications.ntfy_url": v}}); code != 400 ||
+			res.Error != "notifications.ntfy_url can only be changed from the TUI" {
+			t.Fatalf("web PUT of a TUI-only key: %d %+v", code, res)
+		}
+	}
+	if s.App.Settings.Get("claude.model") != "opus" || s.App.Settings.Get("notifications.ntfy_url") != "" {
+		t.Fatalf("a refused web PUT saved: %v", s.App.Settings.Values())
+	}
+	web, _, code := put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.ntfy_url": secret}})
+	if code != 200 || len(web.Sections) != 2 || web.Values["notifications.ntfy_url"] != secret || web.Values["claude.model"] != "opus" {
+		t.Fatalf("tui PUT reply: %d %+v", code, web)
+	}
+	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"notifications.ntfy_url": ""}}); code != 400 || res.Error == "" ||
+		s.App.Settings.Get("notifications.ntfy_url") != secret {
+		t.Fatalf("web PUT cleared the secret: %d %+v", code, res)
 	}
 	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 1 || len(web.Values) != 2 {
 		t.Fatalf("web GET: %+v", web)

@@ -466,12 +466,26 @@ func loggable(values map[string]string) map[string]string {
 	return out
 }
 
-// putSettings saves the changed values, all or none. The next new session uses them.
+// putSettings saves the changed values, all or none. The next new session uses them. Only the
+// TUI (?tui=1) may change the TUI-only keys, so the web client cannot replace the ntfy secret.
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	var req api.Settings
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpError(w, 400, fmt.Errorf("decode body: %w", err))
 		return
+	}
+	if r.URL.Query().Get("tui") != "1" {
+		keys := make([]string, 0, len(req.Values))
+		for k := range req.Values {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			if settings.TUIOnlyKey(k) {
+				httpError(w, 400, fmt.Errorf("%s can only be changed from the TUI", k))
+				return
+			}
+		}
 	}
 	if s.App.Settings == nil {
 		httpError(w, 500, errors.New("settings are not loaded"))

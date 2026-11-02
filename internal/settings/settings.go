@@ -88,6 +88,18 @@ func Visible(tui bool, values map[string]string) ([]Section, map[string]string) 
 	return secs, out
 }
 
+// TUIOnlyKey reports whether key is a field of a TUIOnly section.
+func TUIOnlyKey(key string) bool {
+	for _, s := range Sections {
+		for _, f := range s.Fields {
+			if f.Key == key {
+				return s.TUIOnly
+			}
+		}
+	}
+	return false
+}
+
 func field(key string) (Field, bool) {
 	for _, s := range Sections {
 		for _, f := range s.Fields {
