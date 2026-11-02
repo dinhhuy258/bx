@@ -16,6 +16,20 @@ export function h(tag, props = {}, ...children) {
 export const bar = (left, title, right) =>
   h('header', { class: 'bar' }, left, h('h1', {}, title), right || h('span', { class: 'icon' }));
 
+// topBar is a screen header like the session screen's: [left][ title / meta ][right]. title
+// and meta are elements (meta may be null).
+export const topBar = (left, title, meta, right) =>
+  h('header', { class: 'bar sbar' }, left, h('h1', { class: 'ttl' }, title, meta), right);
+
+// toneOf is the colour of a session state: run (green), wait (amber), gone (red) or '' (dim).
+export const toneOf = (state) => ({ running: 'run', starting: 'run', waiting: 'wait', gone: 'gone' })[state] || '';
+
+// dotted is a state with its coloured dot: "● 1 waiting".
+export const dotted = (tone, text) => h('span', { class: `st${tone ? ` ${tone}` : ''}` }, h('span', { class: 'dot' }), text);
+
+// tile is a row's square icon tile, tinted by tone (run, wait, gone or shell).
+export const tile = (content, tone) => h('span', { class: `tile${tone ? ` tile-${tone}` : ''}` }, content);
+
 // An open modal dialog makes the rest of the page inert and sits above it, so elements that
 // must work while one is open go inside it.
 const topEl = () => document.querySelector('dialog[open]') || document.body;
@@ -156,6 +170,12 @@ const ICONS = {
   ret: 'M20 5v7a3 3 0 0 1-3 3H5M9 11l-4 4 4 4',
   arrow: 'M12 19V5M6 11l6-6 6 6',
   text: 'M4 18L9 6l5 12M5.8 14h6.4M15 18l3-7 3 7M16 16h4',
+  plus: 'M12 5v14M5 12h14',
+  gear: 'M4 7h9M17 7h3M4 17h3M11 17h9M13 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7 17a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+  folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
+  branch: 'M4 5a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 19a2 2 0 1 0 4 0a2 2 0 1 0-4 0M16 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M6 7v10M18 9c0 5-12 3-12 8',
+  chat: 'M5 5h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z',
+  spark: 'M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6',
 };
 export function icon(name, cls = 'i') {
   const ns = 'http://www.w3.org/2000/svg';

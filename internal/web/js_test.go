@@ -205,6 +205,77 @@ func TestTextSizeRow(t *testing.T) {
 	runJS(t, textSizeScript)
 }
 
+// listScreensScript renders the projects and project screens on a fake DOM: waiting projects
+// get a "Needs you" card, rows carry tinted tiles and state dots, no projects shows the empty
+// state, and an empty story offers a New session row.
+const listScreensScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; this.hidden = false; this.className = ''; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  removeEventListener() {}
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+  replaceChildren(...c) { this.children = c; }
+}
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => new El(t), createElementNS: (_, t) => new El(t),
+  addEventListener() {}, removeEventListener() {}, body: new El('body') };
+const { showProjects } = await import(process.argv[2] + '/projects.js');
+const { showProject } = await import(process.argv[2] + '/project.js');
+const { api } = await import(process.argv[2] + '/api.js');
+const fail = (m) => { console.error(m); process.exit(1); };
+const all = (e, out = []) => { if (e instanceof El) { out.push(e); e.children.forEach((c) => all(c, out)); } return out; };
+const text = (e) => typeof e === 'string' ? e : e.children.map(text).join('');
+const byClass = (root, c) => all(root).filter((e) => e.className.split(' ').includes(c));
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+api.projects = async () => [{ name: 'zeta', running: 0, waiting: 0 }, { name: 'bx', running: 2, waiting: 1 }, { name: 'home', running: 1, waiting: 0 }];
+let root = new El('main');
+let s = showProjects(root);
+await tick(); s.stop();
+const secs = byClass(root, 'sec');
+if (secs.length !== 2) fail('projects sections: ' + secs.length);
+if (!text(secs[0]).startsWith('Needs you') || !byClass(secs[0], 'attn').length) fail('needs you: ' + text(secs[0]));
+const rows = byClass(secs[1], 'item-link').map((r) => byClass(r, 'item-title').map(text)[0]);
+if (rows.join() !== 'home,zeta') fail('all projects: ' + rows);
+const bx = byClass(secs[0], 'item-link')[0];
+if (bx.href !== '#/p/bx' || !byClass(bx, 'tile-wait').length) fail('bx row tile');
+if (text(byClass(bx, 'item-meta')[0]) !== '1 waiting2 running') fail('bx meta: ' + text(byClass(bx, 'item-meta')[0]));
+if (text(byClass(secs[1], 'item-meta')[1]) !== 'Nothing running') fail('idle meta');
+
+api.projects = async () => [];
+root = new El('main');
+s = showProjects(root);
+await tick(); s.stop();
+if (!byClass(root, 'empty-state').length || byClass(root, 'sec').length) fail('empty state');
+
+api.snapshot = async () => ({
+  project: { kind: '', stories: { 'fix/login': {}, idle: {} },
+    sessions: { 1: { title: 'explain policy', done: false }, 2: { title: 'old', done: true }, 3: { title: 'login', story: 'fix/login', done: false } } },
+  live: { branch: 'master', dirty_files: 2, diff: { 'fix/login': { add: 5, del: 1, dirty: 0 } } },
+  session_states: { 1: { state: 'waiting', text: 'waiting for you' }, 3: { state: 'running', text: 'running' } },
+  shells: [{ story: '', k: 1, command: 'npm', title: 'dev' }],
+});
+root = new El('main');
+s = showProject(root, 'bx');
+await tick(); s.stop();
+if (text(byClass(root, 'ttl-meta')[0]) !== 'master · 2 uncommitted') fail('meta: ' + text(byClass(root, 'ttl-meta')[0]));
+const ps = byClass(root, 'sec');
+if (ps.map((x) => text(byClass(x, 'sec-label')[0])).join() !== 'Chats,fix/login,idle') fail('groups: ' + ps.map((x) => text(byClass(x, 'sec-label')[0])));
+const items = byClass(ps[0], 'item');
+if (items.length !== 3 || !items[1].className.includes('done')) fail('chats rows: ' + items.map((i) => i.className));
+if (!byClass(items[0], 'tile-wait').length || text(byClass(items[0], 'item-meta')[0]) !== 'waiting for you · #1') fail('waiting row: ' + text(byClass(items[0], 'item-meta')[0]));
+if (!byClass(items[2], 'tile-shell').length || !byClass(items[2], 'busy').length || text(byClass(items[2], 'item-meta')[0]) !== 'npm') fail('shell row');
+if (text(byClass(ps[1], 'diff')[0]) !== '+5−1' || !byClass(ps[1], 'tile-run').length) fail('story diff/tile');
+const add = byClass(ps[2], 'card-add');
+if (add.length !== 1 || text(add[0]) !== 'New session') fail('empty story add row');
+`
+
+func TestListScreens(t *testing.T) {
+	runJS(t, listScreensScript)
+}
+
 // runJS runs an ES-module script with node; the script gets the file:// URL of static/js as
 // its first argument and fails by exiting non-zero.
 func runJS(t *testing.T, src string) {

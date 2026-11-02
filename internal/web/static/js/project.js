@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { h, bar, poll, toast, ask, confirmBox, sheet } from './ui.js';
+import { h, icon, topBar, toneOf, dotted, tile, poll, toast, ask, confirmBox, sheet } from './ui.js';
 import { sessionMenu, withForce } from './sessionmenu.js';
 import { newStoryMenu } from './newstory.js';
 import { shellHref, shellLabel, plainShell, shellMenu, confirmNewShell, openShell } from './shell.js';
@@ -7,11 +7,13 @@ import { shellHref, shellLabel, plainShell, shellMenu, confirmNewShell, openShel
 const enc = encodeURIComponent;
 
 export function showProject(root, name) {
-  const sub = h('div', { class: 'sub' });
+  // the header's second line is the branch and its uncommitted files, or "workspace"
+  const metaEl = h('span', { class: 'ttl-meta' });
   const err = h('div', { class: 'error', hidden: true });
-  const body = h('div');
-  root.append(bar(h('a', { href: '#/', class: 'icon', 'aria-label': 'Back' }, '‹'), name,
-    h('button', { class: 'icon', 'aria-label': 'New', onclick: () => addMenu() }, '＋')), sub, err, body);
+  const body = h('div', { class: 'page' });
+  root.append(topBar(h('a', { href: '#/', class: 'ib', 'aria-label': 'Back' }, icon('back')),
+    h('span', { class: 'ttl-name' }, name), metaEl,
+    h('button', { class: 'ib', 'aria-label': 'New', onclick: () => addMenu() }, icon('plus'))), err, body);
   let snap = null;
 
   async function refresh() {
@@ -29,8 +31,9 @@ export function showProject(root, name) {
 
   function render() {
     const p = snap.project, live = snap.live;
-    sub.textContent = p.kind === 'workspace' ? 'workspace'
-      : `${live.branch || 'main'}${live.dirty_files ? ` · ${live.dirty_files} uncommitted` : ''}`;
+    metaEl.replaceChildren(...(p.kind === 'workspace' ? [icon('folder'), 'workspace']
+      : [icon('branch'), live.branch || 'main',
+        live.dirty_files ? h('span', { class: 'warn' }, ` · ${live.dirty_files} uncommitted`) : '']));
     const groups = new Map([['', []]]);
     for (const s of Object.keys(p.stories || {}).sort()) groups.set(s, []);
     for (const [n, s] of Object.entries(p.sessions || {})) {
@@ -46,38 +49,45 @@ export function showProject(root, name) {
   // shellsOf lists a story's shells ('' = Chats), by number (the server sorts them)
   const shellsOf = (story) => (snap.shells || []).filter((s) => s.story === story);
 
-  // group lists a story's sessions, then its shells
+  // group lists a story's sessions, then its shells, in a card under the story's label. An empty
+  // story offers its first session.
   function group(story, rows) {
     const d = story && snap.live.diff ? snap.live.diff[story] : null;
-    const meta = d ? `+${d.add} −${d.del}${d.dirty ? ` · ${d.dirty} uncommitted` : ''}` : '';
     const shells = shellsOf(story);
-    return h('section', { class: 'group' },
-      h('header', {}, h('span', { class: 'title' }, story || 'Chats'), h('span', {}, meta),
-        h('button', { class: 'icon', 'aria-label': 'Story actions', onclick: () => storyMenu(story) }, '⋯')),
-      h('ul', { class: 'list' }, rows.length || shells.length
+    return h('section', { class: 'sec' },
+      h('div', { class: 'sec-head' },
+        h('span', { class: 'sec-label' }, story ? [icon('branch'), h('span', { class: 'story' }, story)] : [icon('chat'), 'Chats']),
+        d ? h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${d.add}`), h('span', { class: 'del' }, `−${d.del}`),
+          d.dirty ? h('span', {}, `· ${d.dirty} uncommitted`) : null) : null,
+        h('button', { class: 'ib', 'aria-label': story ? 'Story actions' : 'Chats actions', onclick: () => storyMenu(story) }, icon('more'))),
+      h('div', { class: 'card' }, rows.length || shells.length
         ? [rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow)]
-        : h('li', { class: 'empty' }, 'No sessions')));
+        : h('button', { class: 'card-add', onclick: () => newSession(story) }, icon('plus'), story ? 'New session' : 'New chat')));
   }
 
-  // shellRow is `$k label`, the command after a rename, and `busy` while something other than
-  // the shell itself runs in it
+  // shellRow is [$k][ label / command or "shell" ][busy][⋯]: the command shows after a rename,
+  // and busy while something other than the shell itself runs in it
   function shellRow(sh) {
-    return h('li', {},
-      h('a', { class: 'row shell', href: shellHref(name, sh.story, sh.k) },
-        h('span', { class: 'shi' }, `$${sh.k}`),
-        h('span', { class: 'title' }, shellLabel(sh)),
-        sh.title && sh.command ? h('span', { class: 'cmd' }, sh.command) : null,
-        sh.command && !plainShell(sh.command) ? h('span', { class: 'badge busy' }, 'busy') : null),
-      h('button', { class: 'icon', 'aria-label': 'Shell actions', onclick: () => shellMenu({ project: name, sh, refresh, onClosed: refresh }) }, '⋯'));
+    return h('div', { class: 'item' },
+      h('a', { class: 'item-link', href: shellHref(name, sh.story, sh.k) },
+        tile(`$${sh.k}`, 'shell'),
+        h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, shellLabel(sh)),
+          h('span', { class: 'item-meta' }, sh.title && sh.command ? h('span', { class: 'cmd' }, sh.command) : 'shell'))),
+      sh.command && !plainShell(sh.command) ? h('span', { class: 'pill busy' }, 'busy') : null,
+      h('button', { class: 'ib', 'aria-label': 'Shell actions', onclick: () => shellMenu({ project: name, sh, refresh, onClosed: refresh }) }, icon('more')));
   }
 
+  // sessionRow is [tile][ title / ● state · #n ][⋯], the tile and dot coloured by the state
   function sessionRow(n, s) {
     const st = (snap.session_states || {})[n] || { state: 'idle', text: '' };
-    return h('li', { class: s.done ? 'done' : '' },
-      h('a', { class: 'row', href: `#/p/${enc(name)}/s/${n}` },
-        h('span', { class: 'title' }, s.title || `#${n}`),
-        h('span', { class: `badge ${st.state}` }, st.state === 'gone' || st.state === 'done' ? st.state : st.text)),
-      h('button', { class: 'icon', 'aria-label': 'Session actions', onclick: () => sessionMenu({ project: name, num: n, session: s, state: st.state, act, refresh, ask, withForce: force, onDeleted: refresh }) }, '⋯'));
+    const tone = toneOf(st.state);
+    const text = st.state === 'gone' || st.state === 'done' ? st.state : st.text || st.state;
+    return h('div', { class: s.done ? 'item done' : 'item' },
+      h('a', { class: 'item-link', href: `#/p/${enc(name)}/s/${n}` },
+        tile(icon('spark'), tone),
+        h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, s.title || `#${n}`),
+          h('span', { class: 'item-meta' }, dotted(tone, text), ` · #${n}`))),
+      h('button', { class: 'ib', 'aria-label': 'Session actions', onclick: () => sessionMenu({ project: name, num: n, session: s, state: st.state, act, refresh, ask, withForce: force, onDeleted: refresh }) }, icon('more')));
   }
 
   function storyMenu(story) {

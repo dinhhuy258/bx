@@ -1,25 +1,27 @@
 import { api } from './api.js';
-import { h, bar, poll, toast, ask, sheet } from './ui.js';
+import { h, icon, topBar, dotted, tile, poll, toast, ask, sheet } from './ui.js';
 
-// Every project, waiting ones first, then by name. There is no opened list on the phone.
+// Every project by name; those with a session waiting for an answer get their own section at
+// the top. There is no opened list on the phone.
 export function showProjects(root) {
-  const list = h('ul', { class: 'list' });
+  const body = h('div', { class: 'page' });
   const err = h('div', { class: 'error', hidden: true });
-  root.append(bar(h('a', { href: '#/settings', class: 'icon', 'aria-label': 'Settings' }, '⚙'), 'bx',
-    h('button', { class: 'icon', 'aria-label': 'New project', onclick: newProject }, '＋')), err, list);
+  root.append(topBar(h('a', { href: '#/settings', class: 'ib', 'aria-label': 'Settings' }, icon('gear')),
+    h('span', { class: 'ttl-name' }), null,
+    h('button', { class: 'ib', 'aria-label': 'New project', onclick: newProject }, icon('plus'))),
+  h('div', { class: 'big' }, 'Projects'), err, body);
 
   const stop = poll(async () => {
     try {
       const ps = await api.projects();
       err.hidden = true;
-      ps.sort((a, b) => (b.waiting > 0) - (a.waiting > 0) || a.name.localeCompare(b.name));
-      list.replaceChildren(...ps.map((p) => h('li', {},
-        h('a', { class: 'row', href: `#/p/${encodeURIComponent(p.name)}` },
-          h('span', { class: 'title' }, p.name),
-          h('span', { class: 'meta' },
-            p.waiting ? h('span', { class: 'badge waiting' }, `${p.waiting} waiting`) : null,
-            p.running ? h('span', { class: 'badge running' }, `${p.running} running`) : null)))));
-      if (!ps.length) list.append(h('li', { class: 'empty' }, 'No projects yet. Tap ＋ to add one.'));
+      ps.sort((a, b) => a.name.localeCompare(b.name));
+      const need = ps.filter((p) => p.waiting > 0), rest = ps.filter((p) => !(p.waiting > 0));
+      const parts = [];
+      if (need.length) parts.push(section(dotted('wait', 'Needs you'), need, 'card attn'));
+      if (rest.length) parts.push(section(need.length ? 'All projects' : null, rest, 'card'));
+      if (!ps.length) parts.push(emptyState());
+      body.replaceChildren(...parts);
     } catch (e) {
       err.textContent = e.message;
       err.hidden = false;
@@ -27,6 +29,25 @@ export function showProjects(root) {
   });
   return { stop };
 }
+
+const section = (label, ps, cls) => h('section', { class: 'sec' },
+  label ? h('div', { class: 'sec-head' }, h('span', { class: 'sec-label' }, label)) : null,
+  h('div', { class: cls }, ps.map(projectRow)));
+
+// projectRow: [folder tile][ name / ● 1 waiting ● 2 running ][›], the tile tinted by state
+function projectRow(p) {
+  const counts = [p.waiting ? dotted('wait', `${p.waiting} waiting`) : null, p.running ? dotted('run', `${p.running} running`) : null];
+  return h('a', { class: 'item-link', href: `#/p/${encodeURIComponent(p.name)}` },
+    tile(icon('folder'), p.waiting ? 'wait' : p.running ? 'run' : ''),
+    h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, p.name),
+      h('span', { class: 'item-meta' }, p.waiting || p.running ? counts : 'Nothing running')),
+    icon('chev', 'i chev'));
+}
+
+const emptyState = () => h('div', { class: 'empty-state' },
+  tile(icon('folder')), h('b', {}, 'No projects yet'),
+  h('p', {}, 'Add a folder on the server, clone from GitHub, or start an empty project.'),
+  h('button', { class: 'primary', onclick: newProject }, icon('plus'), 'Add project'));
 
 function newProject() {
   sheet('New project', [
