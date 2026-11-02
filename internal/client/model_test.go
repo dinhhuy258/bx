@@ -978,6 +978,15 @@ func TestPullRequestNumberIsThatPullRequest(t *testing.T) {
 			t.Fatalf("%s: reads = %q", q, got)
 		}
 	}
+	// moving the cursor down picks the highlighted row instead
+	h := start(t, 160, 30, "idle")
+	h.be.prs = map[string]api.PRList{"": {PRs: append(l.PRs, api.PR{Number: 4567, Title: "Later", Author: "eve", Branch: "feat/later"})}}
+	h.press("w", "Down", "Down", "Enter")
+	h.typeText("#45") // #456 and #4567 match
+	h.press("Down", "Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=pr pr=4567" || strings.Join(h.be.reads, "|") != "prs " {
+		t.Fatalf("moved cursor: actions = %q reads = %q", got, h.be.reads)
+	}
 	for q, want := range map[string]bool{"#45": true, " #45 ": true, "https://github.com/acme/web/pull/5/files": true, "45": false, "#45 x": false, "fix #45": false, "#": false} {
 		if directPR(q) != want {
 			t.Errorf("directPR(%q) = %v", q, !want)

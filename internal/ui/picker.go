@@ -118,6 +118,9 @@ func (p *Picker) Select(item string) {
 // Filter is the typed text.
 func (p *Picker) Filter() string { return p.filter }
 
+// Cursor is the highlighted row of the visible items, 0 the first.
+func (p *Picker) Cursor() int { return p.cursor }
+
 // SetItems replaces the items (the results of a search), clears the filter and highlights the
 // first one.
 func (p *Picker) SetItems(items []string) {

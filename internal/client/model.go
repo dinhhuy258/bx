@@ -934,8 +934,9 @@ func (m *Model) openProjectPicker() {
 }
 
 func (m *Model) pickerKey(key, text string) tea.Cmd {
-	if key == "Enter" && m.pickKind == pickStoryPR && directPR(m.picker.Filter()) {
-		return m.searchPRs(m.picker.Filter()) // #45 is that pull request, not #456 that contains it
+	// #45 is that pull request, not #456 that contains it, unless ↑↓ picked another row
+	if key == "Enter" && m.pickKind == pickStoryPR && directPR(m.picker.Filter()) && m.picker.Cursor() == 0 {
+		return m.searchPRs(m.picker.Filter())
 	}
 	switch m.picker.Key(key, text) {
 	case ui.PickCancel:
