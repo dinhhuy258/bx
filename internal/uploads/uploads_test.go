@@ -182,3 +182,17 @@ func TestRemove(t *testing.T) {
 		t.Fatalf("symlink target's 3/ gone: %v", err)
 	}
 }
+
+func TestMakeDirIsTheSessionFolder(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "artifacts")
+	dir, err := MakeDir(base, "home-network", 4)
+	if err != nil || dir != Dir(base, "home-network", 4) {
+		t.Fatalf("%q %v", dir, err)
+	}
+	if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("%v %v", fi, err)
+	}
+	if _, err := MakeDir(base, "../x", 4); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("dotted project: %v", err)
+	}
+}

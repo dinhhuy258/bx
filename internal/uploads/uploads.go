@@ -1,7 +1,8 @@
 // Package uploads stores the files sent from the phone for a session, at
 // <bx root>/uploads/<project>/<num>/<YYYYMMDD-HHMMSS>-<safe name>: outside every repository,
 // so worktrees never get untracked files. It never follows a symlink: every folder on the way
-// must be a real directory, or nothing is written or removed.
+// must be a real directory, or nothing is written or removed. Dir, MakeDir and Remove take the
+// base folder, so the session artifacts (<bx root>/artifacts) use them too.
 package uploads
 
 import (
@@ -84,7 +85,7 @@ func Save(base, project string, num int, name string, content []byte, now time.T
 	if len(content) > MaxFile {
 		return "", fmt.Errorf("%s: %d bytes, over 20 MB: %w", safe, len(content), ErrTooLarge)
 	}
-	dir, err := makeDirs(base, project, num)
+	dir, err := MakeDir(base, project, num)
 	if err != nil {
 		return "", err
 	}
@@ -95,8 +96,15 @@ func Save(base, project string, num int, name string, content []byte, now time.T
 	return filepath.Abs(final)
 }
 
-// makeDirs creates base, base/project and base/project/num, checking each is a real directory.
-func makeDirs(base, project string, num int) (string, error) {
+// MakeDir creates base, base/project and base/project/num (mode 0700), checking each is a
+// real directory, and returns base/project/num.
+func MakeDir(base, project string, num int) (string, error) {
+	if err := validProject(project); err != nil {
+		return "", err
+	}
+	if num <= 0 {
+		return "", fmt.Errorf("session %d: %w", num, ErrInvalid)
+	}
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		return "", err
 	}
