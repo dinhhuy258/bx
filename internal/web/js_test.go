@@ -147,6 +147,64 @@ func TestSheetGroupsAndFillsRows(t *testing.T) {
 	runJS(t, sheetScript)
 }
 
+// textSizeScript checks the ⋯ sheet's Text size row: its rows sit in their own group between
+// the actions and the danger rows, A−/A+ step the size within 10..16 and leave the sheet open,
+// and the saved size falls back to 12 when storage is off or holds junk.
+const textSizeScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; this.hidden = false; this.open = false; this.textContent = ''; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  fire(k, e = {}) { for (const f of this.on[k] || []) f(e); }
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+  showModal() { this.open = true; }
+  close() { this.open = false; this.fire('close'); }
+  remove() {}
+}
+const made = [];
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => { const e = new El(t); made.push(e); return e; },
+  createElementNS: (_, t) => new El(t), body: new El('body') };
+globalThis.location = { hash: '', protocol: 'http:', host: 'x' };
+let store = {};
+globalThis.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
+
+const { sheet } = await import(process.argv[2] + '/ui.js');
+const { textSizeItem, savedFontSize } = await import(process.argv[2] + '/session.js');
+const fail = (m) => { console.error(m); process.exit(1); };
+
+if (savedFontSize() !== 12) fail('default: ' + savedFontSize());
+store['bx.termFontSize'] = '14';
+if (savedFontSize() !== 14) fail('saved: ' + savedFontSize());
+store['bx.termFontSize'] = '40';
+if (savedFontSize() !== 12) fail('out of range: ' + savedFontSize());
+globalThis.localStorage = { getItem: () => { throw new Error('off'); } };
+if (savedFontSize() !== 12) fail('storage off: ' + savedFontSize());
+
+let size = 15;
+const sets = [];
+const item = textSizeItem(() => size, (n) => { size = n; sets.push(n); });
+sheet('s', [{ label: 'Rename', run() {} }, { label: 'Delete', danger: true, run() {} }, item]);
+const groups = made.filter((e) => e.className === 'sheet-group');
+const label = (g) => g.children[0].children.find((c) => c.className === 'sheet-label').children[0].children[0];
+if (groups.map(label).join() !== 'Rename,Text size,Delete') fail('groups: ' + groups.map(label));
+const row = groups[1].children[0];
+if (row.tag !== 'div' || row.className !== 'sheet-row is-static') fail('control row: ' + row.tag + ' ' + row.className);
+const [less, out, more] = item.control.children;
+more.fire('click');
+more.fire('click');
+if (sets.join() !== '16' || out.textContent !== '16' || !more.disabled || less.disabled) fail('A+: ' + sets + ' ' + out.textContent);
+for (let i = 0; i < 8; i++) less.fire('click');
+if (size !== 10 || !less.disabled || more.disabled || out.textContent !== '10') fail('A−: ' + size);
+const dlg = made.find((e) => e.tag === 'dialog');
+if (!dlg.open) fail('a size tap closed the sheet');
+`
+
+func TestTextSizeRow(t *testing.T) {
+	runJS(t, textSizeScript)
+}
+
 // runJS runs an ES-module script with node; the script gets the file:// URL of static/js as
 // its first argument and fails by exiting non-zero.
 func runJS(t *testing.T, src string) {

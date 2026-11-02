@@ -27,10 +27,11 @@ export async function withForce(project, action, body, what, { message, ok = 'Co
 // sessionMenu opens the actions sheet for session num, from the project list or the session
 // screen. The screen passes in everything the menu needs: act(action, body) runs an action and
 // toasts errors, refresh reloads the screen, ask is ui.ask, withForce(action, body, what, opts)
-// is withForce bound to the project, and onDeleted runs after a delete went through.
+// is withForce bound to the project, and onDeleted runs after a delete went through. view is
+// extra sheet items that change how the screen looks (the session screen's Text size).
 // The menu opens at once; the Artifacts row fills in its count and newest page when the list
 // has loaded (the server sends the files newest first).
-export function sessionMenu({ project, num, session, state, act, refresh, ask, withForce, onDeleted }) {
+export function sessionMenu({ project, num, session, state, act, refresh, ask, withForce, onDeleted, view = [] }) {
   const title = session.title || `#${num}`;
   let files = null;
   const load = api.artifacts(project, num).then((r) => { files = r.files; return files; });
@@ -60,6 +61,7 @@ export function sessionMenu({ project, num, session, state, act, refresh, ask, w
   if (state === 'gone' || state === 'done') {
     items.push({ label: 'Resume', icon: 'play', hint: 'Start Claude again where it left off', run: () => act('resume', { num }) });
   }
+  items.push(...view);
   items.push({ label: 'Delete session', icon: 'trash', hint: 'Removes its uploads and artifacts', danger: true, run: async () => {
     if (!(await confirmBox(`Delete ${title}?`, 'Delete',
       { danger: true, text: 'bx forgets it. The Claude transcript in ~/.claude is kept.' }))) return;

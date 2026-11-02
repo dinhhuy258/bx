@@ -69,6 +69,12 @@ dialog.sheet[open] { display: flex; animation: sheet-up .18s ease-out; }
 .sheet-icon.icon-doc { color: var(--accent); }
 .sheet-row.is-danger .sheet-icon { color: var(--gone); }
 .sheet-chev { width: 16px; height: 16px; color: #666; stroke-width: 2; }
+.sheet-row.is-static:active { background: none; }
+/* Text size: [ A− ] 12 [ A+ ] */
+.sheet-size { flex: none; display: flex; align-items: center; gap: 4px; }
+.sheet-size button { width: 40px; height: 34px; padding: 0; border-radius: 8px; font-size: 15px; font-weight: 600; touch-action: manipulation; }
+.sheet-size button:disabled { opacity: .35; }
+.sheet-size output { min-width: 28px; text-align: center; font: 13px Menlo, monospace; }
 .sheet-cancel { width: 100%; min-height: 52px; background: #222; border-radius: 12px; font-weight: 600; flex: none; }
 .field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .field small { color: var(--dim); }
@@ -88,19 +94,40 @@ html.session-lock, html.session-lock body { overflow: hidden; height: 100%; over
 html.session-lock body { position: fixed; inset: 0; }
 .session { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--bg); padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 .term-wrap { flex: 1; position: relative; min-height: 0; overflow: hidden; }
-.term { position: absolute; inset: 0; padding: 2px; touch-action: none; }
+.term { position: absolute; inset: 0; touch-action: none; }
+/* the gutter goes on .xterm, not .term: FitAddon takes .term's width as it is (border-box, so
+   with any padding) and subtracts only .xterm's padding */
+.term .xterm { padding: 8px; }
 /* xterm's DOM renderer replaces row spans on every redraw; a touch that starts on one keeps
    targeting the detached node, so its touchmoves never reach .term and a swipe stops after a line */
 .term .xterm-rows { pointer-events: none; }
 .live { position: absolute; right: 10px; bottom: 10px; z-index: 2; }
 .notice { position: absolute; left: 10px; right: 10px; bottom: 10px; background: #222; padding: 10px; border-radius: 8px; display: flex; gap: 10px; align-items: center; justify-content: space-between; z-index: 2; }
-/* header and input bar share 6px padding and gaps, so Esc and Enter line up on the right */
-.session .bar { padding: 0 6px; gap: 6px; min-height: 52px; }
-.bar h1 > .badge { flex: none; }
-.hbtns { display: flex; gap: 6px; flex: none; align-items: center; }
-button.hk { height: 40px; min-width: 44px; padding: 0 10px; font-size: 15px; line-height: 1; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; }
-button.hk.stop { background: var(--gone); border-color: var(--gone); color: #fff; }
-button.hk:disabled { opacity: .3; }
+svg.i { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* session header: [‹][ title / ● state · #n ][copy][esc][⋯] */
+.session .bar { padding: 0 4px; gap: 2px; min-height: 56px; }
+.sbar h1.ttl { flex-direction: column; align-items: stretch; gap: 0; padding: 0 4px; }
+.ttl-name { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ttl-meta { display: flex; align-items: center; font-size: 12px; font-weight: 400; color: var(--dim); white-space: pre; }
+.ttl-meta .st { display: inline-flex; align-items: center; gap: 6px; }
+.ttl-meta .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.ttl-meta[data-state="running"] .st { color: var(--run); }
+.ttl-meta[data-state="starting"] .st { color: var(--run); opacity: .7; }
+.ttl-meta[data-state="waiting"] .st { color: var(--wait); }
+.ttl-meta[data-state="gone"] .st, .ttl-meta[data-state="closed"] .st { color: var(--gone); }
+.ttl-meta[data-state="shell"] .st { color: #5fd7d7; }
+.ib { flex: none; width: 44px; height: 44px; padding: 0; display: inline-flex; align-items: center; justify-content: center; background: none; border: 0; border-radius: 10px; color: #cfcfcf; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.ib:active { background: var(--line); }
+.ib:disabled { opacity: .3; }
+/* esc (^C in a shell) looks like a key; red while Claude runs, always red in a shell */
+button.key { flex: none; height: 34px; min-width: 44px; margin: 0 2px; padding: 0 10px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 7px; background: #1d1d1d; color: #cfcfcf; font: 13px/1 Menlo, monospace; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+button.key.stop { background: var(--gone); border-color: #c23b34; color: #fff; }
+/* under the header: a blue sweep while Claude runs, amber while it waits for an answer */
+.state-line { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; pointer-events: none; }
+.state-line.wait { background: var(--wait); }
+.state-line.run::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 35%; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: sweep 1.4s ease-in-out infinite; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(286%); } }
+@media (prefers-reduced-motion: reduce) { .state-line.run::before { animation: none; width: 100%; opacity: .6; } }
 /* a closed shell: its last output stays, faded, and a card takes the input row's place */
 .session.closed .term { opacity: .38; }
 .closed-card { display: flex; flex-direction: column; gap: 8px; background: #1b1e24; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
@@ -108,21 +135,35 @@ button.hk:disabled { opacity: .3; }
 .closed-card .why { color: var(--dim); font-size: 13px; margin-bottom: 6px; }
 .closed-card button { width: 100%; padding: 12px; font-weight: 600; }
 .closed-card button.new { color: #5fd7d7; }
-/* [ textarea ][ ▲/▼ ][ Enter ]: 48px tall on one line; a grown box keeps the buttons at the bottom */
-.input { display: flex; gap: 6px; align-items: flex-end; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
-.input textarea { flex: 1; min-width: 0; resize: none; min-height: 48px; max-height: 120px; padding: 12px; line-height: 22px; border-radius: 8px; }
-.stepper { flex: 0 0 40px; height: 48px; display: flex; flex-direction: column; gap: 2px; }
-.stepper button { flex: 1; min-height: 0; padding: 0; font-size: 12px; line-height: 1; display: flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
-.stepper button:first-child { border-radius: 8px 8px 4px 4px; }
-.stepper button:last-child { border-radius: 4px 4px 8px 8px; }
-button.attach { flex: 0 0 40px; height: 48px; padding: 0; font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+/* [ 📎 textarea ][ ▲/▼ ][ Enter ]: 44px tall on one line; a grown box keeps the buttons at the bottom */
+.input { display: flex; gap: 6px; align-items: flex-end; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.box { flex: 1; min-width: 0; display: flex; align-items: flex-end; background: #1d1d1d; border: 1px solid var(--line); border-radius: 22px; }
+.box:focus-within { border-color: #3a3a3a; }
+.box textarea { flex: 1; min-width: 0; resize: none; min-height: 42px; max-height: 120px; padding: 10px 14px; line-height: 22px; background: none; border: 0; border-radius: 0; outline: none; }
+.box .attach + textarea { padding-left: 0; }
+button.attach { flex: none; width: 42px; height: 42px; padding: 0; background: none; border: 0; color: var(--dim); display: flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
 button.attach:disabled { opacity: .5; }
 .file-pick { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
-button.enter { flex: 0 0 64px; height: 48px; padding: 0; font-size: 15px; font-weight: 600; border-radius: 8px; background: none; border-color: var(--accent); color: var(--accent); touch-action: manipulation; }
-button.enter.solid { background: var(--accent); color: #fff; }
-button.enter.glow { box-shadow: 0 0 0 3px rgba(76, 154, 255, .3); }
-/* copy screen sheet: fills the viewport; no wrapping, so wide lines scroll sideways */
-dialog.copy { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; border: none; border-radius: 0; padding: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)); }
+.stepper { flex: 0 0 36px; height: 44px; display: flex; flex-direction: column; background: #1d1d1d; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.stepper button { flex: 1; min-height: 0; padding: 0; background: none; border: 0; border-radius: 0; color: #bbb; display: flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.stepper button + button { border-top: 1px solid var(--line); }
+.stepper button:active { background: var(--line); }
+.stepper svg.i { width: 16px; height: 16px; }
+button.enter { flex: none; min-width: 64px; height: 44px; padding: 0 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 15px; font-weight: 600; border-radius: 22px; background: none; border-color: var(--accent); color: var(--accent); touch-action: manipulation; }
+button.enter svg.i { width: 18px; height: 18px; }
+button.enter.glow { background: var(--accent); color: #fff; box-shadow: 0 0 0 3px rgba(76, 154, 255, .3); }
+button.enter.send { min-width: 44px; width: 44px; padding: 0; border-radius: 50%; background: var(--accent); color: #fff; }
+button.enter.send svg.i { width: 20px; height: 20px; }
+/* copy screen: full screen, [ title / hint ][ Done ], the rows as plain selectable text at the
+   terminal's font size and gutter (so lines break as on screen), and Copy all at the bottom */
+dialog.copy { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; border: none; border-radius: 0; background: var(--bg); padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); }
 dialog.copy[open] { display: flex; flex-direction: column; }
-dialog.copy textarea { flex: 1; min-height: 0; resize: none; font-family: Menlo, monospace; font-size: 16px; white-space: pre; overflow-wrap: normal; overflow: auto; -webkit-user-select: text; user-select: text; }
-dialog.copy menu { margin-top: 8px; }
+.copy-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 10px 16px; border-bottom: 1px solid var(--line); }
+.copy-head > div { flex: 1; min-width: 0; }
+.copy-head h2 { font-size: 17px; margin: 0; }
+.copy-head p { margin: 2px 0 0; font-size: 13px; color: var(--dim); }
+.copy-head .done { min-height: 44px; padding: 0 8px; background: none; border: 0; color: var(--accent); font-weight: 600; }
+.copy-text { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 10px 8px; font-family: Menlo, monospace; line-height: 1.4; color: #d6d6d6; white-space: pre-wrap; word-break: break-all; -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+.copy-foot { display: flex; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.copy-foot button { flex: 1; min-height: 50px; border-radius: 12px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.copy-foot svg.i { width: 18px; height: 18px; }

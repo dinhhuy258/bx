@@ -139,7 +139,7 @@ export function ago(t) {
   return `${Math.floor(s / 86400)}d`;
 }
 
-// Stroke icons for sheet rows, 24x24 paths. They are built only when a sheet opens.
+// Stroke icons, 24x24 paths, for sheet rows and the session screen. They are built on demand.
 const ICONS = {
   doc: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4',
   pen: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
@@ -147,8 +147,17 @@ const ICONS = {
   play: 'M8 5l11 7-11 7z',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   chev: 'M9 6l6 6-6 6',
+  back: 'M15 5l-7 7 7 7',
+  copy: 'M10 8h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2',
+  more: 'M4 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M11 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0M18 12a1 1 0 1 0 2 0a1 1 0 1 0-2 0',
+  clip: 'M20 11.5l-8.2 8.2a5 5 0 0 1-7-7L13 4.5a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.6-7.6',
+  up: 'M6 15l6-6 6 6',
+  down: 'M6 9l6 6 6-6',
+  ret: 'M20 5v7a3 3 0 0 1-3 3H5M9 11l-4 4 4 4',
+  arrow: 'M12 19V5M6 11l6-6 6 6',
+  text: 'M4 18L9 6l5 12M5.8 14h6.4M15 18l3-7 3 7M16 16h4',
 };
-function icon(name, cls) {
+export function icon(name, cls = 'i') {
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -161,22 +170,24 @@ function icon(name, cls) {
 }
 
 // sheet is a bottom sheet of actions: items [{label, run, danger?, icon?, hint?, badge?,
-// chevron?}]. icon names an ICONS entry, hint is a dim second line, badge a count pill and
-// chevron says the row opens more. Danger items go in their own group at the bottom, in red.
-// opts.meta is a dim line under the title. sheet returns one setter per item,
-// set({hint?, badge?}), to fill in a row once its data has loaded.
+// chevron?, group?, control?}]. icon names an ICONS entry, hint is a dim second line, badge a
+// count pill and chevron says the row opens more. Rows with the same group name share a group,
+// in the order the groups first appear; danger items go in their own group at the bottom, in
+// red. A row with a control (an element, e.g. A−/A+) is not a button: the control does the work
+// and the sheet stays open. opts.meta is a dim line under the title. sheet returns one setter
+// per item, set({hint?, badge?}), to fill in a row once its data has loaded.
 export function sheet(title, items, opts = {}) {
   const rows = items.map((it) => sheetRow(it, () => { dlg.close(); it.run(); }));
-  const group = (keep) => {
-    const els = rows.filter((_, i) => !!items[i].danger === keep).map((r) => r.el);
-    return els.length ? h('div', { class: 'sheet-group' }, els) : null;
-  };
+  const key = (it) => (it.danger ? null : it.group || '');
+  const names = [...new Set(items.map(key).filter((k) => k !== null)), null];
+  const groups = names.map((n) => rows.filter((_, i) => key(items[i]) === n).map((r) => r.el))
+    .filter((els) => els.length).map((els) => h('div', { class: 'sheet-group' }, els));
   // the dialog has no padding, so a tap on it (not on .sheet-body) is a tap on the backdrop
   const dlg = h('dialog', { class: 'sheet', onclick: (e) => { if (e.target === dlg) dlg.close(); } },
     h('div', { class: 'sheet-body' },
       h('div', { class: 'sheet-handle' }),
       h('header', { class: 'sheet-head' }, h('h2', {}, title), opts.meta ? h('p', {}, opts.meta) : null),
-      group(false), group(true),
+      groups,
       h('button', { class: 'sheet-cancel', onclick: () => dlg.close() }, 'Cancel')));
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
@@ -187,10 +198,11 @@ export function sheet(title, items, opts = {}) {
 function sheetRow(it, onTap) {
   const hint = h('small', { class: 'sheet-hint', hidden: !it.hint }, it.hint || '');
   const badge = h('span', { class: 'sheet-badge', hidden: it.badge == null }, it.badge ?? '');
-  const el = h('button', { class: it.danger ? 'sheet-row is-danger' : 'sheet-row', onclick: onTap },
-    it.icon ? icon(it.icon, `sheet-icon icon-${it.icon}`) : null,
+  const parts = [it.icon ? icon(it.icon, `sheet-icon icon-${it.icon}`) : null,
     h('span', { class: 'sheet-label' }, h('span', {}, it.label), hint),
-    badge, it.chevron ? icon('chev', 'sheet-chev') : null);
+    badge, it.chevron ? icon('chev', 'sheet-chev') : null, it.control || null];
+  const el = it.control ? h('div', { class: 'sheet-row is-static' }, parts)
+    : h('button', { class: it.danger ? 'sheet-row is-danger' : 'sheet-row', onclick: onTap }, parts);
   const set = (v) => {
     if ('hint' in v) { hint.textContent = v.hint || ''; hint.hidden = !v.hint; }
     if ('badge' in v) { badge.textContent = v.badge ?? ''; badge.hidden = v.badge == null; }

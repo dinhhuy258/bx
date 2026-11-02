@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { h, bar, poll, toast, copyText, ask } from './ui.js';
+import { h, icon, poll, toast, copyText, ask } from './ui.js';
 import { sessionMenu, withForce } from './sessionmenu.js';
 import { shellMenu, shellLabel, closedCard, confirmNewShell, openShell, findShell } from './shell.js';
 
@@ -7,6 +7,42 @@ const MAX_INPUT = 64 * 1024; // the server reads frames up to 1 MB
 const ENTER_DELAY = 50; // ms between the text and Enter, so Claude doesn't take Enter as part of a paste
 const HOLD_DELAY = 400, HOLD_EVERY = 100; // ms: holding ▲/▼ repeats after HOLD_DELAY, every HOLD_EVERY
 const MAX_UPLOAD = 20 * 1024 * 1024; // the server's limit per file
+// the terminal's font size: A−/A+ in the ⋯ sheet, kept per browser for every session and shell
+const FONT_KEY = 'bx.termFontSize', FONT_MIN = 10, FONT_MAX = 16, FONT_DEFAULT = 12;
+
+// savedFontSize is the font size this browser picked, or the default. Storage can be off
+// (a private window), so every read and write is allowed to fail.
+export function savedFontSize() {
+  try {
+    const n = Number(localStorage.getItem(FONT_KEY));
+    if (Number.isInteger(n) && n >= FONT_MIN && n <= FONT_MAX) return n;
+  } catch { /* storage off */ }
+  return FONT_DEFAULT;
+}
+
+// textSizeItem is the ⋯ sheet's Text size row: A− and A+ step get() by 1 within the limits and
+// hand the new size to set(), with the sheet left open.
+export function textSizeItem(get, set) {
+  const out = h('output', {}, String(get()));
+  const step = (d) => {
+    const n = Math.min(FONT_MAX, Math.max(FONT_MIN, get() + d));
+    if (n !== get()) set(n);
+    draw();
+  };
+  const less = h('button', { type: 'button', 'aria-label': 'Smaller text', onclick: () => step(-1) }, 'A−');
+  const more = h('button', { type: 'button', 'aria-label': 'Larger text', onclick: () => step(1) }, 'A+');
+  const draw = () => {
+    out.textContent = String(get());
+    less.disabled = get() <= FONT_MIN;
+    more.disabled = get() >= FONT_MAX;
+  };
+  draw();
+  return { label: 'Text size', icon: 'text', hint: 'This phone only', group: 'view',
+    control: h('span', { class: 'sheet-size' }, less, out, more) };
+}
+
+// stateLabel is a state as the session header says it
+const stateLabel = (state) => (state === 'waiting' ? 'waiting for you' : state);
 
 // encodeMessage turns the input box into terminal bytes (without the final Enter). Control
 // characters are dropped, which also stops the text from ending a bracketed paste early.
@@ -31,8 +67,19 @@ function showTerminal(root, project, target) {
   const { num, k } = target;
   const story = target.story || '';
   const backHref = `#/p/${encodeURIComponent(project)}`;
-  const titleEl = h('span', {}, shell ? `$${k}` : `#${num}`);
-  const stateEl = shell ? h('span', { class: 'badge shell' }, 'shell') : h('span', { class: 'badge' });
+  // header: [‹][ title / ● state · #n ][copy][esc][⋯], with a line under it while Claude
+  // runs (a sweep) or waits (amber)
+  const titleEl = h('span', { class: 'ttl-name' }, shell ? 'shell' : `#${num}`);
+  const stateText = h('span', {}, shell ? 'shell' : '');
+  const metaEl = h('span', { class: 'ttl-meta' }, h('span', { class: 'st' }, h('span', { class: 'dot' }), stateText),
+    shell ? ` · $${k}` : ` · #${num}`);
+  const stateLine = h('div', { class: 'state-line' });
+  const setState = (state) => {
+    metaEl.setAttribute('data-state', state);
+    stateText.textContent = stateLabel(state);
+    stateLine.className = `state-line${state === 'running' ? ' run' : state === 'waiting' ? ' wait' : ''}`;
+  };
+  setState(shell ? 'shell' : '');
   const termEl = h('div', { class: 'term' });
   const liveBtn = h('button', { class: 'live', hidden: true, onclick: () => toLive() }, '↓ Live');
   const noticeText = h('span');
@@ -43,39 +90,40 @@ function showTerminal(root, project, target) {
     autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter' });
   // ▲/▼ send on pointerdown, then repeat while held; a keyboard-activated click (detail 0) sends too
   let holdDelay = null, holdRepeat = null;
-  const stepBtn = (label, aria, bytes) => h('button', { 'aria-label': aria,
+  const stepBtn = (name, aria, bytes) => h('button', { 'aria-label': aria,
     onpointerdown: (e) => { keep(e); if (e.button !== 0) return; send(bytes); startHold(bytes); },
     onpointerup: stopHold, onpointercancel: stopHold, onpointerleave: stopHold,
     oncontextmenu: (e) => e.preventDefault(),
-    onclick: (e) => { if (e.detail === 0) send(bytes); } }, label);
-  const stepper = h('div', { class: 'stepper' }, stepBtn('▲', 'Up', '\x1b[A'), stepBtn('▼', 'Down', '\x1b[B'));
+    onclick: (e) => { if (e.detail === 0) send(bytes); } }, icon(name));
+  const stepper = h('div', { class: 'stepper' }, stepBtn('up', 'Up', '\x1b[A'), stepBtn('down', 'Down', '\x1b[B'));
   // Enter with an empty box presses Enter (e.g. to pick a highlighted option); with text it sends it
   const enterBtn = h('button', { class: 'enter', onpointerdown: keep,
-    onclick: () => (input.value.trim() ? submit() : send('\r')) }, 'Enter');
+    onclick: () => (input.value.trim() ? submit() : send('\r')) });
   // 📎 opens the picker (photos and files); the input is hidden, not display:none, which some
   // iOS versions refuse to .click()
   const fileInput = h('input', { type: 'file', multiple: true, class: 'file-pick', tabindex: '-1',
     'aria-hidden': 'true', onchange: () => uploadPicked() });
   const attachBtn = h('button', { class: 'attach', 'aria-label': 'Attach files', onpointerdown: keep,
-    onclick: () => fileInput.click() }, '📎');
-  const copyBtn = h('button', { class: 'hk', 'aria-label': 'Copy screen', onpointerdown: keep,
-    onclick: () => copyScreen() }, '⧉');
+    onclick: () => fileInput.click() }, icon('clip'));
+  const copyBtn = h('button', { class: 'ib', 'aria-label': 'Copy screen', onpointerdown: keep,
+    onclick: () => copyScreen() }, icon('copy'));
   // a shell gets ^C (always red) where a session has Esc (red while Claude runs)
   const escBtn = shell
-    ? h('button', { class: 'hk stop', 'aria-label': 'Interrupt', onpointerdown: keep, onclick: () => send('\x03') }, '^C')
-    : h('button', { class: 'hk', 'aria-label': 'Escape', onpointerdown: keep, onclick: () => send('\x1b') }, 'Esc');
-  const menuBtn = h('button', { class: 'hk', 'aria-label': shell ? 'Shell actions' : 'Session actions',
-    onclick: () => openMenu() }, '⋯');
-  const inputRow = h('div', { class: 'input' }, shell ? null : attachBtn, input, stepper, enterBtn);
+    ? h('button', { class: 'key stop', 'aria-label': 'Interrupt', onpointerdown: keep, onclick: () => send('\x03') }, '^C')
+    : h('button', { class: 'key', 'aria-label': 'Escape', onpointerdown: keep, onclick: () => send('\x1b') }, 'esc');
+  const menuBtn = h('button', { class: 'ib', 'aria-label': shell ? 'Shell actions' : 'Session actions',
+    onclick: () => openMenu() }, icon('more'));
+  const inputRow = h('div', { class: 'input' }, h('div', { class: 'box' }, shell ? null : attachBtn, input), stepper, enterBtn);
   const screen = h('div', { class: 'session' },
-    bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl],
-      h('span', { class: 'hbtns' }, copyBtn, escBtn, menuBtn)),
+    h('header', { class: 'bar sbar' }, h('a', { href: backHref, class: 'ib', 'aria-label': 'Back' }, icon('back')),
+      h('h1', { class: 'ttl' }, titleEl, metaEl), copyBtn, escBtn, menuBtn, stateLine),
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
     inputRow, shell ? null : fileInput);
   root.append(screen);
   document.documentElement.classList.add('session-lock'); // see layout()
 
-  const term = new window.Terminal({ fontSize: 12, fontFamily: 'Menlo, monospace', scrollback: 0,
+  let fontSize = savedFontSize();
+  const term = new window.Terminal({ fontSize, fontFamily: 'Menlo, monospace', scrollback: 0,
     cursorBlink: false, theme: { background: '#111111' } });
   const fit = new window.FitAddon.FitAddon();
   term.loadAddon(fit);
@@ -217,8 +265,7 @@ function showTerminal(root, project, target) {
     fails = 0;
     backoff = 0;
     screen.classList.add('closed');
-    stateEl.className = 'badge closed';
-    stateEl.textContent = 'closed';
+    setState('closed');
     menuBtn.disabled = true;
     input.blur();
     inputRow.hidden = true;
@@ -239,12 +286,22 @@ function showTerminal(root, project, target) {
   // shell's close ends the stream, which shows the closed card.
   function openMenu() {
     if (!cur || (shell && ended)) return;
+    const view = [textSizeItem(() => fontSize, setFontSize)];
     if (shell) {
-      shellMenu({ project, sh: cur, dir: dirs[story], refresh: () => {}, onClosed: () => {} });
+      shellMenu({ project, sh: cur, dir: dirs[story], refresh: () => {}, onClosed: () => {}, view });
       return;
     }
-    sessionMenu({ project, num, session: cur.s, state: cur.st.state, act, refresh: () => {}, ask,
+    sessionMenu({ project, num, session: cur.s, state: cur.st.state, act, refresh: () => {}, ask, view,
       withForce: (a, b, w, o) => withForce(project, a, b, w, o), onDeleted: () => { location.hash = backHref; } });
+  }
+  // setFontSize resizes the terminal's text at once, so A−/A+ show it behind the sheet, and
+  // remembers it for this browser
+  function setFontSize(n) {
+    fontSize = n;
+    try { localStorage.setItem(FONT_KEY, String(n)); } catch { /* storage off: this screen only */ }
+    term.options.fontSize = n;
+    fit.fit();
+    control({ type: 'resize', cols: term.cols, rows: term.rows });
   }
   async function act(action, body) {
     try { return await api.action(project, action, body); } catch (e) { toast(e.message); return null; }
@@ -288,8 +345,8 @@ function showTerminal(root, project, target) {
     setTimeout(() => {
       if (!sendBytes('\r') || input.value !== text) return; // keep the text if Enter didn't go
       input.value = '';
-      grow();
       updateEnter();
+      grow();
     }, ENTER_DELAY);
   }
 
@@ -305,12 +362,17 @@ function showTerminal(root, project, target) {
     }, HOLD_DELAY);
   }
 
-  // the Enter button reads ➤ when the box has text; it glows while Claude waits for an answer
+  // the Enter button turns into a round ↑ send button when the box has text; it glows while
+  // Claude waits for an answer. Its width changes, so callers grow() the box after it.
+  let enterSends = null;
   function updateEnter() {
     const text = !!input.value.trim();
-    enterBtn.textContent = text ? '➤' : 'Enter';
-    enterBtn.setAttribute('aria-label', text ? 'Send' : 'Enter');
-    enterBtn.classList.toggle('solid', text || lastState === 'waiting');
+    if (text !== enterSends) {
+      enterSends = text;
+      enterBtn.replaceChildren(...(text ? [icon('arrow')] : [icon('ret'), 'Enter']));
+      enterBtn.setAttribute('aria-label', text ? 'Send' : 'Enter');
+      enterBtn.classList.toggle('send', text);
+    }
     enterBtn.classList.toggle('glow', !text && lastState === 'waiting');
   }
 
@@ -322,8 +384,8 @@ function showTerminal(root, project, target) {
     // the terminal is positioned over its area: refit it, or its bottom rows cover the box
     if (input.offsetHeight !== before) layout();
   }
-  input.addEventListener('input', grow);
   input.addEventListener('input', updateEnter);
+  input.addEventListener('input', grow);
   updateEnter();
 
   // uploads: one file per request, one after another, so one that fails doesn't sink the rest;
@@ -365,11 +427,12 @@ function showTerminal(root, project, target) {
     const s = input.selectionStart ?? input.value.length, e = input.selectionEnd ?? s;
     const pre = s > 0 && !/\s/.test(input.value[s - 1]) ? ' ' : '';
     input.setRangeText(`${pre}${text} `, s, e, 'end');
-    grow();
     updateEnter();
+    grow();
   }
   // copy screen: xterm has no touch selection, so show the visible rows as plain text in a
-  // sheet, where native long-press selection works. Scrolled back, that's the tmux history view.
+  // full-screen sheet, where native long-press selection works. Scrolled back, that's the tmux
+  // history view. The text has the terminal's font size and gutter, so lines break as on screen.
   let copyDlg = null;
   function screenText() {
     const buf = term.buffer.active;
@@ -381,23 +444,23 @@ function showTerminal(root, project, target) {
   function copyScreen() {
     const text = screenText();
     if (!text) { toast('Nothing to copy'); return; }
-    const area = h('textarea', { readonly: true, wrap: 'off', autocapitalize: 'off', autocomplete: 'off',
-      autocorrect: 'off', spellcheck: 'false' });
-    area.value = text;
+    const n = text.split('\n').length;
+    const pre = h('pre', { class: 'copy-text' }, text);
+    pre.style.fontSize = `${fontSize}px`;
     const copyAll = () => Promise.resolve(copyText(text)).then((ok) =>
       toast(ok ? 'Copied' : "Couldn't copy, select the text and use Copy"));
-    const dlg = h('dialog', { class: 'copy' }, area, h('menu', {},
-      h('button', { onclick: () => dlg.close() }, 'Close'),
-      h('button', { class: 'primary', onclick: copyAll }, 'Copy all')));
+    const dlg = h('dialog', { class: 'copy' },
+      h('header', { class: 'copy-head' },
+        h('div', {}, h('h2', {}, 'Copy screen'), h('p', {}, `Long-press to select · ${n} ${n === 1 ? 'line' : 'lines'}`)),
+        h('button', { class: 'done', onclick: () => dlg.close() }, 'Done')),
+      pre,
+      h('footer', { class: 'copy-foot' }, h('button', { class: 'primary', onclick: copyAll }, icon('copy'), 'Copy all')));
     dlg.addEventListener('close', () => { dlg.remove(); if (copyDlg === dlg) copyDlg = null; });
     copyDlg?.remove();
     copyDlg = dlg;
     document.body.append(dlg);
     dlg.showModal();
-    // open at the top-left; the textarea is readonly, so its focus opens no keyboard
-    area.setSelectionRange(0, 0);
-    area.scrollTop = 0;
-    area.scrollLeft = 0;
+    pre.scrollTop = 0;
   }
 
   // swipe to scroll tmux history: finger down = back in time
@@ -536,7 +599,7 @@ function showTerminal(root, project, target) {
     shellMissing = !sh;
     if (!sh) return;
     cur = sh;
-    titleEl.textContent = `$${k} ${shellLabel(sh)}`;
+    titleEl.textContent = shellLabel(sh);
   }
 
   const stopPoll = poll(async () => {
@@ -550,8 +613,7 @@ function showTerminal(root, project, target) {
     const st = (snap.session_states || {})[num] || { state: '' };
     cur = { s, st };
     titleEl.textContent = s.title || `#${num}`;
-    stateEl.className = `badge ${st.state}`;
-    stateEl.textContent = st.state;
+    setState(st.state);
     lastState = st.state;
     if (ended && st.state === 'done') noticeText.textContent = 'Session stopped';
     escBtn.classList.toggle('stop', st.state === 'running');

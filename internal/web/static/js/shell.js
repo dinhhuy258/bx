@@ -55,8 +55,9 @@ export function openShell(project, story, k) {
 }
 
 // shellMenu opens the ⋯ sheet of shell sh: Rename, Copy path (only with dir) and Close shell.
-// refresh reloads the caller's screen; onClosed runs after a close went through.
-export function shellMenu({ project, sh, dir, refresh, onClosed }) {
+// refresh reloads the caller's screen; onClosed runs after a close went through. view is extra
+// sheet items that change how the screen looks (the shell screen's Text size).
+export function shellMenu({ project, sh, dir, refresh, onClosed, view = [] }) {
   const name = `$${sh.k} ${shellLabel(sh)}`;
   const items = [{ label: 'Rename', run: async () => {
     const v = await ask('Rename shell', [{ name: 'title', label: 'Name (empty = the command)', value: sh.title || '' }], 'Save');
@@ -69,6 +70,7 @@ export function shellMenu({ project, sh, dir, refresh, onClosed }) {
     items.push({ label: 'Copy path', run: () => Promise.resolve(copyText(dir)).then((ok) =>
       toast(ok ? 'Path copied' : `Couldn't copy ${dir}`)) });
   }
+  items.push(...view);
   items.push({ label: 'Close shell', danger: true, run: async () => {
     const cmd = sh.command || '';
     const text = !cmd || plainShell(cmd) ? '' : `${cmd} is still running and will be killed.`;
