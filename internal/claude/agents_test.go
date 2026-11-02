@@ -75,3 +75,14 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+func TestStartArgsArtifactFlags(t *testing.T) {
+	o := Options{Settings: `{"permissions":{}}`, DisallowedTools: []string{"Artifact", "ArtifactData"},
+		PluginDirs: []string{"/bx/plugin"}, AddDirs: []string{"/bx/artifacts/p/1"}, AppendSystemPrompt: "Save pages in /bx/artifacts/p/1."}
+	want := []string{"claude", "--resume", "u", "--settings", `{"permissions":{}}`,
+		"--disallowed-tools", "Artifact,ArtifactData", "--plugin-dir", "/bx/plugin",
+		"--add-dir", "/bx/artifacts/p/1", "--append-system-prompt", "Save pages in /bx/artifacts/p/1."}
+	if got := StartArgs("u", true, o); !equal(got, want) {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}

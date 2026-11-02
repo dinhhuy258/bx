@@ -5,6 +5,7 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // State is the three-way status bx shows.
@@ -97,11 +98,16 @@ func Duplicates(agents []Agent) map[string]bool {
 // Options are the settings a session starts with. "" leaves the flag out: Claude's own default.
 type Options struct {
 	Model, Effort, PermissionMode string
-	Settings                      string // extra settings JSON for --settings, such as hooks
+	Settings                      string   // extra settings JSON for --settings, such as hooks
+	DisallowedTools               []string // --disallowed-tools, comma-joined: one value, so it never swallows a later argument
+	PluginDirs                    []string // --plugin-dir, one per folder
+	AddDirs                       []string // --add-dir, one per folder
+	AppendSystemPrompt            string   // --append-system-prompt
 }
 
 // StartArgs builds the command for a new or resumed session. Run it in the target folder.
 // No -n: bx shows the title in its own pane header, and Claude would repeat it on the input box.
+// A resume passes every flag again: --resume does not remember them.
 func StartArgs(uuid string, resume bool, o Options) []string {
 	args := []string{"claude", "--session-id", uuid}
 	if resume {
@@ -111,6 +117,18 @@ func StartArgs(uuid string, resume bool, o Options) []string {
 		if f[1] != "" {
 			args = append(args, f[0], f[1])
 		}
+	}
+	if len(o.DisallowedTools) > 0 {
+		args = append(args, "--disallowed-tools", strings.Join(o.DisallowedTools, ","))
+	}
+	for _, d := range o.PluginDirs {
+		args = append(args, "--plugin-dir", d)
+	}
+	for _, d := range o.AddDirs {
+		args = append(args, "--add-dir", d)
+	}
+	if o.AppendSystemPrompt != "" {
+		args = append(args, "--append-system-prompt", o.AppendSystemPrompt)
 	}
 	return args
 }
