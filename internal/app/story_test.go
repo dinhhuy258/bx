@@ -316,14 +316,15 @@ func TestStoryFromAnExistingBranch(t *testing.T) {
 	if _, err := a.NewStory(context.Background(), p, StoryOpts{Source: SourceBranch, Branch: "--upload-pack=x"}); err == nil {
 		t.Fatal("option as branch accepted")
 	}
-	// main is the project folder's, topic/Local-One the first story's: neither listed, both refused
+	// main is the project folder's, topic/Local-One the first story's: marked checked out, refused
 	bl, err := a.Branches(context.Background(), p, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, b := range bl.Branches {
-		if b.Name == "main" || b.Name == "topic/Local-One" || b.Name == "fix/remote-one" {
-			t.Fatalf("listed %s, which a worktree has", b.Name)
+		busy := b.Name == "main" || b.Name == "topic/Local-One" || b.Name == "fix/remote-one"
+		if b.CheckedOut != busy {
+			t.Fatalf("%s checked out %v, want %v", b.Name, b.CheckedOut, busy)
 		}
 	}
 	_, err = a.NewStory(context.Background(), p, StoryOpts{Source: SourceBranch, Branch: "main"})
@@ -470,15 +471,15 @@ func TestWorkspaceBranchesLeaveOutCheckedOutOnes(t *testing.T) {
 	gitIn(t, web, "checkout", "-q", "shared") // web's folder has it: not a story's in api either
 	gitIn(t, api, "branch", "spare")
 	bl, err := a.Branches(context.Background(), p, false)
-	if err != nil || len(bl.Branches) != 1 {
+	if err != nil || len(bl.Branches) != 3 {
 		t.Fatalf("%+v %v", bl, err)
 	}
-	names := map[string][]string{}
+	names := map[string]string{}
 	for _, b := range bl.Branches {
-		names[b.Name] = b.Repos
+		names[b.Name] = fmt.Sprint(strings.Join(b.Repos, ","), " ", b.CheckedOut)
 	}
-	// main is checked out in api and libs/auth; shared in web
-	if strings.Join(names["spare"], ",") != "api" || names["main"] != nil || names["shared"] != nil {
+	// main is checked out in api and libs/auth; shared in web, which marks it in api too
+	if names["spare"] != "api false" || names["main"] != "api,libs/auth,web true" || names["shared"] != "api,web true" {
 		t.Fatalf("branches %v", names)
 	}
 	if _, err := a.NewStory(context.Background(), p, StoryOpts{Source: SourceBranch, Branch: "shared", Repos: []string{"api", "web"}}); err == nil ||
@@ -603,14 +604,14 @@ func TestStoryInfoBranchesAndOverride(t *testing.T) {
 	}
 	seen := map[string]string{}
 	for _, b := range bl.Branches {
-		seen[b.Name] = fmt.Sprint(b.Local, b.Remote)
+		seen[b.Name] = fmt.Sprint(b.Local, b.Remote, b.CheckedOut)
 	}
-	// main is checked out in the project folder, so a story cannot have it
-	if seen["develop"] != "true true" || seen["mine"] != "true false" || len(seen) != 2 {
+	// main, checked out in the project folder, stays listed for the base override picker
+	if seen["develop"] != "true true false" || seen["main"] != "true true true" || seen["mine"] != "true false false" || len(seen) != 3 {
 		t.Fatalf("branches %v", seen)
 	}
 	gitIn(t, p.Path, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
-	if bl, _ = a.Branches(context.Background(), p, true); bl.Note != "fetch failed · showing the last fetched branches" || len(bl.Branches) != 2 {
+	if bl, _ = a.Branches(context.Background(), p, true); bl.Note != "fetch failed · showing the last fetched branches" || len(bl.Branches) != 3 {
 		t.Fatalf("%+v", bl)
 	}
 }

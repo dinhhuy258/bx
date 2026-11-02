@@ -841,10 +841,12 @@ func (a *App) allTargets(p *state.Project) ([]*target, error) {
 }
 
 // BranchInfo is a branch of a project, for the existing branch picker: local, on origin or
-// both, its last commit, and in a workspace the repositories that have it.
+// both, its last commit, and in a workspace the repositories that have it. CheckedOut says a
+// worktree (the project folder's, a story's) has it, so a story cannot check it out again.
 type BranchInfo struct {
 	Name          string
 	Local, Remote bool
+	CheckedOut    bool
 	Time          time.Time
 	Repos         []string
 }
@@ -856,9 +858,9 @@ type BranchList struct {
 }
 
 // Branches lists the branches of a project, newest first; in a workspace the union over its
-// repositories. A branch checked out in a worktree (the project folder's, a story's) is left
-// out: a story cannot check it out again. With fetch it first runs `git fetch origin --prune` in each, a failure kept as a
-// note.
+// repositories. A branch checked out in a worktree is marked CheckedOut: the existing branch
+// pickers leave it out, the base override picker keeps it. With fetch it first runs
+// `git fetch origin --prune` in each, a failure kept as a note.
 func (a *App) Branches(ctx context.Context, p *state.Project, fetch bool) (*BranchList, error) {
 	targets, err := a.allTargets(p)
 	if err != nil {
@@ -908,8 +910,9 @@ func (a *App) Branches(ctx context.Context, p *state.Project, fetch bool) (*Bran
 			}
 		}
 	}
-	// git checks a branch out in one worktree only, so a story cannot use these
-	out.Branches = slices.DeleteFunc(out.Branches, func(b BranchInfo) bool { return busy[b.Name] })
+	for i := range out.Branches {
+		out.Branches[i].CheckedOut = busy[out.Branches[i].Name]
+	}
 	sort.SliceStable(out.Branches, func(i, j int) bool { return out.Branches[i].Time.After(out.Branches[j].Time) })
 	switch {
 	case len(failed) == 0:

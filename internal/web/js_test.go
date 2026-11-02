@@ -9,6 +9,7 @@ import (
 
 // prPickScript runs pickFrom on a tiny fake DOM: "#45" with #456 listed must search for #45
 // on Enter, "lease" must pick its row, and directPR must name only #<n> and PR URLs.
+// storyBranches must leave out checked-out branches.
 const prPickScript = `
 class Node {}
 class El extends Node {
@@ -27,7 +28,7 @@ globalThis.Node = Node;
 globalThis.document = { createElement: (t) => { const e = new El(t); made.push(e); return e; }, body: new El('body') };
 
 const { pickFrom } = await import(process.argv[2] + '/ui.js');
-const { directPR } = await import(process.argv[2] + '/newstory.js');
+const { directPR, storyBranches } = await import(process.argv[2] + '/newstory.js');
 const fail = (m) => { console.error(m); process.exit(1); };
 
 const items = [{ label: '#456 Newer   eve · feat/newer', n: 456 }, { label: '#7 Add lease   bob · feat/lease', n: 7 }];
@@ -48,6 +49,8 @@ if (r.asked.length || r.it.n !== 7) fail('lease: ' + JSON.stringify(r));
 for (const [q, want] of [['#45', true], [' #45 ', true], ['https://github.com/acme/web/pull/5/files', true], ['45', false], ['#45 x', false], ['fix #45', false], ['#', false]]) {
   if (directPR(q) !== want) fail('directPR(' + JSON.stringify(q) + ') = ' + !want);
 }
+const free = storyBranches([{ name: 'main', checkedOut: true }, { name: 'develop' }, { name: 'feat/s1', checkedOut: true }]);
+if (free.map((b) => b.name).join() !== 'develop') fail('storyBranches: ' + JSON.stringify(free));
 `
 
 func TestPRPickerLooksANumberUp(t *testing.T) {

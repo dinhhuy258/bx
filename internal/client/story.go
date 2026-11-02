@@ -194,14 +194,16 @@ func (m *Model) gotBranches(msg branchesMsg) {
 	if msg.list.Note != "" {
 		m.setFlash(msg.list.Note)
 	}
-	if len(msg.list.Branches) == 0 {
+	// a worktree already has a checked-out branch, and git checks a branch out once
+	free := slices.DeleteFunc(slices.Clone(msg.list.Branches), func(b api.Branch) bool { return b.CheckedOut })
+	if len(free) == 0 {
 		m.setFlash("no branches in " + m.project)
 		return
 	}
 	ws := m.m != nil && m.m.P.IsWorkspace()
 	m.draft.branches = map[string]string{}
-	items := make([]string, 0, len(msg.list.Branches))
-	for _, b := range msg.list.Branches {
+	items := make([]string, 0, len(free))
+	for _, b := range free {
 		where := "origin"
 		if b.Local {
 			where = "local"

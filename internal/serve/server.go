@@ -677,7 +677,7 @@ func (s *Server) branches(w http.ResponseWriter, r *http.Request) {
 	}
 	out := api.BranchList{Branches: make([]api.Branch, len(bl.Branches)), Note: bl.Note}
 	for i, b := range bl.Branches {
-		out.Branches[i] = api.Branch{Name: b.Name, Local: b.Local, Remote: b.Remote, Time: b.Time.Unix(), Repos: b.Repos}
+		out.Branches[i] = api.Branch{Name: b.Name, Local: b.Local, Remote: b.Remote, CheckedOut: b.CheckedOut, Time: b.Time.Unix(), Repos: b.Repos}
 	}
 	writeJSON(w, out)
 }

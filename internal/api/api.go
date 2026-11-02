@@ -94,13 +94,15 @@ type StoryInfo struct {
 }
 
 // Branch is one branch of GET /api/projects/{name}/branches: local, on origin or both, Time
-// its last commit (unix seconds), Repos the workspace repositories that have it.
+// its last commit (unix seconds), Repos the workspace repositories that have it. CheckedOut
+// says a worktree has it, so no story can: the existing branch pickers leave it out.
 type Branch struct {
-	Name   string   `json:"name"`
-	Local  bool     `json:"local,omitempty"`
-	Remote bool     `json:"remote,omitempty"`
-	Time   int64    `json:"time"`
-	Repos  []string `json:"repos,omitempty"`
+	Name       string   `json:"name"`
+	Local      bool     `json:"local,omitempty"`
+	Remote     bool     `json:"remote,omitempty"`
+	CheckedOut bool     `json:"checkedOut,omitempty"`
+	Time       int64    `json:"time"`
+	Repos      []string `json:"repos,omitempty"`
 }
 
 // BranchList is its reply, newest first. Note says a fetch failed.

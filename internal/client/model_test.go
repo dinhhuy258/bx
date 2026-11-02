@@ -823,6 +823,7 @@ func TestNewStoryFromAnExistingBranch(t *testing.T) {
 	now := time.Now()
 	h.be.branchList = api.BranchList{Branches: []api.Branch{
 		{Name: "fix/login-timeout", Remote: true, Time: now.Add(-49 * time.Hour).Unix()},
+		{Name: "main", Local: true, Remote: true, CheckedOut: true, Time: now.Unix()}, // the project folder's
 		{Name: "develop", Local: true, Remote: true, Time: now.Add(-5 * 24 * time.Hour).Unix()},
 	}}
 	h.press("w", "Down")
@@ -837,12 +838,24 @@ func TestNewStoryFromAnExistingBranch(t *testing.T) {
 			t.Fatalf("no %q in\n%s", want, v)
 		}
 	}
+	if strings.Contains(v, "main  local") {
+		t.Fatalf("checked-out main offered:\n%s", v)
+	}
 	h.press("Enter")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=branch branch=fix/login-timeout" {
 		t.Fatalf("actions = %q", got)
 	}
 	if strings.Join(h.be.reads, "|") != "branches fetch=true" || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("reads=%q opened=%q", h.be.reads, h.opened)
+	}
+}
+
+func TestExistingBranchesAllCheckedOut(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	h.be.branchList = api.BranchList{Branches: []api.Branch{{Name: "main", Local: true, CheckedOut: true, Time: time.Now().Unix()}}}
+	h.press("w", "Down", "Enter")
+	if h.m.pickKind == pickStoryBranch && h.m.picker != nil || h.m.flash != "no branches in home-network" {
+		t.Fatalf("pickKind=%v flash=%q", h.m.pickKind, h.m.flash)
 	}
 }
 
@@ -1501,7 +1514,8 @@ func gitSettings(t *testing.T, list ...api.Branch) *harness {
 }
 
 func TestSettingsGitAddsAnOverride(t *testing.T) {
-	h := gitSettings(t, api.Branch{Name: "develop", Local: true, Remote: true}, api.Branch{Name: "main", Remote: true})
+	// develop is checked out in the project folder: still a base to pick
+	h := gitSettings(t, api.Branch{Name: "develop", Local: true, Remote: true, CheckedOut: true}, api.Branch{Name: "main", Remote: true})
 	v := ansi.Strip(h.m.View().Content)
 	if !strings.Contains(v, "No overrides. New stories start from each repo's default branch.") || !strings.Contains(v, "j/k move · ⏎ choose · ⌫ remove · esc back") {
 		t.Fatalf("empty git section:\n%s", v)

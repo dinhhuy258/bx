@@ -21,6 +21,9 @@ const storyName = (branch) => slug(branch.slice(branch.lastIndexOf('/') + 1));
 // directPR is client.directPR: the filter names one pull request, #123 or its URL.
 export const directPR = (q) => /^(#\d+|https?:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pull\/\d+\S*)$/.test(q.trim());
 
+// storyBranches leaves out the branches a worktree has checked out: git checks a branch out once.
+export const storyBranches = (branches) => branches.filter((b) => !b.checkedOut);
+
 // ago is ui.Ago: how long ago unix time t was, in the largest whole unit.
 function ago(t) {
   const s = Date.now() / 1000 - t;
@@ -74,8 +77,9 @@ export function newStoryMenu({ project, snap, refresh }) {
     let l;
     try { l = await api.branches(project, true); } catch (e) { toast(e.message); return; }
     if (l.note) toast(l.note);
-    if (!l.branches.length) { toast(`No branches in ${project}`); return; }
-    const items = l.branches.map((b) => ({
+    const free = storyBranches(l.branches);
+    if (!free.length) { toast(`No branches in ${project}`); return; }
+    const items = free.map((b) => ({
       branch: b.name,
       label: `${b.name}  ${b.local ? 'local' : 'origin'} · ${ago(b.time)}${workspace && b.repos?.length ? ` · ${b.repos.join(', ')}` : ''}`,
     }));
