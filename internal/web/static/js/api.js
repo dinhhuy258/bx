@@ -41,6 +41,8 @@ export const api = {
     call('POST', `/api/projects/${enc(p)}/sessions/${num}/files`, { name, content }),
   // the session's HTML pages, newest first: [{ name, size, modified, url }]
   artifacts: (p, num) => call('GET', `/api/projects/${enc(p)}/sessions/${num}/artifacts`),
+  // what can follow / in the session's prompt, by name: [{ name, description, source }]
+  slashCommands: (p, num) => call('GET', `/api/projects/${enc(p)}/sessions/${num}/slash-commands`),
   streamURL: (p, num, cols, rows) =>
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/sessions/${num}/stream?cols=${cols}&rows=${rows}`,
   // shells: story '' is Chats (the project folder); the reply of newShell has the new .k

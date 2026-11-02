@@ -4,6 +4,7 @@ package api
 import (
 	"time"
 
+	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
@@ -243,6 +244,12 @@ type Artifact struct {
 // ArtifactList is GET /api/projects/{name}/sessions/{num}/artifacts, newest first.
 type ArtifactList struct {
 	Files []Artifact `json:"files"`
+}
+
+// SlashCommandList is GET /api/projects/{name}/sessions/{num}/slash-commands: what can follow
+// "/" in the session's prompt, sorted by name.
+type SlashCommandList struct {
+	Commands []claude.SlashCommand `json:"commands"`
 }
 
 // CleanupItem is one thing cleanup can remove: Kind "orphan" (a bx-* tmux session with no

@@ -89,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/sessions/{num}/files", s.uploadFile)
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/artifacts", s.listArtifacts)
+	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/slash-commands", s.listSlashCommands)
 	mux.HandleFunc("POST /api/projects/{name}/sessions", s.action(func(p *state.Project, r api.Action) (int, error) {
 		var num int
 		var err error

@@ -100,6 +100,33 @@ func TestShellHelpers(t *testing.T) {
 	runJS(t, shellScript)
 }
 
+// slashCommandsScript checks matchSlashCommands: only "/" and a name with no space yet matches, case-insensitive,
+// with names that start with the text before names that only contain it.
+const slashCommandsScript = `
+class Node {}
+globalThis.Node = Node;
+globalThis.document = { createElement: () => ({}), body: {} };
+globalThis.location = { hash: '', protocol: 'http:', host: 'x' };
+const { matchSlashCommands } = await import(process.argv[2] + '/session.js');
+const fail = (m) => { console.error(m); process.exit(1); };
+const list = ['bx:artifact', 'clear', 'compact', 'context', 'cost', 'plan', 'review'].map((name) => ({ name }));
+const names = (t) => matchSlashCommands(list, t).map((c) => c.name).join();
+if (names('/co') !== 'compact,context,cost') fail('/co: ' + names('/co'));
+if (names('/CO') !== 'compact,context,cost') fail('/CO: ' + names('/CO'));
+if (names('/art') !== 'bx:artifact') fail('/art: ' + names('/art'));
+if (names('/a') !== 'bx:artifact,clear,compact,plan') fail('/a: ' + names('/a'));
+if (names('/') !== list.map((c) => c.name).join()) fail('/: ' + names('/'));
+for (const t of ['', 'co', '/compact ', '/compact x', ' /co', '/co\nx', '/zzz']) {
+  if (names(t) !== '') fail(JSON.stringify(t) + ': ' + names(t));
+}
+const many = Array.from({ length: 50 }, (_, i) => ({ name: 'c' + i }));
+if (matchSlashCommands(many, '/c').length !== 30) fail('limit');
+`
+
+func TestMatchSlashCommands(t *testing.T) {
+	runJS(t, slashCommandsScript)
+}
+
 // sheetScript opens a sheet on a fake DOM: danger rows go in their own group after the others,
 // a setter fills in a row's hint and badge, a tap runs the item and a tap on the backdrop
 // (the dialog itself) only closes it.

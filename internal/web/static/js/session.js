@@ -53,6 +53,24 @@ export function encodeMessage(text) {
   return clean.includes('\n') ? `\x1b[200~${clean}\x1b[201~` : clean.replace(/\t/g, ' ');
 }
 
+const MAX_SLASH_COMMANDS = 30; // suggestion rows at most; the list scrolls
+
+// matchSlashCommands is the slash commands that fit the box: text must be "/" and a name being typed
+// (no space yet). Names that start with what was typed come first, then names that contain it,
+// each in list order. Anything else matches nothing.
+export function matchSlashCommands(list, text) {
+  const m = /^\/(\S*)$/.exec(text);
+  if (!m) return [];
+  const q = m[1].toLowerCase();
+  const starts = [], has = [];
+  for (const c of list) {
+    const n = c.name.toLowerCase();
+    if (n.startsWith(q)) starts.push(c);
+    else if (n.includes(q)) has.push(c);
+  }
+  return [...starts, ...has].slice(0, MAX_SLASH_COMMANDS);
+}
+
 // showSession is the screen of Claude session num; showShell the screen of shell k of a story
 // ('' = Chats). Both are showTerminal, so they share the terminal, socket, reconnect, scroll,
 // copy and layout code.
@@ -113,11 +131,14 @@ function showTerminal(root, project, target) {
     : h('button', { class: 'key', 'aria-label': 'Escape', onpointerdown: keep, onclick: () => send('\x1b') }, 'esc');
   const menuBtn = h('button', { class: 'ib', 'aria-label': shell ? 'Shell actions' : 'Session actions',
     onclick: () => openMenu() }, icon('more'));
+  // slash command suggestions: a list over the terminal's bottom, just above the box (sessions only)
+  const slashCommandsEl = h('div', { class: 'slash-commands', role: 'listbox', 'aria-label': 'Slash commands', hidden: true,
+    onpointerdown: keep });
   const inputRow = h('div', { class: 'input' }, h('div', { class: 'box' }, shell ? null : attachBtn, input), stepper, enterBtn);
   const screen = h('div', { class: 'session' },
     h('header', { class: 'bar sbar' }, h('a', { href: backHref, class: 'ib', 'aria-label': 'Back' }, icon('back')),
       h('h1', { class: 'ttl' }, titleEl, metaEl), copyBtn, escBtn, menuBtn, stateLine),
-    h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
+    h('div', { class: 'term-wrap' }, termEl, liveBtn, notice, shell ? null : slashCommandsEl),
     inputRow, shell ? null : fileInput);
   root.append(screen);
   document.documentElement.classList.add('session-lock'); // see layout()
@@ -346,6 +367,7 @@ function showTerminal(root, project, target) {
       if (!sendBytes('\r') || input.value !== text) return; // keep the text if Enter didn't go
       input.value = '';
       updateEnter();
+      updateSlashCommands();
       grow();
     }, ENTER_DELAY);
   }
@@ -387,6 +409,51 @@ function showTerminal(root, project, target) {
   input.addEventListener('input', updateEnter);
   input.addEventListener('input', grow);
   updateEnter();
+
+  // Slash commands: typing / and a name shows the matches above the box, since the box only
+  // reaches Claude on send and Claude's own menu never opens. The list is fetched on the first
+  // /, then kept; a failed fetch shows nothing and is tried again on the next /.
+  let slashCommands = null, slashCommandsLoad = null, slashCommandsShown = '';
+  function loadSlashCommands() {
+    slashCommandsLoad ||= api.slashCommands(project, num).then((r) => { slashCommands = r.commands || []; },
+      () => { slashCommandsLoad = null; });
+    return slashCommandsLoad;
+  }
+  function updateSlashCommands() {
+    if (shell) return;
+    const text = input.value;
+    if (!text.startsWith('/') || document.activeElement !== input) { hideSlashCommands(); return; }
+    if (!slashCommands) { loadSlashCommands().then(() => { if (!closed) updateSlashCommands(); }); return; }
+    if (text === slashCommandsShown && !slashCommandsEl.hidden) return;
+    const found = matchSlashCommands(slashCommands, text);
+    if (!found.length) { hideSlashCommands(); return; }
+    slashCommandsShown = text;
+    slashCommandsEl.replaceChildren(...found.map((c) => h('button', { type: 'button', class: 'slash-command', role: 'option',
+      onclick: () => pickSlashCommand(c) },
+      h('span', { class: 'slash-command-name' }, `/${c.name}`),
+      c.source === 'builtin' ? null : h('span', { class: 'slash-command-source' }, c.source),
+      c.description ? h('span', { class: 'slash-command-desc' }, c.description) : null)));
+    slashCommandsEl.hidden = false;
+    slashCommandsEl.scrollTop = 0;
+  }
+  function hideSlashCommands() {
+    slashCommandsEl.hidden = true;
+    slashCommandsShown = '';
+  }
+  // pickSlashCommand puts "/name " in the box, ready for arguments; the keyboard stays open
+  function pickSlashCommand(c) {
+    input.value = `/${c.name} `;
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.focus();
+    hideSlashCommands();
+    updateEnter();
+    grow();
+  }
+  if (!shell) {
+    input.addEventListener('input', updateSlashCommands);
+    input.addEventListener('focus', updateSlashCommands);
+    input.addEventListener('blur', hideSlashCommands);
+  }
 
   // uploads: one file per request, one after another, so one that fails doesn't sink the rest;
   // the saved paths go into the box at the cursor, for a prompt around them
