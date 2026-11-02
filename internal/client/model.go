@@ -2,7 +2,9 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -155,6 +157,7 @@ type Model struct {
 	// did not start)
 	pendingStory string
 	paneClosed   bool    // the pane shows the last output of a shell that ended; no reconnect
+	shellLabel   string  // the last known label of the shell in the pane, for its title once it ended
 	pendingShell *Target // select this new shell's row on the next snapshot
 	// afterShell is a shell that went away: on the next snapshot the cursor leaves its row
 	// (ui.Model.SelectAfterShell); with afterShellNote the key bar also says it closed
@@ -326,6 +329,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.connecting = false
+		if msg.err != nil && m.target.Shell() && m.shellGone(msg.err) {
+			// the shell exited while the stream was down
+			m.shellClosed()
+			return m, m.poll()
+		}
 		if msg.err != nil {
 			m.setFlash("stream: " + msg.err.Error() + " · retrying")
 			return m, nil
@@ -343,13 +351,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.conn = nil
 		ended := websocket.CloseStatus(msg.err) == websocket.StatusNormalClosure && strings.Contains(msg.err.Error(), "session ended")
 		if ended && m.target.Shell() {
-			// keep its last output, dimmed, until another target is shown
-			t := m.target
-			m.paneClosed, m.scrolled, m.copying = true, false, false
-			m.claudeFocused, m.focusMode = false, false
-			m.resizeTerm()
-			m.afterShell, m.afterShellNote = &t, true
-			m.setFlash(fmt.Sprintf("shell $%d closed", t.K))
+			m.shellClosed()
 			return m, m.poll()
 		}
 		if ended {
@@ -508,6 +510,15 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 	} else {
 		um.SetProject(msg.snap.Project)
 	}
+	if t := m.target; t.Shell() && !m.paneClosed && msg.project == m.project {
+		i := slices.IndexFunc(msg.snap.Shells, func(sh api.Shell) bool { return sh.Story == t.Story && sh.K == t.K })
+		switch {
+		case i >= 0:
+			m.shellLabel = msg.snap.Shells[i].Label()
+		case m.conn == nil && !m.connecting: // it exited while the stream was down
+			m.shellClosed()
+		}
+	}
 	// the cursor leaves a shell that went away only when it was on that shell's row
 	var after *Target
 	if t := m.afterShell; t != nil && msg.project == m.project && um == m.m && um.Selected() == (ui.Row{Kind: ui.RowShell, Story: t.Story, K: t.K}) {
@@ -576,6 +587,11 @@ func (m *Model) show(t Target) tea.Cmd {
 	}
 	m.closeStream()
 	m.target = t
+	if t.Shell() && m.m != nil {
+		if sh, ok := m.m.Shell(t.Story, t.K); ok {
+			m.shellLabel = sh.Label()
+		}
+	}
 	return m.connect()
 }
 
@@ -589,7 +605,7 @@ func (m *Model) closeStream() {
 		}
 		m.conn.Close()
 	}
-	m.conn, m.connecting, m.target, m.scrolled, m.copying, m.paneClosed = nil, false, Target{}, false, false, false
+	m.conn, m.connecting, m.target, m.scrolled, m.copying, m.paneClosed, m.shellLabel = nil, false, Target{}, false, false, false, ""
 	cols, rows := m.term.Cols(), m.term.Rows()
 	m.term.Close()
 	m.term = NewTerm(cols, rows)
@@ -996,6 +1012,31 @@ func (m *Model) closeShell(story string, k int) tea.Cmd {
 	m.afterShell = &t
 	m.setFlash(fmt.Sprintf("closed shell $%d", k))
 	return m.poll()
+}
+
+// shellClosed marks the shell in the pane as ended: its last output stays, dimmed, until another
+// target is shown, and the next snapshot moves the cursor off its row and says it closed.
+func (m *Model) shellClosed() {
+	t := m.target
+	m.paneClosed, m.scrolled, m.copying = true, false, false
+	m.claudeFocused, m.focusMode = false, false
+	m.resizeTerm()
+	m.afterShell, m.afterShellNote = &t, true
+	m.setFlash(fmt.Sprintf("shell $%d closed", t.K))
+}
+
+// shellGone reports whether the shell in the pane, whose dial failed with err, is gone: the
+// server says it is not running (410), or the latest snapshot no longer lists it.
+func (m *Model) shellGone(err error) bool {
+	var se *StatusError
+	if errors.As(err, &se) && se.Code == http.StatusGone {
+		return true
+	}
+	if m.m == nil {
+		return false
+	}
+	_, ok := m.m.Shell(m.target.Story, m.target.K)
+	return !ok
 }
 
 // shellKey is the prompt target of shell k of story: "story/k" (root is "/k").
@@ -1689,6 +1730,8 @@ func (m *Model) shellTitle() string {
 	label := "shell"
 	if sh, ok := m.m.Shell(story, k); ok {
 		label = sh.Label()
+	} else if m.shellLabel != "" { // it ended and left the list
+		label = m.shellLabel
 	}
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
 	path := lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6"))

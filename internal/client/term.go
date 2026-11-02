@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
@@ -152,8 +153,12 @@ type (
 // Connect dials one session's stream and starts the pumps: one streamOutputMsg per burst of
 // output (the model redraws), then streamClosedMsg.
 func Connect(ctx context.Context, url string, term *Term, send func(tea.Msg)) (Conn, error) {
-	c, _, err := websocket.Dial(ctx, url, nil)
+	c, resp, err := websocket.Dial(ctx, url, nil)
 	if err != nil {
+		if resp != nil && resp.StatusCode != http.StatusSwitchingProtocols {
+			// e.g. 410: the session or shell is not running
+			return nil, &StatusError{Code: resp.StatusCode, Text: err.Error()}
+		}
 		return nil, err
 	}
 	c.SetReadLimit(1 << 20)

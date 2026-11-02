@@ -1,7 +1,11 @@
 package client
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -54,5 +58,18 @@ func TestTermTakesOSC52Copies(t *testing.T) {
 	}
 	if !strings.Contains(term.View(), "ab") {
 		t.Fatalf("OSC 52 must not print: %q", term.View())
+	}
+}
+
+// A refused upgrade carries the status code, so the model can tell a gone shell from a drop.
+func TestConnectRefusedCarriesTheCode(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "not running", http.StatusGone)
+	}))
+	defer ts.Close()
+	_, err := Connect(context.Background(), "ws"+strings.TrimPrefix(ts.URL, "http"), NewTerm(80, 24), func(tea.Msg) {})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusGone || !strings.Contains(err.Error(), "410") {
+		t.Fatalf("%#v", err)
 	}
 }

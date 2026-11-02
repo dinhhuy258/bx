@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -282,6 +283,7 @@ type harness struct {
 	opened []string // "project num"
 	conns  []*fakeConn
 	tmux   []string // tmux pane moves: "L" or "R"
+	dial   error    // when set, every dial fails with it
 }
 
 // start builds a client over projects (each with session 1 in story s1), opening the first one
@@ -322,6 +324,9 @@ func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *
 			hs.opened = append(hs.opened, fmt.Sprintf("%s sh %s %d", project, t.Story, t.K))
 		} else {
 			hs.opened = append(hs.opened, fmt.Sprintf("%s %d", project, t.Num))
+		}
+		if hs.dial != nil {
+			return nil, hs.dial
 		}
 		term.Feed([]byte("CLAUDE SAYS HI"))
 		c := &fakeConn{}
@@ -1403,6 +1408,105 @@ func TestShellEndedKeepsTheOutputDimmed(t *testing.T) {
 	h.shellEnded()
 	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "shell $1 closed · story s1 was closed") {
 		t.Fatalf("bar = %q", bar)
+	}
+}
+
+func TestClosedShellKeepsItsLabel(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.setShells([]api.Shell{{Story: "s1", K: 1, Title: "api", Command: "npm"}}, nil)
+	h.press("j", "Enter") // session 1 → $1
+	h.dropShells()
+	h.shellEnded()
+	h.update(tickMsg(time.Now())) // the shell's row is gone from the list
+	if _, ok := h.m.m.Shell("s1", 1); ok {
+		t.Fatal("the row should be gone")
+	}
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "home-network › s1 › $1 api") || !strings.Contains(v, "CLOSED") {
+		t.Fatalf("pane title:\n%s", v)
+	}
+}
+
+// The stream drops, the shell exits meanwhile and the reconnect gets 410: the pane closes as if
+// the shell had ended with the stream up, and stops retrying.
+func TestShellGoneDuringADropCloses(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.press("t", "y")
+	h.update(streamClosedMsg{conn: h.conns[0], err: errors.New("EOF")})
+	h.dropShells()
+	h.dial = &StatusError{Code: http.StatusGone, Text: "failed to WebSocket dial: expected handshake response status code 101 but got 410"}
+	h.update(connectMsg{gen: h.m.gen, err: h.dial})
+	if !h.m.paneClosed || h.m.claudeFocused {
+		t.Fatalf("closed=%v focused=%v", h.m.paneClosed, h.m.claudeFocused)
+	}
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "shell $1 closed") || strings.Contains(bar, "retrying") {
+		t.Fatalf("bar = %q", bar)
+	}
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "$1 zsh") || !strings.Contains(v, "CLOSED") {
+		t.Fatalf("pane:\n%s", v)
+	}
+	if r := h.m.m.Selected(); r.Kind != ui.RowStory || r.Story != "s1" {
+		t.Fatalf("the cursor goes to the story: %+v", r)
+	}
+	h.update(tickMsg(time.Now()))
+	if len(h.opened) != 1 {
+		t.Fatalf("a closed shell must not reconnect: %q", h.opened)
+	}
+}
+
+// The reconnect fails for another reason but the snapshot no longer lists the shell: closed too,
+// with the note when its story went with it.
+func TestShellMissingFromTheSnapshotAfterADropCloses(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.press("t", "y")
+	h.update(streamClosedMsg{conn: h.conns[0], err: errors.New("EOF")})
+	delete(h.be.snaps["home-network"].Project.Stories, "s1")
+	h.dropShells()
+	h.dial = errors.New("dial tcp: connection refused")
+	h.update(tickMsg(time.Now()))
+	if !h.m.paneClosed {
+		t.Fatal("the pane should be closed")
+	}
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "shell $1 closed · story s1 was closed") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.update(tickMsg(time.Now()))
+	if len(h.opened) != 2 { // the first open and the one failed reconnect
+		t.Fatalf("a closed shell must not reconnect: %q", h.opened)
+	}
+}
+
+// A snapshot without the shell while its stream is down closes the pane before any reconnect.
+func TestSnapshotWithoutTheShellWhileDownCloses(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.press("t", "y")
+	h.update(streamClosedMsg{conn: h.conns[0], err: errors.New("EOF")})
+	h.dropShells()
+	h.update(snapshotMsg{project: "home-network", snap: h.be.snaps["home-network"]})
+	if !h.m.paneClosed || !strings.Contains(h.m.flash, "shell $1 closed") {
+		t.Fatalf("closed=%v flash=%q", h.m.paneClosed, h.m.flash)
+	}
+	if r := h.m.m.Selected(); r.Kind != ui.RowStory || r.Story != "s1" {
+		t.Fatalf("the cursor goes to the story: %+v", r)
+	}
+	h.update(tickMsg(time.Now()))
+	if len(h.opened) != 1 {
+		t.Fatalf("a closed shell must not reconnect: %q", h.opened)
+	}
+}
+
+// A Claude session that is not running keeps retrying: it can be resumed.
+func TestGoneSessionKeepsRetrying(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.press("Enter")
+	h.update(streamClosedMsg{conn: h.conns[0], err: errors.New("EOF")})
+	h.dial = &StatusError{Code: http.StatusGone, Text: "got 410"}
+	h.update(tickMsg(time.Now()))
+	h.update(tickMsg(time.Now()))
+	if strings.Join(h.opened, "|") != "home-network 1|home-network 1|home-network 1" || h.m.paneClosed || h.m.target != sessionTarget(1) {
+		t.Fatalf("opened=%q closed=%v target=%+v", h.opened, h.m.paneClosed, h.m.target)
+	}
+	if !strings.Contains(h.m.flash, "got 410 · retrying") {
+		t.Fatalf("flash = %q", h.m.flash)
 	}
 }
 
