@@ -37,6 +37,21 @@ export function sessionMenu({ project, num, session, state, act, refresh, ask, w
     } });
   }
   if (state === 'gone' || state === 'done') items.push({ label: 'Resume', run: () => act('resume', { num }) });
+  items.push({ label: 'Artifacts', run: async () => {
+    let files;
+    try {
+      ({ files } = await api.artifacts(project, num));
+    } catch (e) {
+      toast(e.message);
+      return;
+    }
+    if (!files.length) { toast('No artifacts yet. Ask Claude for a page.'); return; }
+    // the tap on a row opens the page: window.open runs inside that click, so it is not blocked
+    sheet('Artifacts', files.map((f) => ({ label: f.name, run: () => {
+      if (f.url) window.open(f.url, '_blank', 'noopener');
+      else toast('The file server is off (serve.files_listen = "off").');
+    } })));
+  } });
   items.push({ label: 'Rename', run: async () => {
     const v = await ask('Rename', [{ name: 'title', label: 'Title', value: session.title }], 'Save');
     if (v && v.title) act('rename', { num, title: v.title });

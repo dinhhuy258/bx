@@ -39,6 +39,8 @@ export const api = {
   // content is base64; the reply's .path is where the server saved the file
   upload: (p, num, name, content) =>
     call('POST', `/api/projects/${enc(p)}/sessions/${num}/files`, { name, content }),
+  // the session's HTML pages, newest first: [{ name, size, modified, url }]
+  artifacts: (p, num) => call('GET', `/api/projects/${enc(p)}/sessions/${num}/artifacts`),
   streamURL: (p, num, cols, rows) =>
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/sessions/${num}/stream?cols=${cols}&rows=${rows}`,
   // shells: story '' is Chats (the project folder); the reply of newShell has the new .k
