@@ -267,6 +267,7 @@ func TestResumeAllAtStartup(t *testing.T) {
 	s, f, _ := newServer(t)
 	p, _ := s.App.LoadProject("home-network")
 	p.AddSession(&state.Session{UUID: "u2", Title: "gone"})
+	p.AddSession(&state.Session{UUID: "u3", Title: "stopped", Done: true})
 	s.App.SaveProject(p)
 	s.ResumeAll(context.Background())
 	if !strings.Contains(calls(f), "new-session -d -s bx-home-network-2 -c "+p.Path+" -P -F #{session_id} claude --resume u2") {
@@ -274,6 +275,86 @@ func TestResumeAllAtStartup(t *testing.T) {
 	}
 	if strings.Contains(calls(f), "claude --resume u1") {
 		t.Fatal("resumed a running session")
+	}
+	if strings.Contains(calls(f), "--resume u3") {
+		t.Fatal("resumed a done session")
+	}
+}
+
+func TestStopAndDeleteGoThroughApp(t *testing.T) {
+	_, f, ts := newServer(t)
+	if res, code := post(t, ts, "/api/projects/home-network/stop", api.Action{Num: 1}); code != 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if !strings.Contains(calls(f), "kill-session -t $5") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if !snap.Project.Sessions[1].Done {
+		t.Fatalf("%+v", snap.Project.Sessions[1])
+	}
+}
+
+func TestDeleteRunningThenForce(t *testing.T) {
+	_, f, ts := newServer(t)
+	res, code := post(t, ts, "/api/projects/home-network/delete", api.Action{Num: 1})
+	if code != 409 || !res.Running || res.Detail != "" || res.Error == "" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if strings.Contains(calls(f), "kill-session") {
+		t.Fatalf("a refused delete killed:\n%s", calls(f))
+	}
+	if res, code := post(t, ts, "/api/projects/home-network/delete", api.Action{Num: 1, Force: true}); code != 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if !strings.Contains(calls(f), "kill-session -t $5") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if snap.Project.Sessions[1] != nil {
+		t.Fatalf("%+v", snap.Project.Sessions)
+	}
+}
+
+func TestStopKillFailureKeepsSessionNotDone(t *testing.T) {
+	_, f, ts := newServer(t)
+	f.Err = errors.New("boom")
+	if res, code := post(t, ts, "/api/projects/home-network/stop", api.Action{Num: 1}); code == 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if snap.Project.Sessions[1].Done {
+		t.Fatal("a failed stop left the session done")
+	}
+}
+
+func TestWatchMarksExitedSessionsDone(t *testing.T) {
+	s, f, _ := newServer(t)
+	s.watchOnce()
+	f.Replies[listSessions] = "" // tmux answers, Claude exited
+	s.watchOnce()
+	p, _ := s.App.LoadProject("home-network")
+	if !p.Sessions[1].Done {
+		t.Fatal("an exited session is not done")
+	}
+}
+
+func TestWatchIgnoresTmuxServerGone(t *testing.T) {
+	s, f, _ := newServer(t)
+	s.watchOnce()
+	delete(f.Replies, listSessions)
+	f.Errs = map[string]error{listSessions: errors.New("tmux list-sessions: no server running on /x")}
+	s.watchOnce()
+	p, _ := s.App.LoadProject("home-network")
+	if p.Sessions[1].Done {
+		t.Fatal("a session lost with the tmux server is done")
+	}
+	delete(f.Errs, listSessions)
+	f.Replies[listSessions] = "" // a new tmux server, without the session
+	s.watchOnce()
+	p, _ = s.App.LoadProject("home-network")
+	if p.Sessions[1].Done {
+		t.Fatal("a session lost with the old tmux server is done after a new one started")
 	}
 }
 

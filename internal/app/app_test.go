@@ -151,6 +151,145 @@ func TestResumeAllSkipsDoneLiveAndForeign(t *testing.T) {
 	}
 }
 
+// killProbe answers from a Fake and, on kill-session, records whether session 1 is done on
+// disk at that moment, then fails.
+type killProbe struct {
+	f      *tmux.Fake
+	file   string
+	killed bool
+	done   bool
+}
+
+func (k *killProbe) Run(args ...string) ([]byte, error) {
+	if args[0] == "kill-session" {
+		p, err := state.Load(k.file, "home-network")
+		if err != nil {
+			return nil, err
+		}
+		k.killed, k.done = true, p.Sessions[1].Done
+		return nil, errors.New("kill failed")
+	}
+	return k.f.Run(args...)
+}
+
+func TestStopSavesDoneBeforeKilling(t *testing.T) {
+	a, f, p := newApp(t)
+	p.AddSession(&state.Session{UUID: "u1"})
+	if err := a.SaveProject(p); err != nil {
+		t.Fatal(err)
+	}
+	f.Replies[listSessions] = "$5\tbx-home-network-1\n"
+	k := &killProbe{f: f, file: a.Cfg.StateFile("home-network")}
+	a.Tmux = tmux.New(k)
+	if err := a.Stop(p, 1); err == nil {
+		t.Fatal("want the kill error")
+	}
+	if !k.killed || !k.done {
+		t.Fatalf("killed=%v, done on disk during the kill=%v", k.killed, k.done)
+	}
+	got, _ := a.LoadProject("home-network")
+	if got.Sessions[1].Done || p.Sessions[1].Done {
+		t.Fatal("a failed kill left the session done")
+	}
+}
+
+func TestStopMarksDone(t *testing.T) {
+	a, f, p := newApp(t)
+	p.AddSession(&state.Session{UUID: "u1"}) // live
+	p.AddSession(&state.Session{UUID: "u2"}) // gone
+	f.Replies[listSessions] = "$5\tbx-home-network-1\n"
+	if err := a.Stop(p, 1); err != nil {
+		t.Fatal(err)
+	}
+	if calls(f) != "kill-session -t $5" {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	if err := a.Stop(p, 2); err != nil {
+		t.Fatal(err)
+	}
+	if calls(f) != "kill-session -t $5" {
+		t.Fatalf("stopping a gone session killed something:\n%s", calls(f))
+	}
+	got, _ := a.LoadProject("home-network")
+	if !got.Sessions[1].Done || !got.Sessions[2].Done {
+		t.Fatalf("%+v %+v", got.Sessions[1], got.Sessions[2])
+	}
+	if err := a.Stop(p, 9); err == nil {
+		t.Fatal("stopped a session that does not exist")
+	}
+}
+
+func TestDeleteSession(t *testing.T) {
+	a, f, p := newApp(t)
+	n1 := p.AddSession(&state.Session{UUID: "u1"}) // live
+	n2 := p.AddSession(&state.Session{UUID: "u2"}) // gone
+	if err := a.SaveProject(p); err != nil {
+		t.Fatal(err)
+	}
+	base := a.Cfg.UploadsDir()
+	now := time.Now()
+	mine, err := uploads.Save(base, "home-network", n1, "photo.jpg", []byte("x"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := uploads.Save(base, "home-network", n2, "keep.txt", []byte("x"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Replies[listSessions] = "$5\tbx-home-network-1\n"
+	var re *RunningError
+	if err := a.DeleteSession(p, n1, false); !errors.As(err, &re) || re.Num != n1 {
+		t.Fatalf("want RunningError, got %v", err)
+	}
+	if calls(f) != "" || p.Sessions[n1] == nil {
+		t.Fatal("a refused delete changed something")
+	}
+	if _, err := os.Stat(mine); err != nil {
+		t.Fatalf("a refused delete removed the upload: %v", err)
+	}
+	if err := a.DeleteSession(p, n1, true); err != nil {
+		t.Fatal(err)
+	}
+	if calls(f) != "kill-session -t $5" {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	got, _ := a.LoadProject("home-network")
+	if got.Sessions[n1] != nil || got.Sessions[n2] == nil {
+		t.Fatalf("%+v", got.Sessions)
+	}
+	if _, err := os.Stat(uploads.Dir(base, "home-network", n1)); !os.IsNotExist(err) {
+		t.Fatalf("session uploads kept: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("another session's upload removed: %v", err)
+	}
+	if err := a.DeleteSession(p, n2, false); err != nil {
+		t.Fatalf("a gone session needs no force: %v", err)
+	}
+	got, _ = a.LoadProject("home-network")
+	if len(got.Sessions) != 0 || got.NextNum != 3 {
+		t.Fatalf("%+v next=%d", got.Sessions, got.NextNum)
+	}
+	if err := a.DeleteSession(p, n2, false); err == nil {
+		t.Fatal("deleted a session that does not exist")
+	}
+}
+
+func TestMarkDone(t *testing.T) {
+	a, _, p := newApp(t)
+	p.AddSession(&state.Session{UUID: "u1"})
+	if changed, err := a.MarkDone(p, []int{1, 7}); err != nil || !changed {
+		t.Fatalf("%v %v", changed, err)
+	}
+	if changed, err := a.MarkDone(p, []int{1}); err != nil || changed {
+		t.Fatalf("second time: %v %v", changed, err)
+	}
+	got, _ := a.LoadProject("home-network")
+	if !got.Sessions[1].Done {
+		t.Fatal("not saved")
+	}
+}
+
 func TestCloseStoryDirtyThenForce(t *testing.T) {
 	a, f, p := newApp(t)
 	if err := a.NewStory(p, "s1", nil); err != nil {

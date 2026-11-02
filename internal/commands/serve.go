@@ -59,6 +59,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 	srv := &http.Server{Addr: addr, Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go s.Watch(ctx, serve.WatchEvery) // a session whose Claude exits becomes done
 	go func() {
 		<-ctx.Done()
 		log("bx serve: shutting down (Claude sessions keep running in tmux)")

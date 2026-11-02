@@ -15,7 +15,8 @@ type Snapshot struct {
 }
 
 // SessionState is the derived state of one session, keyed by session number in Snapshot.
-// State is "running", "waiting", "idle", "done" or "gone"; Text is the TUI's row label.
+// State is "starting", "running", "waiting", "idle", "done" or "gone"; Text is the TUI's row
+// label.
 type SessionState struct {
 	State string `json:"state"`
 	Text  string `json:"text"`
@@ -31,11 +32,11 @@ type ProjectSummary struct {
 
 // Action is the body of every POST /api/projects/{name}/<action>.
 type Action struct {
-	Num   int      `json:"num,omitempty"`   // yes, resume, rename
+	Num   int      `json:"num,omitempty"`   // yes, resume, rename, stop, delete
 	Story string   `json:"story,omitempty"` // sessions ("" = chat)
 	Title string   `json:"title,omitempty"` // sessions, rename
 	Name  string   `json:"name,omitempty"`  // stories, stories/close, stories/repos
-	Force bool     `json:"force,omitempty"` // stories/close: discard uncommitted files; stories/repos: add dirty originals
+	Force bool     `json:"force,omitempty"` // stories/close: discard uncommitted files; stories/repos: add dirty originals; delete: kill a live session first
 	Repos []string `json:"repos,omitempty"` // stories, stories/repos in a workspace: repositories, relative to it
 }
 
@@ -55,6 +56,9 @@ type Result struct {
 	Error  string `json:"error,omitempty"`
 	Dirty  int    `json:"dirty,omitempty"`
 	Detail string `json:"detail,omitempty"` // the dirty files by repository, "api: 3, web: 1"
+	// Running is set when a delete is refused (409) because the session's tmux session is
+	// alive; resend with force to kill it.
+	Running bool `json:"running,omitempty"`
 }
 
 // Settings is GET /api/settings and the reply of PUT: every section and field the server offers,

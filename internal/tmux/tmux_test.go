@@ -51,6 +51,29 @@ func TestNewSessionAndSessions(t *testing.T) {
 	}
 }
 
+type failExec struct{ err error }
+
+func (x failExec) Run(...string) ([]byte, error) { return nil, x.err }
+
+func TestListSaysWhetherTheServerAnswered(t *testing.T) {
+	f := &Fake{Replies: map[string]string{"list-sessions -F #{session_id}\t#{session_name}": "$4\tbx-p-1\n"}}
+	ss, up, err := New(f).List()
+	if err != nil || !up || len(ss) != 1 || ss[0] != (Session{ID: "$4", Name: "bx-p-1"}) {
+		t.Fatalf("%+v %v %v", ss, up, err)
+	}
+	tm := New(failExec{errors.New("tmux list-sessions: no server running on /tmp/x")})
+	ss, up, err = tm.List()
+	if err != nil || up || ss != nil {
+		t.Fatalf("no server: %+v %v %v", ss, up, err)
+	}
+	if ss, err := tm.Sessions(); err != nil || ss != nil {
+		t.Fatalf("Sessions with no server: %+v %v", ss, err)
+	}
+	if _, up, err := New(failExec{errors.New("boom")}).List(); err == nil || up {
+		t.Fatalf("other errors are errors: %v %v", up, err)
+	}
+}
+
 func TestScroll(t *testing.T) {
 	f := &Fake{}
 	tm := New(f)

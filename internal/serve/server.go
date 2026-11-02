@@ -38,7 +38,11 @@ type Server struct {
 	diffs    map[string]diffCache // by project, refreshed every 10 s
 	streams  map[*stream]bool     // see stream.go
 	closing  bool
+	seen     map[string]map[int]bool // by project, the sessions in tmux at the last watch
 }
+
+// WatchEvery is how often Watch looks at tmux.
+const WatchEvery = 2 * time.Second
 
 type diffCache struct {
 	at   time.Time
@@ -47,7 +51,7 @@ type diffCache struct {
 
 // New builds a Server.
 func New(a *app.App, cfg *config.Config, l claude.Lister, log func(string, ...any)) *Server {
-	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{}}
+	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{}, seen: map[string]map[int]bool{}}
 }
 
 // Handler routes the API.
@@ -86,6 +90,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/rename", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.Rename(p, r.Num, r.Title)
 	}))
+	mux.HandleFunc("POST /api/projects/{name}/stop", s.action(func(p *state.Project, r api.Action) (int, error) {
+		return 0, s.App.Stop(p, r.Num)
+	}))
+	mux.HandleFunc("POST /api/projects/{name}/delete", s.action(func(p *state.Project, r api.Action) (int, error) {
+		return 0, s.App.DeleteSession(p, r.Num, r.Force)
+	}))
 	mux.HandleFunc("POST /api/claude/sync/plan", s.claudeSyncPlan)
 	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
@@ -119,6 +129,109 @@ func (s *Server) ResumeAll(ctx context.Context) {
 		if n > 0 {
 			s.Log("resume: %s: %d sessions", name, n)
 		}
+	}
+}
+
+// Watch calls watchOnce every interval until ctx is done. A session whose tmux session ends
+// while bx serve watches (Claude exited: /exit, Ctrl-D, a crash) becomes done, so ResumeAll
+// leaves it alone. One lost with the tmux server (a reboot) or while bx serve was down stays
+// gone, and ResumeAll restarts it.
+func (s *Server) Watch(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.watchOnce()
+		}
+	}
+}
+
+// watchOnce marks done the sessions that were in tmux at the last call and no longer are,
+// while the tmux server still answers. With no tmux server it forgets what it saw, so sessions
+// lost with the server are never marked done once a new one starts. It re-checks under the
+// write lock: a session resumed since the list stays as it is.
+func (s *Server) watchOnce() {
+	ss, up, err := s.App.Tmux.List()
+	if err != nil {
+		s.Log("watch: tmux: %v", err)
+		return
+	}
+	if !up {
+		s.mu.Lock()
+		s.seen = map[string]map[int]bool{}
+		s.mu.Unlock()
+		return
+	}
+	listed := make(map[string]bool, len(ss))
+	for _, se := range ss {
+		listed[se.Name] = true
+	}
+	names, err := state.ListProjects(s.stateDir())
+	if err != nil {
+		s.Log("watch: %v", err)
+		return
+	}
+	for _, name := range names {
+		p, err := s.App.LoadProject(name)
+		if err != nil {
+			s.Log("watch: %s: %v", name, err)
+			continue
+		}
+		now := map[int]bool{}
+		for n := range p.Sessions {
+			if listed[app.TmuxName(p.Name, n)] {
+				now[n] = true
+			}
+		}
+		s.mu.Lock()
+		before := s.seen[name]
+		s.mu.Unlock()
+		var exited []int
+		for n := range before {
+			if se := p.Sessions[n]; !now[n] && se != nil && !se.Done {
+				exited = append(exited, n)
+			}
+		}
+		if len(exited) > 0 {
+			sort.Ints(exited)
+			s.markExited(name, exited)
+		}
+		s.mu.Lock()
+		s.seen[name] = now
+		s.mu.Unlock()
+	}
+}
+
+// markExited marks done the exited sessions that are still not in tmux, under the write lock.
+func (s *Server) markExited(name string, exited []int) {
+	s.write.Lock()
+	defer s.write.Unlock()
+	fresh, err := s.load(name)
+	if err != nil {
+		s.Log("watch: %s: %v", name, err)
+		return
+	}
+	live, err := s.App.Live(fresh)
+	if err != nil {
+		s.Log("watch: %s: %v", name, err)
+		return
+	}
+	var rest []int
+	for _, n := range exited {
+		if _, again := live[n]; !again {
+			rest = append(rest, n)
+		}
+	}
+	changed, err := s.App.MarkDone(fresh, rest)
+	if err != nil {
+		s.Log("watch: %s: %v", name, err)
+		return
+	}
+	if changed {
+		s.Log("watch: %s: %v exited · done", name, rest)
 	}
 }
 
@@ -422,7 +535,8 @@ func statusOf(err error) int {
 }
 
 // action wraps a mutation: decode the body, load the project, run, reply. A refused close of
-// a dirty story is a 409 carrying the number of uncommitted files.
+// a dirty story is a 409 carrying the number of uncommitted files; a refused delete of a
+// session that is still running is a 409 with Running set.
 func (s *Server) action(fn func(p *state.Project, r api.Action) (int, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req api.Action
@@ -440,11 +554,17 @@ func (s *Server) action(fn func(p *state.Project, r api.Action) (int, error)) ht
 		}
 		num, err := fn(p, req)
 		var dirty *app.DirtyError
+		var running *app.RunningError
 		switch {
 		case errors.As(err, &dirty):
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error(), Dirty: dirty.Files, Detail: dirty.Detail})
+			return
+		case errors.As(err, &running):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error(), Running: true})
 			return
 		case err != nil:
 			httpError(w, statusOf(err), err)

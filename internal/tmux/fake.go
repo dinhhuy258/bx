@@ -2,16 +2,21 @@ package tmux
 
 import "strings"
 
-// Fake records calls and answers from Replies (key = args joined by one space).
+// Fake records calls and answers from Replies (key = args joined by one space). Errs, with
+// the same keys, makes a command fail; it is checked first and the call is not recorded.
 type Fake struct {
 	Calls   [][]string
 	Replies map[string]string
+	Errs    map[string]error
 	Err     error
 }
 
 // Run implements Exec.
 func (f *Fake) Run(args ...string) ([]byte, error) {
 	key := strings.Join(args, " ")
+	if err, ok := f.Errs[key]; ok {
+		return nil, err
+	}
 	if r, ok := f.Replies[key]; ok {
 		f.Calls = append(f.Calls, args)
 		return []byte(r), nil

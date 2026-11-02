@@ -79,12 +79,19 @@ func (t *Tmux) NewSession(name, dir, cmd string) (string, error) {
 
 // Sessions lists every session with its id and name. No server running means no sessions.
 func (t *Tmux) Sessions() ([]Session, error) {
+	ss, _, err := t.List()
+	return ss, err
+}
+
+// List is Sessions that also says whether the tmux server answered: up is false, with no
+// error, when no server is running. An empty list from a running server is up.
+func (t *Tmux) List() ([]Session, bool, error) {
 	out, err := t.run("list-sessions", "-F", "#{session_id}\t#{session_name}")
 	if err != nil {
 		if s := err.Error(); strings.Contains(s, "no server running") || strings.Contains(s, "error connecting") {
-			return nil, nil
+			return nil, false, nil
 		}
-		return nil, err
+		return nil, false, err
 	}
 	var ss []Session
 	for _, line := range strings.Split(out, "\n") {
@@ -92,7 +99,7 @@ func (t *Tmux) Sessions() ([]Session, error) {
 			ss = append(ss, Session{ID: f[0], Name: f[1]})
 		}
 	}
-	return ss, nil
+	return ss, true, nil
 }
 
 // KillSession kills a session by id.

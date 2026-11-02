@@ -157,6 +157,78 @@ func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) (int, 
 	return resumed, nil
 }
 
+// RunningError refuses to delete a session whose tmux session is alive; force kills it first.
+type RunningError struct{ Num int }
+
+func (e *RunningError) Error() string { return fmt.Sprintf("session [%d] is still running", e.Num) }
+
+// Stop kills the session's tmux session and marks it done, so ResumeAll leaves it alone; `r`
+// resumes it. Done is saved before the kill: a killed session must never be left with
+// Done=false, or ResumeAll would bring it back. A failed kill puts Done back. Stopping a
+// session that is gone or done only marks it done.
+func (a *App) Stop(p *state.Project, num int) error {
+	s := p.Sessions[num]
+	if s == nil {
+		return fmt.Errorf("no session [%d]", num)
+	}
+	live, err := a.Live(p)
+	if err != nil {
+		return err
+	}
+	s.Done = true
+	if err := a.SaveProject(p); err != nil {
+		return err
+	}
+	id, ok := live[num]
+	if !ok {
+		return nil
+	}
+	if killErr := a.Tmux.KillSession(id); killErr != nil {
+		s.Done = false
+		return errors.Join(killErr, a.SaveProject(p))
+	}
+	return nil
+}
+
+// DeleteSession forgets a session and its uploads. Without force a session whose tmux session
+// is alive is refused with *RunningError; force kills it first. Claude's transcript in
+// ~/.claude stays, and the number is not reused.
+func (a *App) DeleteSession(p *state.Project, num int, force bool) error {
+	if p.Sessions[num] == nil {
+		return fmt.Errorf("no session [%d]", num)
+	}
+	live, err := a.Live(p)
+	if err != nil {
+		return err
+	}
+	if id, alive := live[num]; alive {
+		if !force {
+			return &RunningError{Num: num}
+		}
+		if err := a.Tmux.KillSession(id); err != nil {
+			return err
+		}
+	}
+	_ = uploads.Remove(a.Cfg.UploadsDir(), p.Name, num) // best effort: a leftover folder is harmless
+	delete(p.Sessions, num)
+	return a.SaveProject(p)
+}
+
+// MarkDone marks the sessions done, as when Claude exited. Numbers without a record are
+// skipped. It saves, and reports true, only when something changed.
+func (a *App) MarkDone(p *state.Project, nums []int) (bool, error) {
+	changed := false
+	for _, n := range nums {
+		if s := p.Sessions[n]; s != nil && !s.Done {
+			s.Done, changed = true, true
+		}
+	}
+	if !changed {
+		return false, nil
+	}
+	return true, a.SaveProject(p)
+}
+
 // AnswerYes presses Enter in the session. Claude's permission prompt highlights "Yes" by default.
 func (a *App) AnswerYes(p *state.Project, num int) error {
 	id, err := a.Target(p, num)
