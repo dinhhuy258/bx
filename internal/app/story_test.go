@@ -375,6 +375,76 @@ func TestStoryFromAPullRequest(t *testing.T) {
 	}
 }
 
+func TestForkPRNeverWritesAnUnrelatedBranch(t *testing.T) {
+	a, _, p := newApp(t)
+	u := withOrigin(t, p.Path)
+	// pr pushes a fork commit on top of from as refs/pull/<n>/head
+	pr := func(n int, from, file string) string {
+		gitIn(t, u.seed, "fetch", "-q", "origin")
+		gitIn(t, u.seed, "checkout", "-q", "--detach", from)
+		sha := commitFile(t, u.seed, file)
+		gitIn(t, u.seed, "push", "-q", "-f", "origin", fmt.Sprintf("HEAD:refs/pull/%d/head", n))
+		return sha
+	}
+	view := func(n int, head string) string {
+		return fmt.Sprintf(`{"number":%d,"title":"t","headRefName":%q,"isCrossRepository":true,"headRepositoryOwner":{"login":"bob"}}`, n, head)
+	}
+	a.GH = (&fakeGH{out: map[string]string{
+		"pr view 8 --json " + prFields:  view(8, "wip"),
+		"pr view 10 --json " + prFields: view(10, "topic"),
+		"pr view 11 --json " + prFields: view(11, "feature"),
+		"pr view 12 --json " + prFields: view(12, "wip"),
+	}}).run
+
+	// a local-only wip with an unpushed commit: the fork's wip goes to bob/wip
+	gitIn(t, p.Path, "checkout", "-q", "-b", "wip")
+	commitFile(t, p.Path, "mine.txt")
+	gitIn(t, p.Path, "checkout", "-q", "main")
+	wip := gitIn(t, p.Path, "rev-parse", "wip")
+	fork8 := pr(8, "origin/main", "fork8.txt")
+	if res := newStory(t, a, p, StoryOpts{Source: SourcePR, PR: 8}); res.Branch != "bob/wip" || gitIn(t, a.Dir(p, "wip"), "rev-parse", "HEAD") != fork8 {
+		t.Fatalf("local-only wip: %+v", res)
+	}
+	if gitIn(t, p.Path, "rev-parse", "wip") != wip {
+		t.Fatal("the fork PR moved the user's wip")
+	}
+
+	// a local topic at origin/develop, which the PR builds on: still not the PR, not moved
+	gitIn(t, p.Path, "branch", "topic", "origin/develop")
+	topic := gitIn(t, p.Path, "rev-parse", "topic")
+	fork10 := pr(10, "origin/develop", "fork10.txt")
+	if res := newStory(t, a, p, StoryOpts{Source: SourcePR, PR: 10}); res.Branch != "bob/topic" || gitIn(t, a.Dir(p, "topic"), "rev-parse", "HEAD") != fork10 {
+		t.Fatalf("topic on origin: %+v", res)
+	}
+	if gitIn(t, p.Path, "rev-parse", "topic") != topic {
+		t.Fatal("the fork PR fast-forwarded the user's topic")
+	}
+
+	// feature made for this PR earlier, which has moved on since: reused and fast-forwarded
+	old := pr(11, "origin/main", "feature1.txt")
+	gitIn(t, p.Path, "fetch", "-q", "origin", "refs/pull/11/head:refs/heads/feature")
+	gitIn(t, u.seed, "checkout", "-q", "--detach", old)
+	newer := commitFile(t, u.seed, "feature2.txt")
+	gitIn(t, u.seed, "push", "-q", "-f", "origin", "HEAD:refs/pull/11/head")
+	if res := newStory(t, a, p, StoryOpts{Source: SourcePR, PR: 11}); res.Branch != "feature" || gitIn(t, a.Dir(p, "feature"), "rev-parse", "HEAD") != newer {
+		t.Fatalf("earlier fork branch: %+v", res)
+	}
+
+	// wip is the user's and bob/wip is PR 8's: PR 12 refuses rather than touch either
+	pr(12, "origin/main", "fork12.txt")
+	bobWip := gitIn(t, p.Path, "rev-parse", "bob/wip")
+	_, err := a.NewStory(context.Background(), p, StoryOpts{Source: SourcePR, PR: 12})
+	if err == nil || err.Error() != "PR #12: branches wip and bob/wip exist and are not this pull request" {
+		t.Fatalf("both taken: %v", err)
+	}
+	if gitIn(t, p.Path, "rev-parse", "wip") != wip || gitIn(t, p.Path, "rev-parse", "bob/wip") != bobWip {
+		t.Fatal("a refused fork PR moved a branch")
+	}
+	if refs := gitIn(t, p.Path, "for-each-ref", "refs/bx"); refs != "" {
+		t.Fatalf("left behind %q", refs)
+	}
+}
+
 func TestStoryFromAPullRequestInAWorkspace(t *testing.T) {
 	a, p := newWorkspace(t)
 	api := filepath.Join(p.Path, "api")

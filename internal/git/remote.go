@@ -135,6 +135,18 @@ func (g *Git) AheadBehind(repo, a, b string) (ahead, behind int, err error) {
 	return ahead, behind, nil
 }
 
+// OnOrigin reports whether the commit ref points at is on a branch of origin (as last fetched).
+func (g *Git) OnOrigin(repo, ref string) bool {
+	out, err := g.run(repo, "for-each-ref", "--count=1", "--contains", ref, "--format=%(refname)", "refs/remotes/origin")
+	return err == nil && out != ""
+}
+
+// DeleteRef deletes ref (a full name).
+func (g *Git) DeleteRef(repo, ref string) error {
+	_, err := g.run(repo, "update-ref", "-d", ref)
+	return err
+}
+
 // IsAncestor reports whether commit a is an ancestor of b (or b itself).
 func (g *Git) IsAncestor(repo, a, b string) bool {
 	_, err := g.run(repo, "merge-base", "--is-ancestor", a, b)

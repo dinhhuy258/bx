@@ -370,8 +370,9 @@ type ghPR struct {
 const prFields = "number,title,author,headRefName,isCrossRepository,headRepositoryOwner,state"
 
 // preparePR plans a story on a pull request's branch. A same-repo PR uses or tracks origin's
-// branch. A fork PR is fetched from refs/pull/<n>/head into a local branch named after its head
-// (owner/head when the head is a branch of origin too, like a fork's main); it is never pushed.
+// branch. A fork PR is fetched from refs/pull/<n>/head into a local branch named after its head,
+// or owner/head when a local branch has that name and was not made for this PR (like the user's
+// main for a fork's main): fork commits never go into an unrelated branch. It is never pushed.
 // The other workspace repositories use the branch if they have it, else make it from their base.
 func (a *App) preparePR(ctx context.Context, p *state.Project, o StoryOpts, plan *StoryPlan, targets []*target) error {
 	idx := 0
@@ -409,8 +410,17 @@ func (a *App) preparePR(ctx context.Context, p *state.Project, o StoryOpts, plan
 	if owner == "" {
 		owner = fmt.Sprintf("pr-%d", o.PR)
 	}
-	if a.Git.RefExists(t.repo, "refs/heads/"+head) && a.Git.RefExists(t.repo, "refs/remotes/origin/"+head) {
-		plan.Branch = owner + "/" + head // not this PR: a branch of origin with the same name
+	// the PR's head, fetched aside first to tell whether a local branch of that name is this PR
+	pull := fmt.Sprintf("refs/bx/pull/%d", o.PR)
+	if err := a.fetch(ctx, t.repo, fmt.Sprintf("+refs/pull/%d/head:%s", o.PR, pull)); err != nil {
+		return err
+	}
+	defer func() { _ = a.Git.DeleteRef(t.repo, pull) }()
+	if a.Git.RefExists(t.repo, "refs/heads/"+head) && !a.isPRBranch(t.repo, head, pull) {
+		plan.Branch = owner + "/" + head // not this PR: the user's own branch of that name
+		if a.Git.RefExists(t.repo, "refs/heads/"+plan.Branch) && !a.isPRBranch(t.repo, plan.Branch, pull) {
+			return fmt.Errorf("PR #%d: branches %s and %s exist and are not this pull request", o.PR, head, plan.Branch)
+		}
 	}
 	if err := a.checkStory(p, plan, head); err != nil {
 		return err
@@ -433,6 +443,12 @@ func (a *App) preparePR(ctx context.Context, p *state.Project, o StoryOpts, plan
 	plan.repos[idx] = rp
 	plan.notes = append(plan.notes, fmt.Sprintf("PR #%d is from a fork · changes won't be pushed to it", o.PR))
 	return nil
+}
+
+// isPRBranch reports whether local branch b was made for the fork PR whose head is at pull:
+// the PR's head contains it and no branch of origin does (the user's main, say, is on origin).
+func (a *App) isPRBranch(repo, b, pull string) bool {
+	return a.Git.IsAncestor(repo, "refs/heads/"+b, pull) && !a.Git.OnOrigin(repo, "refs/heads/"+b)
 }
 
 // branchExists says whether branch b is in repo and on origin (asked with ls-remote; when that
