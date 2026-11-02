@@ -14,10 +14,12 @@ const (
 	PromptAddFolder  // an absolute folder path on the server
 	PromptNewProject // a project name
 	PromptDiscardSettings
-	PromptAddRepoForce // y/n: add repositories whose originals have uncommitted files
-	PromptStop         // y/n: stop a live session (Target is its number)
-	PromptDelete       // y/n: delete a session's record (Target is its number)
-	PromptDeleteForce  // y/n: the session is still open; kill it and delete
+	PromptAddRepoForce   // y/n: add repositories whose originals have uncommitted files
+	PromptStop           // y/n: stop a live session (Target is its number)
+	PromptDelete         // y/n: delete a session's record (Target is its number)
+	PromptDeleteForce    // y/n: the session is still open; kill it and delete
+	PromptUseBranch      // y/n: the branch of a new story exists; use it
+	PromptRemoveOverride // y/n: remove a project's base override (Target is the project)
 )
 
 // PromptResult is what a key did to the prompt.
@@ -50,7 +52,7 @@ func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 func (p *Prompt) YesNo() bool {
 	switch p.Kind {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
-		PromptStop, PromptDelete, PromptDeleteForce:
+		PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride:
 		return true
 	}
 	return false
@@ -112,6 +114,10 @@ func (p *Prompt) verb() string {
 		return "stop"
 	case PromptDelete, PromptDeleteForce:
 		return "delete"
+	case PromptUseBranch:
+		return "use"
+	case PromptRemoveOverride:
+		return "remove"
 	}
 	return "yes"
 }

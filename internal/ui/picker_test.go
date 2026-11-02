@@ -33,8 +33,33 @@ func TestPickerFiltersMovesAndChooses(t *testing.T) {
 		t.Fatal(out)
 	}
 	empty := NewPicker("x", nil)
-	if empty.Key("Enter", "") != PickKeep || empty.Choice() != "" {
-		t.Fatal("Enter on an empty list must do nothing")
+	if empty.Key("Enter", "") != PickNoMatch || empty.Choice() != "" {
+		t.Fatal("Enter on an empty list must say nothing matched")
+	}
+}
+
+func TestPickerSelectFilterAndSetItems(t *testing.T) {
+	p := NewPicker("branch type", []string{"feat", "fix", "chore"})
+	p.Select("chore")
+	if p.Choice() != "chore" {
+		t.Fatal(p.Choice())
+	}
+	p.Select("nope") // not an item: the cursor stays
+	if p.Choice() != "chore" {
+		t.Fatal(p.Choice())
+	}
+	for _, r := range "login" {
+		p.Key(string(r), string(r))
+	}
+	if p.Filter() != "login" || p.Choice() != "" {
+		t.Fatalf("filter=%q choice=%q", p.Filter(), p.Choice())
+	}
+	if p.Key("Enter", "") != PickNoMatch {
+		t.Fatal("Enter with nothing visible must be PickNoMatch")
+	}
+	p.SetItems([]string{"#1 Fix login", "#2 Login form"})
+	if p.Filter() != "" || p.Choice() != "#1 Fix login" || p.Key("Enter", "") != PickChoose {
+		t.Fatalf("filter=%q choice=%q", p.Filter(), p.Choice())
 	}
 }
 

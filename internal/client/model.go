@@ -30,6 +30,10 @@ type Backend interface {
 	Projects(ctx context.Context) ([]api.ProjectSummary, error)
 	Snapshot(ctx context.Context, project string) (api.Snapshot, error)
 	Do(ctx context.Context, project, action string, a api.Action) (api.Result, error)
+	NewStory(ctx context.Context, project string, a api.Action) (api.Result, error)
+	StoryInfo(ctx context.Context, project string) (api.StoryInfo, error)
+	Branches(ctx context.Context, project string, fetch bool) (api.BranchList, error)
+	PullRequests(ctx context.Context, project, q string) (api.PRList, error)
 	CreateProject(ctx context.Context, p api.NewProject) (api.Result, error)
 	Repos(ctx context.Context) ([]string, error)
 	ProjectRepos(ctx context.Context, project string) ([]string, error)
@@ -111,9 +115,13 @@ type pickKind int
 const (
 	pickProjects pickKind = iota
 	pickRepos
-	pickStoryRepos // the repositories of a new workspace story
-	pickAddRepos   // repositories to add to a workspace story
-	pickCleanup    // what cleanup removes
+	pickStoryRepos  // the repositories of a new workspace story
+	pickAddRepos    // repositories to add to a workspace story
+	pickCleanup     // what cleanup removes
+	pickStorySource // new story from: new branch, existing branch or pull request
+	pickStoryType   // the branch type of a new branch
+	pickStoryBranch // the existing branch of a new story
+	pickStoryPR     // the pull request of a new story
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -140,11 +148,18 @@ type Model struct {
 	gen        int // bumped on every stream switch; older connects are dropped
 	connecting bool
 	pendingSel int // select this session when the project's first snapshot arrives
+	// pendingStory is the story row to select on the next snapshot (a new story whose session
+	// did not start)
+	pendingStory string
 
 	picker    *ui.Picker
 	pickKind  pickKind
 	pickStory string   // the story of a repository checklist
 	addRepos  []string // the repositories of an add waiting for its y/n
+
+	draft      *storyDraft        // the new story being picked; see story.go
+	busy       string             // the key bar while a story is fetched or created
+	busyCancel context.CancelFunc // Esc: cancels that request
 
 	cleanItems  []api.CleanupItem // the scan behind the cleanup checklist
 	cleanIDs    []string          // the ticked ids; non-nil while the confirm box is open
@@ -334,6 +349,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case storyReposMsg:
 		m.gotStoryRepos(msg)
 		return m, nil
+	case storyInfoMsg:
+		m.gotStoryInfo(msg)
+		return m, nil
+	case branchesMsg:
+		m.gotBranches(msg)
+		return m, nil
+	case prsMsg:
+		return m, m.gotPRs(msg)
+	case storyMsg:
+		return m, m.gotStory(msg)
 	case createdMsg:
 		if msg.err != nil {
 			m.setFlash("error: " + msg.err.Error())
@@ -471,6 +496,10 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 			um.SelectSession(m.pendingSel)
 			m.pendingSel = 0
 		}
+		if m.pendingStory != "" {
+			um.SelectStory(m.pendingStory)
+			m.pendingStory = ""
+		}
 	}
 }
 
@@ -587,6 +616,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.busy != "" && key == "Esc" {
+		m.busyCancel() // its reply flashes "cancelled"
+		return m, nil
+	}
 	if m.showKeys {
 		m.showKeys = false
 		return m, nil
@@ -654,7 +687,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "new_session":
 		return m, m.newSession(row.Story)
 	case "new_story":
-		m.openPrompt(ui.PromptNewStory, "", "story name (branch feat/<name>)", "")
+		if m.busy == "" { // one story at a time: Esc cancels the one in progress
+			m.openStorySource()
+		}
 	case "rename":
 		if sess != nil {
 			m.openPrompt(ui.PromptRename, "", "new title", sess.Title)
@@ -900,6 +935,10 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 	switch m.picker.Key(key, text) {
 	case ui.PickCancel:
 		m.picker = nil
+	case ui.PickNoMatch:
+		if m.pickKind == pickStoryPR {
+			return m.searchPRs(m.picker.Filter())
+		}
 	case ui.PickChoose:
 		choice, checked, kind := m.picker.Choice(), m.picker.Checked(), m.pickKind
 		m.picker = nil
@@ -907,8 +946,23 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 		case pickRepos:
 			m.setFlash("cloning " + choice + "…")
 			return m.create(api.NewProject{Kind: "clone", Repo: choice})
+		case pickStorySource:
+			return m.pickStorySource(choice)
+		case pickStoryType:
+			return m.pickStoryType(choice)
+		case pickStoryBranch:
+			return m.pickStoryBranch(choice)
+		case pickStoryPR:
+			if m.draft == nil {
+				return nil
+			}
+			return m.pickPR(m.draft.prs[choice])
 		case pickStoryRepos:
-			return m.newStory(m.pickStory, checked)
+			if m.draft == nil {
+				return nil
+			}
+			m.draft.act.Repos = checked
+			return m.createStory()
 		case pickAddRepos:
 			return m.addStoryRepos(m.pickStory, checked, false)
 		case pickCleanup:
@@ -1045,13 +1099,9 @@ func (m *Model) newSession(story string) tea.Cmd {
 func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	switch kind {
 	case ui.PromptNewStory:
-		switch {
-		case text == "":
-		case m.m != nil && m.m.P.IsWorkspace():
-			return m.loadStoryRepos(text, false) // then the checklist of its repositories
-		default:
-			return m.newStory(text, nil)
-		}
+		return m.storyName(text)
+	case ui.PromptUseBranch:
+		return m.useBranch()
 	case ui.PromptAddRepoForce:
 		return m.addStoryRepos(target, m.addRepos, true)
 	case ui.PromptRename:
@@ -1129,19 +1179,6 @@ func (m *Model) leaveSession(num int) {
 	m.resizeTerm()
 }
 
-// newStory creates a story; repos are its repositories in a workspace.
-func (m *Model) newStory(name string, repos []string) tea.Cmd {
-	if m.do("stories", api.Action{Name: name, Repos: repos}) != nil {
-		return nil
-	}
-	msg := "Created story " + name + " on branch feat/" + name
-	if len(repos) > 0 {
-		msg += " in " + strings.Join(repos, ", ")
-	}
-	m.setFlash(msg)
-	return m.poll()
-}
-
 // loadStoryRepos asks for the repositories of the open workspace, for the checklist of a new
 // story or, with add, of the repositories to add to story.
 func (m *Model) loadStoryRepos(story string, add bool) tea.Cmd {
@@ -1160,14 +1197,19 @@ func (m *Model) gotStoryRepos(msg storyReposMsg) {
 		m.setFlash("error: " + msg.err.Error())
 		return
 	}
-	repos, title := msg.repos, fmt.Sprintf("repositories of story %s (branch feat/%s)", msg.story, msg.story)
-	if msg.add {
+	repos, title, tick := msg.repos, "", ""
+	switch {
+	case msg.add:
 		var in []string
 		if st := m.m.P.Stories[msg.story]; st != nil {
 			in = st.RepoNames()
 		}
 		repos = slices.DeleteFunc(slices.Clone(repos), func(r string) bool { return slices.Contains(in, r) })
 		title = "add repositories to story " + msg.story
+	case m.draft == nil:
+		return
+	default: // a new story: its real branch, and a pull request's repository ticked
+		title, tick = fmt.Sprintf("repositories of story %s (branch %s)", m.draft.story, m.draft.branch), m.draft.tick
 	}
 	if len(repos) == 0 {
 		if msg.add {
@@ -1182,6 +1224,9 @@ func (m *Model) gotStoryRepos(msg storyReposMsg) {
 		kind = pickAddRepos
 	}
 	m.picker, m.pickKind, m.pickStory = ui.NewChecklist(title, repos), kind, msg.story
+	if tick != "" {
+		m.picker.Tick(tick)
+	}
 }
 
 // loadCleanup asks the server what cleanup can remove.
@@ -1473,6 +1518,8 @@ func (m *Model) bar() string {
 		text = m.flash
 	case m.settings != nil:
 		text = ui.SettingsBar(len(m.settings.Changes()), m.settings.SyncChanges(), m.narrow)
+	case m.busy != "" && !m.claudeFocused: // Esc on the list cancels it
+		text = m.busy
 	case m.focusMode:
 		run, waiting := 0, []ui.WaitingElsewhere(nil)
 		for _, p := range m.projects {

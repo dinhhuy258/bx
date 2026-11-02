@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 	var p Prompt
@@ -44,7 +47,7 @@ func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 }
 
 func TestLifecyclePromptsAreYesNo(t *testing.T) {
-	for _, k := range []PromptKind{PromptStop, PromptDelete, PromptDeleteForce} {
+	for _, k := range []PromptKind{PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride} {
 		var p Prompt
 		p.Open(k, "1", "sure? y/n", "")
 		if !p.YesNo() {
@@ -57,5 +60,14 @@ func TestLifecyclePromptsAreYesNo(t *testing.T) {
 		if r := p.Key("y", "y"); r != PromptSubmit || p.Target != "1" {
 			t.Fatalf("kind %d: y gave %v", k, r)
 		}
+	}
+	var p Prompt
+	p.Open(PromptUseBranch, "", "branch fix/x exists on origin · use it? y/n", "")
+	if p.Line() != "branch fix/x exists on origin · use it? y/n: ▏  y use · any key cancels" {
+		t.Fatal(p.Line())
+	}
+	p.Open(PromptRemoveOverride, "lab", "remove base override of lab (develop)? y/n", "")
+	if !strings.HasSuffix(p.Line(), "y remove · any key cancels") {
+		t.Fatal(p.Line())
 	}
 }

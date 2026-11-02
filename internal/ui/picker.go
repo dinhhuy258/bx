@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -12,9 +13,10 @@ import (
 type PickResult int
 
 const (
-	PickKeep   PickResult = iota // still choosing
-	PickChoose                   // Enter: read Choice
-	PickCancel                   // Esc or C-c
+	PickKeep    PickResult = iota // still choosing
+	PickChoose                    // Enter: read Choice
+	PickCancel                    // Esc or C-c
+	PickNoMatch                   // Enter with nothing visible: read Filter (the pull request search)
 )
 
 // Picker is a filterable single-choice list (projects, GitHub repositories). Typed text
@@ -80,6 +82,7 @@ func (p *Picker) Key(key, text string) PickResult {
 		if len(p.visible()) > 0 {
 			return PickChoose
 		}
+		return PickNoMatch
 	case "Up", "C-k":
 		p.cursor--
 	case "Down", "C-j":
@@ -103,6 +106,22 @@ func (p *Picker) Key(key, text string) PickResult {
 	}
 	p.cursor = max(0, min(p.cursor, len(p.visible())-1))
 	return PickKeep
+}
+
+// Select highlights item (the last used branch type) when it is visible.
+func (p *Picker) Select(item string) {
+	if i := slices.Index(p.visible(), item); i >= 0 {
+		p.cursor = i
+	}
+}
+
+// Filter is the typed text.
+func (p *Picker) Filter() string { return p.filter }
+
+// SetItems replaces the items (the results of a search), clears the filter and highlights the
+// first one.
+func (p *Picker) SetItems(items []string) {
+	p.items, p.filter, p.cursor = items, "", 0
 }
 
 // Paste adds pasted text to the filter.

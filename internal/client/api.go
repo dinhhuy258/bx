@@ -59,6 +59,43 @@ func (c *API) Do(ctx context.Context, project, action string, a api.Action) (api
 	return res, err
 }
 
+// NewStory is POST /api/projects/{name}/stories. The server fetches the base and starts the
+// story's first session, so it has the long timeout. The Result is filled in on a refusal too:
+// a branch that exists returns an error and Result.Exists.
+func (c *API) NewStory(ctx context.Context, project string, a api.Action) (api.Result, error) {
+	var res api.Result
+	err := c.call(ctx, createTimeout, http.MethodPost, "/api/projects/"+url.PathEscape(project)+"/stories", a, &res)
+	return res, err
+}
+
+// StoryInfo is GET /api/projects/{name}/storyinfo: the base and last type of a new story.
+func (c *API) StoryInfo(ctx context.Context, project string) (api.StoryInfo, error) {
+	var out api.StoryInfo
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/storyinfo", nil, &out)
+}
+
+// Branches is GET /api/projects/{name}/branches. With fetch the server fetches origin first,
+// which may take long.
+func (c *API) Branches(ctx context.Context, project string, fetch bool) (api.BranchList, error) {
+	var out api.BranchList
+	path, timeout := "/api/projects/"+url.PathEscape(project)+"/branches", pollTimeout
+	if fetch {
+		path, timeout = path+"?fetch=1", createTimeout
+	}
+	return out, c.call(ctx, timeout, http.MethodGet, path, nil, &out)
+}
+
+// PullRequests is GET /api/projects/{name}/prs: the open pull requests, or those matching q
+// (a search, #12 or a pull request URL).
+func (c *API) PullRequests(ctx context.Context, project, q string) (api.PRList, error) {
+	var out api.PRList
+	path := "/api/projects/" + url.PathEscape(project) + "/prs"
+	if q != "" {
+		path += "?q=" + url.QueryEscape(q)
+	}
+	return out, c.call(ctx, reposTimeout, http.MethodGet, path, nil, &out)
+}
+
 // CreateProject is POST /api/projects (add a folder, clone, or start an empty project).
 func (c *API) CreateProject(ctx context.Context, p api.NewProject) (api.Result, error) {
 	var res api.Result

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -87,6 +88,37 @@ func TestClaudeSyncAgainstServe(t *testing.T) {
 	var se *StatusError
 	if !errors.As(err, &se) || se.Code != 400 || !strings.Contains(err.Error(), "bad path") {
 		t.Fatalf("want the server's error text, got %v", err)
+	}
+}
+
+func TestNewStoryKeepsTheExistsRefusal(t *testing.T) {
+	var got []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Method+" "+r.URL.RequestURI())
+		switch r.URL.Path {
+		case "/api/projects/lab/stories":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(api.Result{Error: "branch fix/x exists on origin", Exists: "origin", Branch: "fix/x"})
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer ts.Close()
+	c, ctx := NewAPI(ts.URL), context.Background()
+	res, err := c.NewStory(ctx, "lab", api.Action{Name: "fix/x"})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != 409 || res.Exists != "origin" || res.Branch != "fix/x" || err.Error() != "branch fix/x exists on origin" {
+		t.Fatalf("%+v %v", res, err)
+	}
+	_, _ = c.StoryInfo(ctx, "lab")
+	_, _ = c.Branches(ctx, "lab", true)
+	_, _ = c.Branches(ctx, "lab", false)
+	_, _ = c.PullRequests(ctx, "lab", "")
+	_, _ = c.PullRequests(ctx, "lab", "#12 x&y")
+	want := "POST /api/projects/lab/stories|GET /api/projects/lab/storyinfo|GET /api/projects/lab/branches?fetch=1|GET /api/projects/lab/branches|GET /api/projects/lab/prs|GET /api/projects/lab/prs?q=%2312+x%26y"
+	if strings.Join(got, "|") != want {
+		t.Fatalf("requests\n%s\nwant\n%s", strings.Join(got, "|"), want)
 	}
 }
 

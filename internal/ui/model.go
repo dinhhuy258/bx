@@ -461,7 +461,11 @@ func (m *Model) Age(num int) string {
 	if s == nil || s.Created.IsZero() {
 		return ""
 	}
-	d := m.Live.Now.Sub(s.Created)
+	return Ago(m.Live.Now.Sub(s.Created))
+}
+
+// Ago renders a duration the same short way: now, 6m, 1h, 1d.
+func Ago(d time.Duration) string {
 	switch {
 	case d < time.Minute:
 		return "now"

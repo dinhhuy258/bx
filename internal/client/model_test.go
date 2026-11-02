@@ -15,6 +15,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/naming"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
@@ -41,6 +42,85 @@ type fakeBackend struct {
 	running   map[int]bool // delete without force on these sessions is refused as still running
 	cleanup   api.Cleanup  // the reply of every cleanup scan
 	cleaned   [][]string   // the ids of every cleanup apply
+	// new stories
+	reads       []string              // "storyinfo", "branches fetch", "prs <q>"
+	info        api.StoryInfo         // the reply of storyinfo
+	branchList  api.BranchList        // the reply of branches
+	prs         map[string]api.PRList // the reply of prs, by query
+	exists      string                // POST stories without use_existing is refused: local, origin or both
+	storyErr    error                 // POST stories fails
+	sessionErr  string                // the new story's session does not start
+	storyCtxErr error                 // ctx.Err() as POST stories saw it
+}
+
+func (f *fakeBackend) StoryInfo(context.Context, string) (api.StoryInfo, error) {
+	f.reads = append(f.reads, "storyinfo")
+	return f.info, nil
+}
+
+func (f *fakeBackend) Branches(_ context.Context, _ string, fetch bool) (api.BranchList, error) {
+	f.reads = append(f.reads, fmt.Sprintf("branches fetch=%v", fetch))
+	return f.branchList, nil
+}
+
+func (f *fakeBackend) PullRequests(_ context.Context, _, q string) (api.PRList, error) {
+	f.reads = append(f.reads, "prs "+q)
+	return f.prs[q], nil
+}
+
+// NewStory records "<project> stories <name> type=<t> source=<s> branch=<b> pr_repo=<r>
+// pr=<n> [repos] use" (the set parts) and adds the story and its session 9 to the snapshot.
+func (f *fakeBackend) NewStory(ctx context.Context, project string, a api.Action) (api.Result, error) {
+	if f.storyCtxErr = ctx.Err(); f.storyCtxErr != nil {
+		return api.Result{}, fmt.Errorf("bx serve unreachable: %w", f.storyCtxErr)
+	}
+	parts := []string{project, "stories"}
+	for _, kv := range [][2]string{{"", a.Name}, {"type=", a.Type}, {"source=", a.Source}, {"branch=", a.Branch}, {"pr_repo=", a.PRRepo}} {
+		if kv[1] != "" {
+			parts = append(parts, kv[0]+kv[1])
+		}
+	}
+	if a.PR != 0 {
+		parts = append(parts, fmt.Sprintf("pr=%d", a.PR))
+	}
+	if len(a.Repos) > 0 {
+		parts = append(parts, "["+strings.Join(a.Repos, ",")+"]")
+	}
+	if a.UseExisting {
+		parts = append(parts, "use")
+	}
+	f.actions = append(f.actions, strings.Join(parts, " "))
+	branch := a.Branch
+	switch a.Source {
+	case "pr":
+		branch = fmt.Sprintf("pr/%d", a.PR)
+	case "":
+		branch = naming.CleanBranch(a.Name)
+		if !strings.Contains(branch, "/") {
+			branch = naming.Branch(naming.DefaultType(a.Type), naming.Slug(a.Name))
+		}
+	}
+	switch {
+	case f.storyErr != nil:
+		return api.Result{Error: f.storyErr.Error()}, f.storyErr
+	case f.exists != "" && !a.UseExisting:
+		return api.Result{Error: "branch exists", Exists: f.exists, Branch: branch}, &StatusError{Code: 409, Text: "branch exists"}
+	}
+	story := naming.StoryName(branch)
+	snap, ok := f.snaps[project]
+	if ok {
+		snap.Project.Stories[story] = &state.Story{Branch: branch}
+	}
+	res := api.Result{Story: story, Message: "Created " + story + " on " + branch}
+	if f.sessionErr != "" {
+		res.SessionError = f.sessionErr
+		return res, nil
+	}
+	res.Num = 9
+	if ok {
+		snap.Project.Sessions[9] = &state.Session{Story: story, UUID: "u9", Created: time.Now()}
+	}
+	return res, nil
 }
 
 func (f *fakeBackend) Cleanup(context.Context) (api.Cleanup, error) { return f.cleanup, nil }
@@ -186,7 +266,7 @@ func start(t *testing.T, w, h int, statuses ...string) *harness {
 func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *harness {
 	t.Helper()
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir()) // the settings screen scans it; never the real one
-	be := &fakeBackend{snaps: map[string]api.Snapshot{}}
+	be := &fakeBackend{snaps: map[string]api.Snapshot{}, info: api.StoryInfo{Base: "origin/main", Detected: "origin/main", Types: naming.Types}}
 	names := []string{"home-network", "lab"}
 	for i, st := range statuses {
 		be.snaps[names[i]] = snapshot(names[i], st)
@@ -529,15 +609,316 @@ func TestPaneKeysPastTheEdgeGoToTmux(t *testing.T) {
 
 func TestPromptsCallTheBackend(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
-	h.press("w")
-	h.typeText("guest")
-	h.press("Enter", "c") // no title prompt: the chat opens and takes the focus
+	h.press("c") // no title prompt: the chat opens and takes the focus
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a new chat should open and focus: %q", h.opened)
 	}
-	h.press("C-h", "y") // back to the list; y answers the waiting session 1
-	if got := strings.Join(h.be.actions, "|"); got != "home-network stories guest|home-network sessions|home-network yes 1" {
+	h.press("C-h", "y")   // back to the list; y answers the waiting session 1
+	h.press("w", "Enter") // new branch
+	h.typeText("guest")
+	h.press("Enter", "Enter") // the name, then feat
+	if got := strings.Join(h.be.actions, "|"); got != "home-network sessions|home-network yes 1|home-network stories guest type=feat" {
 		t.Fatalf("actions = %q", got)
+	}
+}
+
+// newBranch opens the name prompt of a new branch story.
+func (h *harness) newBranch() {
+	h.press("w", "Enter")
+}
+
+func TestNewStorySourcePicker(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("w")
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.picker == nil || h.m.pickKind != pickStorySource || h.m.picker.Choice() != "new branch" {
+		t.Fatalf("picker:\n%s", v)
+	}
+	for _, want := range []string{"new story from:", "▸ new branch", "existing branch", "pull request"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("no %q in\n%s", want, v)
+		}
+	}
+	h.press("Esc")
+	if h.m.picker != nil || len(h.be.actions)+len(h.be.reads) != 0 {
+		t.Fatalf("Esc must do nothing: %q %q", h.be.actions, h.be.reads)
+	}
+}
+
+func TestNewBranchPreviewAndTypePicker(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.be.info = api.StoryInfo{Base: "origin/develop", LastType: "fix", Types: naming.Types}
+	h.newBranch()
+	if got := h.m.prompt.Label; got != "story name (fix/<name> ← origin/develop)" {
+		t.Fatalf("label = %q", got)
+	}
+	h.typeText("Login Timeout")
+	h.press("Enter")
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.pickKind != pickStoryType || h.m.picker.Choice() != "fix" || !strings.Contains(v, "branch type · login-timeout") || !strings.Contains(v, "(none)") {
+		t.Fatalf("type picker:\n%s", v)
+	}
+	h.press("Down", "Enter") // chore, after fix
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories Login Timeout type=chore" {
+		t.Fatalf("actions = %q", got)
+	}
+	if !strings.Contains(h.m.flash, "Created login-timeout on chore/login-timeout") {
+		t.Fatalf("flash = %q", h.m.flash)
+	}
+
+	h = start(t, 120, 30, "idle")
+	h.be.info = api.StoryInfo{Base: "main", LastType: "none", Types: naming.Types}
+	h.newBranch()
+	if got := h.m.prompt.Label; got != "story name (<name> ← main)" {
+		t.Fatalf("label = %q", got)
+	}
+	h.typeText("x")
+	h.press("Enter")
+	if h.m.picker.Choice() != "(none)" {
+		t.Fatalf("highlighted %q", h.m.picker.Choice())
+	}
+	h.press("Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories x type=none" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestNewBranchWithSlashSkipsTheTypePicker(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.newBranch()
+	h.typeText("fix/x")
+	h.press("Enter")
+	if h.m.picker != nil {
+		t.Fatalf("no type picker for a full branch:\n%s", h.m.View().Content)
+	}
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories fix/x" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestNewBranchExistsAsksToUseIt(t *testing.T) {
+	for _, tc := range []struct{ exists, where string }{{"origin", "on origin"}, {"local", "locally"}, {"both", "locally and on origin"}} {
+		h := start(t, 160, 30, "idle")
+		h.be.exists = tc.exists
+		h.newBranch()
+		h.typeText("fix/login-timeout")
+		h.press("Enter")
+		if want := "branch fix/login-timeout exists " + tc.where + " · use it? y/n"; h.m.prompt.Kind != ui.PromptUseBranch || h.m.prompt.Label != want {
+			t.Fatalf("prompt %q, want %q", h.m.prompt.Label, want)
+		}
+		h.press("y")
+		if got := strings.Join(h.be.actions, "|"); got != "home-network stories fix/login-timeout|home-network stories fix/login-timeout use" {
+			t.Fatalf("actions = %q", got)
+		}
+		if strings.Join(h.opened, "|") != "home-network 9" {
+			t.Fatalf("opened = %q", h.opened)
+		}
+	}
+	h := start(t, 160, 30, "idle")
+	h.be.exists = "origin"
+	h.newBranch()
+	h.typeText("fix/x")
+	h.press("Enter", "n")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories fix/x" || len(h.opened) != 0 {
+		t.Fatalf("n sends nothing more: actions=%q opened=%q", got, h.opened)
+	}
+}
+
+func TestNewStoryStreamsItsSessionAndFocusesClaude(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.newBranch()
+	h.typeText("login")
+	h.press("Enter", "Enter")
+	if !h.m.claudeFocused || h.m.streamNum != 9 || strings.Join(h.opened, "|") != "home-network 9" {
+		t.Fatalf("focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.streamNum, h.opened)
+	}
+	if h.m.flash != "Created login on feat/login" || h.m.busy != "" {
+		t.Fatalf("flash=%q busy=%q", h.m.flash, h.m.busy)
+	}
+	if n, _ := h.m.m.SelectedSession(); n != 9 {
+		t.Fatalf("selected %d, want the new session 9", n)
+	}
+}
+
+func TestNewStorySessionErrorKeepsTheStory(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.be.sessionErr = "tmux: boom"
+	h.newBranch()
+	h.typeText("login")
+	h.press("Enter", "Enter")
+	if h.m.flash != "Created login on feat/login · session: tmux: boom" || h.m.claudeFocused || len(h.opened) != 0 {
+		t.Fatalf("flash=%q focused=%v opened=%q", h.m.flash, h.m.claudeFocused, h.opened)
+	}
+	if r := h.m.m.Selected(); r.Kind != ui.RowStory || r.Story != "login" {
+		t.Fatalf("selected %+v, want the story row", r)
+	}
+}
+
+func TestNewStoryErrorFlashes(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.be.storyErr = errors.New(`story "login" already exists (branch fix/login)`)
+	h.newBranch()
+	h.typeText("fix/login")
+	h.press("Enter")
+	if h.m.flash != `error: story "login" already exists (branch fix/login)` || h.m.busy != "" {
+		t.Fatalf("flash=%q busy=%q", h.m.flash, h.m.busy)
+	}
+}
+
+func TestNewStoryBusyBarAndEscCancels(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	h.be.info = api.StoryInfo{Base: "origin/develop", Types: naming.Types}
+	h.newBranch()
+	h.typeText("fix/x")
+	_, cmd := h.m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // not drained: the create is in flight
+	if cmd == nil || !strings.Contains(ansi.Strip(h.m.View().Content), "fetching origin/develop… · esc to cancel") {
+		t.Fatalf("busy bar:\n%s", ansi.Strip(h.m.View().Content))
+	}
+	h.press("Esc")
+	drain(h.m, cmd)
+	if h.be.storyCtxErr == nil || h.m.flash != "cancelled" || h.m.busy != "" {
+		t.Fatalf("ctxErr=%v flash=%q busy=%q", h.be.storyCtxErr, h.m.flash, h.m.busy)
+	}
+}
+
+func TestNewStoryFromAnExistingBranch(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	now := time.Now()
+	h.be.branchList = api.BranchList{Branches: []api.Branch{
+		{Name: "fix/login-timeout", Remote: true, Time: now.Add(-49 * time.Hour).Unix()},
+		{Name: "develop", Local: true, Remote: true, Time: now.Add(-5 * 24 * time.Hour).Unix()},
+	}}
+	h.press("w", "Down")
+	_, cmd := h.m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !strings.Contains(ansi.Strip(h.m.View().Content), "fetching origin… · esc to cancel") {
+		t.Fatalf("busy bar:\n%s", ansi.Strip(h.m.View().Content))
+	}
+	drain(h.m, cmd)
+	v := ansi.Strip(h.m.View().Content)
+	for _, want := range []string{"existing branch", "fix/login-timeout  origin · 2d", "develop  local · 5d"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("no %q in\n%s", want, v)
+		}
+	}
+	h.press("Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=branch branch=fix/login-timeout" {
+		t.Fatalf("actions = %q", got)
+	}
+	if strings.Join(h.be.reads, "|") != "branches fetch=true" || strings.Join(h.opened, "|") != "home-network 9" {
+		t.Fatalf("reads=%q opened=%q", h.be.reads, h.opened)
+	}
+}
+
+func TestWorkspaceExistingBranchShowsItsRepos(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	workspace(h)
+	h.be.branchList = api.BranchList{Branches: []api.Branch{{Name: "fix/x", Local: true, Time: time.Now().Unix(), Repos: []string{"api", "web"}}}}
+	h.press("w", "Down", "Enter")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "fix/x  local · now · api, web") {
+		t.Fatalf("label:\n%s", v)
+	}
+	h.press("Enter")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "repositories of story x (branch fix/x)") {
+		t.Fatalf("checklist:\n%s", v)
+	}
+	h.press("Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=branch branch=fix/x [api]" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+// prs are two open pull requests of api and web.
+func prs() api.PRList {
+	return api.PRList{PRs: []api.PR{
+		{Number: 123, Title: "Fix login timeout", Author: "alice", Branch: "fix/login-timeout", Repo: "web", Slug: "acme/web"},
+		{Number: 7, Title: "Add lease", Author: "bob", Branch: "feat/lease", Repo: "api", Slug: "acme/api"},
+	}}
+}
+
+func TestNewStoryFromAPullRequest(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	l := prs()
+	for i := range l.PRs {
+		l.PRs[i].Repo, l.PRs[i].Slug = "", "acme/app"
+	}
+	h.be.prs = map[string]api.PRList{"": l}
+	h.press("w", "Down", "Down", "Enter")
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "pull requests") || !strings.Contains(v, "#123 Fix login timeout   alice · fix/login-timeout") || strings.Contains(v, "acme/app #") {
+		t.Fatalf("picker:\n%s", v)
+	}
+	h.typeText("lease")
+	h.press("Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=pr pr=7" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestWorkspacePullRequestTicksItsRepo(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	workspace(h)
+	h.be.prs = map[string]api.PRList{"": prs()}
+	h.press("w", "Down", "Down", "Enter")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "acme/web #123 Fix login timeout   alice · fix/login-timeout") {
+		t.Fatalf("picker:\n%s", v)
+	}
+	h.press("Enter")
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "repositories of story login-timeout (branch fix/login-timeout)") || !strings.Contains(v, "[x] web") || !strings.Contains(v, "[ ] api") {
+		t.Fatalf("checklist:\n%s", v)
+	}
+	h.press(" ", "Enter") // tick api, the highlighted one
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=pr pr_repo=web pr=123 [api,web]" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestPullRequestSearchAndDirectLookup(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	h.be.prs = map[string]api.PRList{
+		"":                                   prs(),
+		"oauth":                              {PRs: []api.PR{{Number: 99, Title: "OAuth flow", Author: "carol", Branch: "feat/oauth", State: "MERGED"}}},
+		"nothin":                             {},
+		"https://github.com/acme/web/pull/5": {PRs: []api.PR{{Number: 5, Title: "Old", Author: "dan", Branch: "fix/old"}}, Direct: true},
+	}
+	h.press("w", "Down", "Down", "Enter")
+	h.typeText("oauth")
+	h.press("Enter") // nothing matches: search GitHub
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.picker == nil || !strings.Contains(v, "search: oauth") || !strings.Contains(v, "#99 OAuth flow   carol · feat/oauth") || h.m.picker.Filter() != "" {
+		t.Fatalf("search results:\n%s", v)
+	}
+	h.press("Esc", "w", "Down", "Down", "Enter")
+	h.typeText("nothin")
+	h.press("Enter")
+	if h.m.picker == nil || h.m.flash != "no pull requests match nothin" {
+		t.Fatalf("flash=%q", h.m.flash)
+	}
+	h.press("Esc", "w", "Down", "Down", "Enter")
+	h.update(tea.PasteMsg{Content: "https://github.com/acme/web/pull/5"})
+	h.press("Enter") // one pull request: created at once
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=pr pr=5" || h.m.picker != nil {
+		t.Fatalf("actions = %q", got)
+	}
+	if got := strings.Join(h.be.reads, "|"); got != "prs |prs oauth|prs |prs nothin|prs |prs https://github.com/acme/web/pull/5" {
+		t.Fatalf("reads = %q", got)
+	}
+}
+
+func TestPullRequestGhErrors(t *testing.T) {
+	h := start(t, 160, 30, "idle")
+	h.be.prs = map[string]api.PRList{"": {Errors: []string{"acme requires SSO authorization"}}}
+	h.press("w", "Down", "Down", "Enter")
+	if h.m.picker != nil || h.m.flash != "gh: acme requires SSO authorization" {
+		t.Fatalf("picker=%v flash=%q", h.m.picker != nil, h.m.flash)
+	}
+	workspace(h)
+	l := prs()
+	l.Errors = []string{"acme/api: HTTP 401"}
+	h.be.prs = map[string]api.PRList{"": l}
+	h.press("w", "Down", "Down", "Enter")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "pull requests · gh: acme/api: HTTP 401") {
+		t.Fatalf("title:\n%s", v)
 	}
 }
 
@@ -894,14 +1275,16 @@ func TestWorkspaceNewStoryPicksRepos(t *testing.T) {
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "workspace · /p/home-network") || !strings.Contains(v, "api") {
 		t.Fatalf("view:\n%s", v)
 	}
-	h.press("w")
+	h.be.info.LastType = "fix"
+	h.newBranch()
 	h.typeText("login")
-	h.press("Enter")
-	if h.m.picker == nil || !strings.Contains(h.m.View().Content, "[ ] libs/auth") {
-		t.Fatalf("no checklist:\n%s", h.m.View().Content)
+	h.press("Enter", "Enter") // the name, then fix, the last type
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.picker == nil || !strings.Contains(v, "repositories of story login (branch fix/login)") || !strings.Contains(v, "[ ] libs/auth") {
+		t.Fatalf("no checklist:\n%s", v)
 	}
 	h.press(" ", "Down", "Down", " ", "Enter")
-	if got := strings.Join(h.be.actions, "|"); got != "home-network stories login [api,web]" {
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories login type=fix [api,web]" {
 		t.Fatalf("actions = %q", got)
 	}
 }
