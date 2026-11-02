@@ -565,3 +565,21 @@ func TestCleanupScanAndApply(t *testing.T) {
 		t.Fatalf("bad JSON: %d", r.StatusCode)
 	}
 }
+
+func TestCleanupRefusesWhenAProjectFailsToLoad(t *testing.T) {
+	s, f, ts := newServer(t)
+	// written by a newer bx: this one can't read it, so its live session must not look orphaned
+	if err := os.WriteFile(s.Cfg.StateFile("dotfiles"), []byte(`{"version": 99}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.Replies[listSessions] = "$5\tbx-home-network-1\n$9\tbx-dotfiles-1\n"
+	if c, code := get[api.Cleanup](t, ts, "/api/cleanup"); code != 500 {
+		t.Fatalf("scan: %d %+v", code, c)
+	}
+	if res, code := post(t, ts, "/api/cleanup", api.CleanupRequest{IDs: []string{"tmux:bx-dotfiles-1"}}); code != 500 || !strings.Contains(res.Error, "dotfiles") {
+		t.Fatalf("apply: %d %+v", code, res)
+	}
+	if strings.Contains(calls(f), "kill-session") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+}

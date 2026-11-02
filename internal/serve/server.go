@@ -271,22 +271,22 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// loadAll loads every project; one that fails to load is logged and skipped.
-func (s *Server) loadAll() []*state.Project {
+// loadAll loads every project, or fails if any fails to load. Cleanup needs them all: the
+// live sessions of a project left out would be listed as orphans and killed.
+func (s *Server) loadAll() ([]*state.Project, error) {
 	names, err := state.ListProjects(s.stateDir())
 	if err != nil {
-		s.Log("projects: %v", err)
+		return nil, err
 	}
 	var ps []*state.Project
 	for _, name := range names {
 		p, err := s.App.LoadProject(name)
 		if err != nil {
-			s.Log("projects: %s: %v", name, err)
-			continue
+			return nil, fmt.Errorf("project %s: %w", name, err)
 		}
 		ps = append(ps, p)
 	}
-	return ps
+	return ps, nil
 }
 
 // cleanupScan lists what cleanup can remove. Cleanup is a top-level route, not a project
@@ -294,7 +294,12 @@ func (s *Server) loadAll() []*state.Project {
 func (s *Server) cleanupScan(w http.ResponseWriter, r *http.Request) {
 	s.write.Lock()
 	defer s.write.Unlock()
-	items, err := s.App.CleanupScan(s.loadAll())
+	ps, err := s.loadAll()
+	if err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	items, err := s.App.CleanupScan(ps)
 	if err != nil {
 		httpError(w, 500, err)
 		return
@@ -316,7 +321,12 @@ func (s *Server) cleanupApply(w http.ResponseWriter, r *http.Request) {
 	}
 	s.write.Lock()
 	defer s.write.Unlock()
-	n, err := s.App.CleanupApply(s.loadAll(), req.IDs)
+	ps, err := s.loadAll()
+	if err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	n, err := s.App.CleanupApply(ps, req.IDs)
 	s.Log("cleanup: removed %d", n)
 	if err != nil {
 		httpError(w, 500, err)
