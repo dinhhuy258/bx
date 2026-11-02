@@ -4,6 +4,7 @@ import { h, bar, poll, toast, copyText } from './ui.js';
 const MAX_INPUT = 64 * 1024; // the server reads frames up to 1 MB
 const ENTER_DELAY = 50; // ms between the text and Enter, so Claude doesn't take Enter as part of a paste
 const HOLD_DELAY = 400, HOLD_EVERY = 100; // ms: holding ▲/▼ repeats after HOLD_DELAY, every HOLD_EVERY
+const MAX_UPLOAD = 20 * 1024 * 1024; // the server's limit per file
 
 // encodeMessage turns the input box into terminal bytes (without the final Enter). Control
 // characters are dropped, which also stops the text from ending a bracketed paste early.
@@ -37,6 +38,12 @@ export function showSession(root, project, num) {
   // Enter with an empty box presses Enter (e.g. to pick a highlighted option); with text it sends it
   const enterBtn = h('button', { class: 'enter', onpointerdown: keep,
     onclick: () => (input.value.trim() ? submit() : send('\r')) }, 'Enter');
+  // 📎 opens the picker (photos and files); the input is hidden, not display:none, which some
+  // iOS versions refuse to .click()
+  const fileInput = h('input', { type: 'file', multiple: true, class: 'file-pick', tabindex: '-1',
+    'aria-hidden': 'true', onchange: () => uploadPicked() });
+  const attachBtn = h('button', { class: 'attach', 'aria-label': 'Attach files', onpointerdown: keep,
+    onclick: () => fileInput.click() }, '📎');
   const copyBtn = h('button', { class: 'hk', 'aria-label': 'Copy screen', onpointerdown: keep,
     onclick: () => copyScreen() }, '⧉');
   const escBtn = h('button', { class: 'hk', 'aria-label': 'Escape', onpointerdown: keep,
@@ -45,7 +52,7 @@ export function showSession(root, project, num) {
     bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl],
       h('span', { class: 'hbtns' }, copyBtn, escBtn)),
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
-    h('div', { class: 'input' }, input, stepper, enterBtn));
+    h('div', { class: 'input' }, attachBtn, input, stepper, enterBtn), fileInput);
   root.append(screen);
   document.documentElement.classList.add('session-lock'); // see layout()
 
@@ -243,6 +250,49 @@ export function showSession(root, project, num) {
   input.addEventListener('input', grow);
   input.addEventListener('input', updateEnter);
   updateEnter();
+
+  // uploads: one file per request, one after another, so one that fails doesn't sink the rest;
+  // the saved paths go into the box at the cursor, for a prompt around them
+  function readBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
+      r.onerror = () => reject(r.error || new Error(`Couldn't read ${file.name}`));
+      r.readAsDataURL(file);
+    });
+  }
+  async function uploadPicked() {
+    const files = [...fileInput.files];
+    fileInput.value = ''; // so the same file can be picked again
+    if (!files.length) return;
+    attachBtn.disabled = true;
+    const paths = [];
+    try {
+      for (const [i, f] of files.entries()) {
+        if (closed) return;
+        if (f.size > MAX_UPLOAD) { toast(`${f.name} is over 20 MB`); continue; }
+        toast(`Uploading ${i + 1}/${files.length}: ${f.name}…`);
+        try {
+          const r = await api.upload(project, num, f.name, await readBase64(f));
+          paths.push(r.path);
+        } catch (e) {
+          toast(e.message);
+        }
+      }
+    } finally {
+      attachBtn.disabled = false;
+    }
+    if (paths.length && !closed) insertAtCursor(paths.join(' '));
+  }
+  // insertAtCursor puts text at the cursor with a space on each side; it doesn't focus the box,
+  // which would open the keyboard unasked
+  function insertAtCursor(text) {
+    const s = input.selectionStart ?? input.value.length, e = input.selectionEnd ?? s;
+    const pre = s > 0 && !/\s/.test(input.value[s - 1]) ? ' ' : '';
+    input.setRangeText(`${pre}${text} `, s, e, 'end');
+    grow();
+    updateEnter();
+  }
   // copy screen: xterm has no touch selection, so show the visible rows as plain text in a
   // sheet, where native long-press selection works. Scrolled back, that's the tmux history view.
   let copyDlg = null;

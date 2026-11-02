@@ -29,6 +29,9 @@ export const api = {
   action: (p, action, body) => call('POST', `/api/projects/${enc(p)}/${action}`, body),
   settings: () => call('GET', '/api/settings'),
   saveSettings: (values) => call('PUT', '/api/settings', { values }),
+  // content is base64; the reply's .path is where the server saved the file
+  upload: (p, num, name, content) =>
+    call('POST', `/api/projects/${enc(p)}/sessions/${num}/files`, { name, content }),
   streamURL: (p, num, cols, rows) =>
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/sessions/${num}/stream?cols=${cols}&rows=${rows}`,
 };
