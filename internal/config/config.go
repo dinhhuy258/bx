@@ -126,37 +126,6 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 }
 
-// LegacyNotify reads the [notify] keys (ntfy_url, open_url) still in <root>/config.toml. They
-// moved to the settings; bx serve imports them once and warns while they stay in the file. A
-// missing file or section gives an empty map.
-func LegacyNotify(root string) (map[string]string, error) {
-	out := map[string]string{}
-	path := filepath.Join(root, "config.toml")
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return out, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read config: %w", err)
-	}
-	var raw struct {
-		Notify struct {
-			NtfyURL *string `toml:"ntfy_url"`
-			OpenURL *string `toml:"open_url"`
-		} `toml:"notify"`
-	}
-	if _, err := toml.Decode(string(data), &raw); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if v := raw.Notify.NtfyURL; v != nil {
-		out["ntfy_url"] = *v
-	}
-	if v := raw.Notify.OpenURL; v != nil {
-		out["open_url"] = *v
-	}
-	return out, nil
-}
-
 func applyBinds(dst map[string][]string, src map[string]bind) {
 	for action, b := range src {
 		if len(b) == 0 {
@@ -185,10 +154,6 @@ func (c *Config) StateFile(project string) string {
 // SettingsFile is <root>/settings.json: what the settings screen saves. It is outside state/,
 // where every .json file is a project.
 func (c *Config) SettingsFile() string { return filepath.Join(c.Root, "settings.json") }
-
-// NotifyImportedFile is <root>/notify-imported: written once the [notify] keys of config.toml
-// were copied to the settings, so a URL cleared in the settings is not imported again.
-func (c *Config) NotifyImportedFile() string { return filepath.Join(c.Root, "notify-imported") }
 
 // TmuxSocket is the private tmux server bx runs every Claude on: <root>/run/tmux.sock.
 func (c *Config) TmuxSocket() string { return filepath.Join(c.Root, "run", "tmux.sock") }

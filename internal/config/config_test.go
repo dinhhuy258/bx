@@ -139,31 +139,14 @@ func TestServeAndClientSections(t *testing.T) {
 	}
 }
 
-func TestLegacyNotify(t *testing.T) {
+func TestOldNotifySectionIsIgnored(t *testing.T) {
 	root := t.TempDir()
-	if got, err := LegacyNotify(root); err != nil || len(got) != 0 {
-		t.Fatalf("no file: %v %v", got, err)
-	}
-	path := filepath.Join(root, "config.toml")
-	if err := os.WriteFile(path, []byte("[serve]\nlisten = \"auto\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := LegacyNotify(root); err != nil || len(got) != 0 {
-		t.Fatalf("no [notify]: %v %v", got, err)
-	}
 	toml := "[notify]\nntfy_url = \"https://ntfy.example/x\"\nopen_url = \"https://bx.tail1234.ts.net\"\n"
-	if err := os.WriteFile(path, []byte(toml), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
-	}
-	got, err := LegacyNotify(root)
-	if err != nil || len(got) != 2 || got["ntfy_url"] != "https://ntfy.example/x" || got["open_url"] != "https://bx.tail1234.ts.net" {
-		t.Fatalf("notify = %v %v", got, err)
 	}
 	if _, err := Load(root); err != nil {
 		t.Fatalf("an old [notify] must still load: %v", err)
-	}
-	if got := Default(root).NotifyImportedFile(); got != filepath.Join(root, "notify-imported") {
-		t.Error(got)
 	}
 }
 

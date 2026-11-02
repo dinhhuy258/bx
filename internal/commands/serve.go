@@ -54,7 +54,6 @@ func runServe(args []string, out, errOut io.Writer) int {
 		logger.Printf(format, v...)
 		fmt.Fprintf(out, format+"\n", v...)
 	}
-	serve.ImportNotify(cfg, a.Settings, log) // once: [notify] of config.toml → settings
 	s := serve.New(a, cfg, claude.CLI{}, log)
 	s.ResumeAll(context.Background()) // after a reboot: start every session that should be running
 	s.KeepTmuxServer()                // a tmux server already running outlives its last session
