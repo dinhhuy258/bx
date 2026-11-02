@@ -18,48 +18,62 @@ func TestMakePlan(t *testing.T) {
 		}
 		return m
 	}
-	all := Folders
 	for _, tc := range []struct {
-		name    string
-		mac     []File
-		server  map[string]File
-		record  []string
-		folders []string
-		want    Plan
+		name   string
+		mac    []File
+		server map[string]File
+		record []string
+		want   []Item
 	}{
-		{"add", []File{f("skills/a", "1", false)}, srv(), nil, all,
-			Plan{Add: []string{"skills/a"}}},
-		{"update by content", []File{f("skills/a", "2", false)}, srv(f("skills/a", "1", false)), []string{"skills/a"}, all,
-			Plan{Update: []string{"skills/a"}}},
-		{"update by exec bit", []File{f("skills/a", "1", true)}, srv(f("skills/a", "1", false)), []string{"skills/a"}, all,
-			Plan{Update: []string{"skills/a"}}},
-		{"unchanged", []File{f("skills/a", "1", false)}, srv(f("skills/a", "1", false)), []string{"skills/a"}, all,
-			Plan{Unchanged: 1}},
-		{"delete", nil, srv(f("skills/a", "1", false)), []string{"skills/a"}, all,
-			Plan{Delete: []string{"skills/a"}}},
-		{"recorded, gone from both", nil, srv(), []string{"skills/a"}, all,
-			Plan{}},
-		{"kept", nil, srv(f("skills/mine", "1", false)), nil, all,
-			Plan{Kept: 1}},
-		{"scope", []File{f("skills/a", "1", false), f("agents/new", "1", false)},
-			srv(f("skills/a", "1", false), f("agents/old", "1", false), f("agents/mine", "1", false)),
-			[]string{"skills/a", "agents/old"}, []string{"skills"},
-			Plan{Unchanged: 1}},
-		{"first sync", []File{f("skills/same", "1", false), f("skills/diff", "2", false)},
-			srv(f("skills/same", "1", false), f("skills/diff", "1", false)), nil, all,
-			Plan{Update: []string{"skills/diff"}, Unchanged: 1}},
+		{"new", []File{f("skills/a/SKILL.md", "1", false), f("skills/a/x/y.md", "1", false)}, srv(), nil,
+			[]Item{{Name: "skills/a", Status: StatusNew, Add: []string{"skills/a/SKILL.md", "skills/a/x/y.md"}}}},
+		{"changed by content", []File{f("agents/a.md", "2", false)}, srv(f("agents/a.md", "1", false)), []string{"agents/a.md"},
+			[]Item{{Name: "agents/a.md", Status: StatusChanged, Update: []string{"agents/a.md"}}}},
+		{"changed by exec bit", []File{f("agents/a.md", "1", true)}, srv(f("agents/a.md", "1", false)), []string{"agents/a.md"},
+			[]Item{{Name: "agents/a.md", Status: StatusChanged, Update: []string{"agents/a.md"}}}},
+		{"changed by an add", []File{f("skills/a/SKILL.md", "1", false), f("skills/a/new.md", "1", false)},
+			srv(f("skills/a/SKILL.md", "1", false)), []string{"skills/a/SKILL.md"},
+			[]Item{{Name: "skills/a", Status: StatusChanged, Add: []string{"skills/a/new.md"}}}},
+		{"changed by a delete", []File{f("skills/a/SKILL.md", "1", false)},
+			srv(f("skills/a/SKILL.md", "1", false), f("skills/a/old.md", "1", false), f("skills/a/mine.md", "1", false)),
+			[]string{"skills/a/SKILL.md", "skills/a/old.md"},
+			[]Item{{Name: "skills/a", Status: StatusChanged, Delete: []string{"skills/a/old.md"}}}},
+		{"same", []File{f("agents/sub/a.md", "1", false)}, srv(f("agents/sub/a.md", "1", false)), nil,
+			[]Item{{Name: "agents/sub", Status: StatusSame}}},
+		{"removed", nil, srv(f("skills/a/SKILL.md", "1", false), f("skills/a/mine.md", "1", false)),
+			[]string{"skills/a/SKILL.md", "skills/a/gone.md"},
+			[]Item{{Name: "skills/a", Status: StatusRemoved, Delete: []string{"skills/a/SKILL.md"}}}},
+		{"recorded, gone from both", nil, srv(), []string{"skills/a/SKILL.md"}, []Item{}},
+		{"server-only", nil, srv(f("rules/mine.md", "1", false)), nil,
+			[]Item{{Name: "rules/mine.md", Status: StatusServerOnly}}},
+		{"several, sorted", []File{f("skills/b/SKILL.md", "1", false), f("agents/a.md", "1", false)},
+			srv(f("agents/a.md", "1", false), f("commands/mine.md", "1", false)), nil,
+			[]Item{
+				{Name: "agents/a.md", Status: StatusSame},
+				{Name: "commands/mine.md", Status: StatusServerOnly},
+				{Name: "skills/b", Status: StatusNew, Add: []string{"skills/b/SKILL.md"}},
+			}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := MakePlan(tc.mac, tc.server, tc.record, tc.folders)
-			for _, s := range []*[]string{&tc.want.Add, &tc.want.Update, &tc.want.Delete} {
-				if *s == nil {
-					*s = []string{}
-				}
-			}
+			got := MakePlan(t.TempDir(), tc.mac, tc.server, tc.record)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("got %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMakePlanReportsAServerSymlinkPerItem(t *testing.T) {
+	dir, outside := t.TempDir(), t.TempDir()
+	link(t, outside, filepath.Join(dir, "skills/a"))
+	mac := []File{{Path: "skills/a/SKILL.md", SHA256: "1"}, {Path: "skills/b/SKILL.md", SHA256: "1"}}
+	got := MakePlan(dir, mac, map[string]File{}, nil)
+	want := []Item{
+		{Name: "skills/a", Status: StatusNew, Add: []string{"skills/a/SKILL.md"}, Error: "skills/a: refusing to write through a symlink"},
+		{Name: "skills/b", Status: StatusNew, Add: []string{"skills/b/SKILL.md"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
 	}
 }
 
@@ -97,7 +111,7 @@ func save(t *testing.T, p string, paths []string) {
 func TestApplyWritesWithModesAndCreatesDir(t *testing.T) {
 	dir, rec := fixture(t)
 	files := []Write{{Path: "skills/a/SKILL.md", Content: []byte("a")}, {Path: "skills/a/run.sh", Exec: true, Content: []byte("x")}}
-	res, err := Apply(dir, rec, []string{"skills"}, []string{"skills/a/SKILL.md", "skills/a/run.sh"}, files, nil)
+	res, err := Apply(dir, rec, []string{"skills/a"}, []string{"skills/a/SKILL.md", "skills/a/run.sh"}, files, nil)
 	if err != nil || res != (Result{Added: 2}) {
 		t.Fatalf("%+v %v", res, err)
 	}
@@ -117,7 +131,7 @@ func TestApplyWritesWithModesAndCreatesDir(t *testing.T) {
 		t.Errorf("record %q", got)
 	}
 	// update overwrites, and the mode follows the Mac
-	res, err = Apply(dir, rec, []string{"skills"}, []string{"skills/a/SKILL.md", "skills/a/run.sh"}, []Write{{Path: "skills/a/run.sh", Content: []byte("y")}}, nil)
+	res, err = Apply(dir, rec, []string{"skills/a"}, []string{"skills/a/SKILL.md", "skills/a/run.sh"}, []Write{{Path: "skills/a/run.sh", Content: []byte("y")}}, nil)
 	if err != nil || res != (Result{Updated: 1}) {
 		t.Fatalf("%+v %v", res, err)
 	}
@@ -132,7 +146,7 @@ func TestApplyDeletePrunesEmptyFolders(t *testing.T) {
 	put(t, dir, "skills/k/y.md", "y", 0o644)
 	put(t, dir, "skills/k/mine.md", "m", 0o644)
 	save(t, rec, []string{"skills/a/b/x.md", "skills/k/y.md"})
-	res, err := Apply(dir, rec, []string{"skills"}, nil, nil, []string{"skills/a/b/x.md", "skills/k/y.md"})
+	res, err := Apply(dir, rec, []string{"skills/a", "skills/k"}, nil, nil, []string{"skills/a/b/x.md", "skills/k/y.md"})
 	if err != nil || res != (Result{Deleted: 2}) {
 		t.Fatalf("%+v %v", res, err)
 	}
@@ -151,7 +165,7 @@ func TestApplyDeletePrunesEmptyFolders(t *testing.T) {
 	// the only file of the top folder: skills/ itself stays
 	put(t, dir, "rules/r.md", "r", 0o644)
 	save(t, rec, []string{"rules/r.md"})
-	if _, err := Apply(dir, rec, []string{"rules"}, nil, nil, []string{"rules/r.md"}); err != nil {
+	if _, err := Apply(dir, rec, []string{"rules/r.md"}, nil, nil, []string{"rules/r.md"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "rules")); err != nil {
@@ -163,29 +177,38 @@ func TestApplyRefusesBeforeTouchingDisk(t *testing.T) {
 	big := make([]byte, MaxFile+1)
 	mb := make([]byte, MaxFile)
 	var many []Write
+	var manyItems []string
 	for i := range 21 {
-		many = append(many, Write{Path: "skills/f" + string(rune('a'+i)), Content: mb})
+		p := "skills/f" + string(rune('a'+i))
+		many = append(many, Write{Path: p, Content: mb})
+		manyItems = append(manyItems, p)
 	}
 	for _, tc := range []struct {
 		name    string
-		folders []string
+		items   []string
 		paths   []string
 		files   []Write
 		deletes []string
 		want    error
 	}{
-		{"bad folder", []string{"other"}, nil, nil, nil, ErrInvalid},
-		{"dotdot", []string{"skills"}, nil, []Write{{Path: "../x"}}, nil, ErrInvalid},
-		{"hidden", []string{"skills"}, nil, []Write{{Path: "skills/.hidden"}}, nil, ErrInvalid},
-		{"outside the selected folders", []string{"skills"}, nil, []Write{{Path: "agents/a.md"}}, nil, ErrInvalid},
-		{"bad path in paths", []string{"skills"}, []string{"/abs"}, nil, nil, ErrInvalid},
-		{"delete not in record", []string{"skills"}, nil, nil, []string{"skills/mine.md"}, ErrInvalid},
-		{"file over 1 MB", []string{"skills"}, nil, []Write{{Path: "skills/big", Content: big}}, nil, ErrTooLarge},
-		{"total over 20 MB", []string{"skills"}, nil, many, nil, ErrTooLarge},
+		{"no items", nil, nil, nil, nil, ErrInvalid},
+		{"bad item", []string{"other/a"}, nil, nil, nil, ErrInvalid},
+		{"a path, not an item", []string{"skills/a/SKILL.md"}, nil, nil, nil, ErrInvalid},
+		{"dotdot", []string{"skills/a"}, nil, []Write{{Path: "../x"}}, nil, ErrInvalid},
+		{"hidden", []string{"skills/a"}, nil, []Write{{Path: "skills/a/.hidden"}}, nil, ErrInvalid},
+		{"unknown folder", []string{"skills/a"}, nil, []Write{{Path: "other/a.md"}}, nil, ErrInvalid},
+		{"write outside the items", []string{"skills/a"}, nil, []Write{{Path: "skills/b/SKILL.md"}}, nil, ErrInvalid},
+		{"path outside the items", []string{"skills/a"}, []string{"agents/x.md"}, nil, nil, ErrInvalid},
+		{"bad path in paths", []string{"skills/a"}, []string{"/abs"}, nil, nil, ErrInvalid},
+		{"delete outside the items", []string{"skills/a"}, nil, nil, []string{"skills/b/SKILL.md"}, ErrInvalid},
+		{"delete not in record", []string{"skills/a"}, nil, nil, []string{"skills/a/mine.md"}, ErrInvalid},
+		{"delete the Mac has", []string{"skills/a"}, []string{"skills/a/x.md"}, nil, []string{"skills/a/x.md"}, ErrInvalid},
+		{"file over 1 MB", []string{"skills/big"}, nil, []Write{{Path: "skills/big", Content: big}}, nil, ErrTooLarge},
+		{"total over 20 MB", manyItems, nil, many, nil, ErrTooLarge},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, rec := fixture(t)
-			_, err := Apply(dir, rec, tc.folders, tc.paths, tc.files, tc.deletes)
+			_, err := Apply(dir, rec, tc.items, tc.paths, tc.files, tc.deletes)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
 			}
@@ -207,9 +230,9 @@ func TestApplyRefusesSymlinks(t *testing.T) {
 	}
 	link(t, outside, filepath.Join(dir, "skills/x"))
 	put(t, outside, "t.md", "theirs", 0o644)
-	link(t, filepath.Join(outside, "t.md"), filepath.Join(dir, "skills/t.md"))
-	for _, p := range []string{"skills/x/SKILL.md", "skills/t.md"} {
-		_, err := Apply(dir, rec, []string{"skills"}, []string{p}, []Write{{Path: p, Content: []byte("mine")}}, nil)
+	link(t, filepath.Join(outside, "t.md"), filepath.Join(dir, "agents/t.md"))
+	for _, p := range []string{"skills/x/SKILL.md", "agents/t.md"} {
+		_, err := Apply(dir, rec, []string{ItemOf(p)}, []string{p}, []Write{{Path: p, Content: []byte("mine")}}, nil)
 		if err == nil || !strings.Contains(err.Error(), "symlink") {
 			t.Errorf("%s: %v", p, err)
 		}
@@ -226,7 +249,7 @@ func TestApplyRefusesSymlinks(t *testing.T) {
 	// a delete through a symlinked folder is refused too
 	put(t, outside, "SKILL.md", "theirs", 0o644)
 	save(t, rec, []string{"skills/x/SKILL.md"})
-	if _, err := Apply(dir, rec, []string{"skills"}, nil, nil, []string{"skills/x/SKILL.md"}); err == nil {
+	if _, err := Apply(dir, rec, []string{"skills/x"}, nil, nil, []string{"skills/x/SKILL.md"}); err == nil {
 		t.Error("delete through a symlink must fail")
 	}
 	if _, err := os.Stat(filepath.Join(outside, "SKILL.md")); err != nil {
@@ -236,20 +259,67 @@ func TestApplyRefusesSymlinks(t *testing.T) {
 
 func TestApplyRecord(t *testing.T) {
 	dir, rec := fixture(t)
-	put(t, dir, "skills/same.md", "s", 0o644)
+	put(t, dir, "skills/a/same.md", "s", 0o644)
+	put(t, dir, "skills/b/SKILL.md", "b", 0o644)
 	put(t, dir, "agents/a.md", "a", 0o644)
-	save(t, rec, []string{"agents/a.md", "agents/gone.md"})
-	paths := []string{"skills/same.md", "skills/new.md"}
-	if _, err := Apply(dir, rec, []string{"skills"}, paths, []Write{{Path: "skills/new.md", Content: []byte("n")}}, nil); err != nil {
+	save(t, rec, []string{"agents/a.md", "agents/gone.md", "skills/b/SKILL.md"})
+	paths := []string{"skills/a/same.md", "skills/a/new.md"}
+	if _, err := Apply(dir, rec, []string{"skills/a"}, paths, []Write{{Path: "skills/a/new.md", Content: []byte("n")}}, nil); err != nil {
 		t.Fatal(err)
 	}
-	// other folders' entries stay as they were; the unchanged file is adopted
-	want := []string{"agents/a.md", "agents/gone.md", "skills/new.md", "skills/same.md"}
+	// other items' entries stay as they were; the unchanged file is adopted
+	want := []string{"agents/a.md", "agents/gone.md", "skills/a/new.md", "skills/a/same.md", "skills/b/SKILL.md"}
 	if got := record(t, rec); !reflect.DeepEqual(got, want) {
 		t.Fatalf("record %q, want %q", got, want)
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "agents/a.md")); string(b) != "a" {
-		t.Errorf("agents touched: %q", b)
+	for p, c := range map[string]string{"agents/a.md": "a", "skills/b/SKILL.md": "b"} {
+		if b, _ := os.ReadFile(filepath.Join(dir, p)); string(b) != c {
+			t.Errorf("%s touched: %q", p, b)
+		}
+	}
+}
+
+// An unchecked item is out of the scope: never written, never deleted, its record kept.
+func TestApplyLeavesAnUncheckedItemAlone(t *testing.T) {
+	dir, rec := fixture(t)
+	put(t, dir, "skills/a/SKILL.md", "old", 0o644)
+	put(t, dir, "skills/gone/SKILL.md", "g", 0o644)
+	save(t, rec, []string{"skills/a/SKILL.md", "skills/gone/SKILL.md"})
+	// the Mac changed skills/a and removed skills/gone; only skills/new is checked
+	mac := []File{{Path: "skills/a/SKILL.md", SHA256: "new"}, {Path: "skills/new/SKILL.md", SHA256: "n"}}
+	server, err := ScanServer(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := MakePlan(dir, mac, server, record(t, rec))
+	st := map[string]string{}
+	for _, it := range plan {
+		st[it.Name] = it.Status
+	}
+	if want := map[string]string{"skills/a": StatusChanged, "skills/gone": StatusRemoved, "skills/new": StatusNew}; !reflect.DeepEqual(st, want) {
+		t.Fatalf("plan %v, want %v", st, want)
+	}
+	res, err := Apply(dir, rec, []string{"skills/new"}, []string{"skills/new/SKILL.md"}, []Write{{Path: "skills/new/SKILL.md", Content: []byte("n")}}, nil)
+	if err != nil || res != (Result{Added: 1}) {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "skills/a/SKILL.md")); string(b) != "old" {
+		t.Errorf("skills/a was written: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "skills/gone/SKILL.md")); err != nil {
+		t.Errorf("skills/gone was deleted: %v", err)
+	}
+	want := []string{"skills/a/SKILL.md", "skills/gone/SKILL.md", "skills/new/SKILL.md"}
+	if got := record(t, rec); !reflect.DeepEqual(got, want) {
+		t.Fatalf("record %q, want %q", got, want)
+	}
+	// now in scope, the removed item is deleted
+	res, err = Apply(dir, rec, []string{"skills/gone"}, nil, nil, []string{"skills/gone/SKILL.md"})
+	if err != nil || res != (Result{Deleted: 1}) {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if want := []string{"skills/a/SKILL.md", "skills/new/SKILL.md"}; !reflect.DeepEqual(record(t, rec), want) {
+		t.Fatalf("record %q, want %q", record(t, rec), want)
 	}
 }
 
@@ -260,19 +330,20 @@ func TestApplyPartialFailureKeepsRecordConsistent(t *testing.T) {
 		t.Fatal(err)
 	}
 	link(t, outside, filepath.Join(dir, "skills/blocked"))
-	put(t, dir, "skills/old.md", "o", 0o644)
-	save(t, rec, []string{"skills/old.md"})
+	put(t, dir, "skills/old/SKILL.md", "o", 0o644)
+	save(t, rec, []string{"skills/old/SKILL.md"})
+	items := []string{"skills/a.md", "skills/blocked", "skills/c.md", "skills/old"}
 	paths := []string{"skills/a.md", "skills/blocked/b.md", "skills/c.md"}
 	files := []Write{{Path: "skills/a.md", Content: []byte("a")}, {Path: "skills/blocked/b.md", Content: []byte("b")}, {Path: "skills/c.md", Content: []byte("c")}}
-	res, err := Apply(dir, rec, []string{"skills"}, paths, files, []string{"skills/old.md"})
+	res, err := Apply(dir, rec, items, paths, files, []string{"skills/old/SKILL.md"})
 	if err == nil || !strings.Contains(err.Error(), "skills/blocked/b.md") {
 		t.Fatalf("want an error naming the failed path, got %v", err)
 	}
 	if res != (Result{Added: 1}) {
 		t.Errorf("res %+v", res)
 	}
-	// on disk: a.md and old.md (its delete never ran); the record says exactly that
-	if got := record(t, rec); !reflect.DeepEqual(got, []string{"skills/a.md", "skills/old.md"}) {
+	// on disk: a.md and old/SKILL.md (its delete never ran); the record says exactly that
+	if got := record(t, rec); !reflect.DeepEqual(got, []string{"skills/a.md", "skills/old/SKILL.md"}) {
 		t.Fatalf("record %q", got)
 	}
 }

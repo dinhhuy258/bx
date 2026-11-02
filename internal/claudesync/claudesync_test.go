@@ -43,36 +43,32 @@ func paths(files []File) []string {
 }
 
 func TestValidPath(t *testing.T) {
-	all := Folders
 	for _, tc := range []struct {
-		p       string
-		folders []string
-		ok      bool
+		p  string
+		ok bool
 	}{
-		{"skills/a/SKILL.md", all, true},
-		{"rules/x.md", all, true},
-		{"", all, false},
-		{"../x", all, false},
-		{"/abs", all, false},
-		{"/skills/a", all, false},
-		{"skills/../agents/x", all, false},
-		{"skills/../x", all, false},
-		{"skills//a", all, false},
-		{"skills/./a", all, false},
-		{"skills/.git/x", all, false},
-		{"hidden/.x", all, false},
-		{"skills/a/", all, false},
-		{`skills/a\b`, all, false},
-		{"skills/a\x00", all, false},
-		{"settings.json", all, false},
-		{"other/a", all, false},
-		{"skills", all, false},
-		{"agents/a.md", []string{"skills"}, false},
-		{"other/a", []string{"other"}, false},
+		{"skills/a/SKILL.md", true},
+		{"rules/x.md", true},
+		{"", false},
+		{"../x", false},
+		{"/abs", false},
+		{"/skills/a", false},
+		{"skills/../agents/x", false},
+		{"skills/../x", false},
+		{"skills//a", false},
+		{"skills/./a", false},
+		{"skills/.git/x", false},
+		{"hidden/.x", false},
+		{"skills/a/", false},
+		{`skills/a\b`, false},
+		{"skills/a\x00", false},
+		{"settings.json", false},
+		{"other/a", false},
+		{"skills", false},
 	} {
-		err := ValidPath(tc.p, tc.folders)
+		err := ValidPath(tc.p)
 		if (err == nil) != tc.ok {
-			t.Errorf("ValidPath(%q, %v) = %v, want ok=%v", tc.p, tc.folders, err, tc.ok)
+			t.Errorf("ValidPath(%q) = %v, want ok=%v", tc.p, err, tc.ok)
 		}
 		if err != nil && !errors.Is(err, ErrInvalid) {
 			t.Errorf("ValidPath(%q): %v is not ErrInvalid", tc.p, err)
@@ -80,13 +76,30 @@ func TestValidPath(t *testing.T) {
 	}
 }
 
-func TestValidFolders(t *testing.T) {
-	if err := ValidFolders([]string{"skills", "rules"}); err != nil {
-		t.Fatal(err)
+func TestItemOf(t *testing.T) {
+	for p, want := range map[string]string{
+		"skills/a/b/c.md": "skills/a",
+		"skills/a":        "skills/a",
+		"agents/x.md":     "agents/x.md",
+		"agents/sub/y.md": "agents/sub",
+		"commands/c.md":   "commands/c.md",
+		"rules/r/s/t.md":  "rules/r",
+	} {
+		if got := ItemOf(p); got != want {
+			t.Errorf("ItemOf(%q) = %q, want %q", p, got, want)
+		}
 	}
-	for _, f := range [][]string{nil, {"other"}, {"skills", "../x"}} {
-		if err := ValidFolders(f); !errors.Is(err, ErrInvalid) {
-			t.Errorf("ValidFolders(%q) = %v", f, err)
+}
+
+func TestValidItem(t *testing.T) {
+	for _, it := range []string{"skills/a", "agents/x.md", "rules/sub"} {
+		if err := ValidItem(it); err != nil {
+			t.Errorf("ValidItem(%q) = %v", it, err)
+		}
+	}
+	for _, it := range []string{"", "skills", "skills/a/b", "other/a", "skills/.git", "skills/..", `agents/a\b`} {
+		if err := ValidItem(it); !errors.Is(err, ErrInvalid) {
+			t.Errorf("ValidItem(%q) = %v, want ErrInvalid", it, err)
 		}
 	}
 }
@@ -103,28 +116,34 @@ func TestScan(t *testing.T) {
 	put(t, mac, "settings.json", "{}", 0o644)
 	put(t, outside, "real.md", "real", 0o644)
 	put(t, outside, "dir/c.md", "c", 0o644)
-	link(t, filepath.Join(outside, "real.md"), filepath.Join(mac, "skills/linked.md"))
+	link(t, filepath.Join(outside, "real.md"), filepath.Join(mac, "agents/linked.md"))
 	link(t, filepath.Join(outside, "dir"), filepath.Join(mac, "skills/linkdir"))
 	link(t, "..", filepath.Join(mac, "skills/a/loop"))              // a loop back to skills/
 	link(t, "/nowhere/at/all", filepath.Join(mac, "skills/broken")) // a broken link
 
-	files, err := Scan(mac, []string{"skills", "commands"}) // commands is missing
+	sc, err := Scan(mac) // commands and rules are missing
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"skills/a/SKILL.md", "skills/a/run.sh", "skills/linkdir/c.md", "skills/linked.md"}
-	if got := paths(files); !reflect.DeepEqual(got, want) {
+	want := []string{"agents/b.md", "agents/linked.md", "skills/a/SKILL.md", "skills/a/run.sh", "skills/linkdir/c.md"}
+	if got := paths(sc.Files); !reflect.DeepEqual(got, want) {
 		t.Fatalf("paths = %q, want %q", got, want)
 	}
 	by := map[string]File{}
-	for _, f := range files {
+	for _, f := range sc.Files {
 		by[f.Path] = f
 	}
 	if !by["skills/a/run.sh"].Exec || by["skills/a/SKILL.md"].Exec {
-		t.Errorf("exec bits: %+v", files)
+		t.Errorf("exec bits: %+v", sc.Files)
 	}
-	if f := by["skills/linked.md"]; f.Size != 4 || f.SHA256 == "" || f.Src != filepath.Join(mac, "skills/linked.md") {
+	if f := by["agents/linked.md"]; f.Size != 4 || f.SHA256 == "" || f.Src != filepath.Join(mac, "agents/linked.md") {
 		t.Errorf("linked file: %+v", f)
+	}
+	if want := map[string]bool{"agents/linked.md": true, "skills/linkdir": true}; !reflect.DeepEqual(sc.Links, want) {
+		t.Errorf("links = %v, want %v", sc.Links, want)
+	}
+	if len(sc.Warnings) != 0 {
+		t.Errorf("warnings = %v", sc.Warnings)
 	}
 }
 
@@ -132,13 +151,28 @@ func TestScanSymlinkedTopFolderAndBadName(t *testing.T) {
 	mac, outside := t.TempDir(), t.TempDir()
 	put(t, outside, "x/SKILL.md", "x", 0o644)
 	link(t, outside, filepath.Join(mac, "skills"))
-	files, err := Scan(mac, []string{"skills"})
-	if err != nil || !reflect.DeepEqual(paths(files), []string{"skills/x/SKILL.md"}) {
-		t.Fatalf("%q %v", paths(files), err)
-	}
 	put(t, mac, `agents/a\b.md`, "x", 0o644)
-	if _, err := Scan(mac, []string{"agents"}); err == nil || !strings.Contains(err.Error(), `a\b.md`) {
-		t.Fatalf("want an error naming the file, got %v", err)
+	put(t, mac, `agents/sub/c\d.md`, "x", 0o644)
+	put(t, mac, `agents/sub/e\f.md`, "x", 0o644)
+	put(t, mac, "agents/sub/ok.md", "x", 0o644)
+	sc, err := Scan(mac)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the bad names are skipped, the rest of the scan still returns
+	if want := []string{"agents/sub/ok.md", "skills/x/SKILL.md"}; !reflect.DeepEqual(paths(sc.Files), want) {
+		t.Fatalf("paths = %q, want %q", paths(sc.Files), want)
+	}
+	// a symlinked top folder doesn't mark its items
+	if len(sc.Links) != 0 {
+		t.Errorf("links = %v", sc.Links)
+	}
+	want := map[string]string{
+		`agents/a\b.md`: `skipped agents/a\b.md: bad name`,
+		"agents/sub":    `skipped agents/sub/c\d.md: bad name (+1 more)`,
+	}
+	if !reflect.DeepEqual(sc.Warnings, want) {
+		t.Errorf("warnings = %q, want %q", sc.Warnings, want)
 	}
 }
 
@@ -151,7 +185,7 @@ func TestScanServerSkipsSymlinks(t *testing.T) {
 	link(t, filepath.Join(outside, "f.md"), filepath.Join(srv, "skills/f.md"))
 	link(t, filepath.Join(outside, "d"), filepath.Join(srv, "skills/d"))
 	link(t, outside, filepath.Join(srv, "agents"))
-	got, err := ScanServer(srv, []string{"skills", "agents", "rules"})
+	got, err := ScanServer(srv)
 	if err != nil {
 		t.Fatal(err)
 	}

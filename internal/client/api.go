@@ -110,6 +110,14 @@ func (c *API) StreamURL(project string, num, cols, rows int) string {
 
 // call sends body as JSON and decodes the reply into out. A non-2xx reply becomes an error
 // carrying the server's text; when out is an *api.Result it also gets the refusal.
+// StatusError is a non-2xx reply: its status code and the server's error text.
+type StatusError struct {
+	Code int
+	Text string
+}
+
+func (e *StatusError) Error() string { return e.Text }
+
 func (c *API) call(ctx context.Context, timeout time.Duration, method, path string, body, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -142,7 +150,7 @@ func (c *API) call(ctx context.Context, timeout time.Duration, method, path stri
 		if r, ok := out.(*api.Result); ok {
 			*r = res
 		}
-		return fmt.Errorf("%s", res.Error)
+		return &StatusError{Code: resp.StatusCode, Text: res.Error}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }

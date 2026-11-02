@@ -1,8 +1,9 @@
 // Package claudesync copies Claude Code's skills, agents, commands and rules from the Mac to
-// the bx server. The Mac always wins: a file it has is added or overwritten, a file bx synced
-// before and the Mac no longer has is deleted, and a file only the server has, that bx never
-// synced, is kept. The server remembers what bx synced in a record: a JSON list of paths
-// relative to the Claude config dir, e.g. "skills/brainstorm/SKILL.md".
+// the bx server, item by item (see ItemOf). Within the items of a sync the Mac always wins: a
+// file it has is added or overwritten, a file bx synced before and the Mac no longer has is
+// deleted, and a file only the server has, that bx never synced, is kept. Other items are not
+// touched. The server remembers what bx synced in a record: a JSON list of paths relative to
+// the Claude config dir, e.g. "skills/brainstorm/SKILL.md".
 package claudesync
 
 import (
@@ -36,28 +37,15 @@ var (
 	ErrTooLarge = errors.New("too large")
 )
 
-// ValidFolders checks that folders is non-empty and each one is in Folders.
-func ValidFolders(folders []string) error {
-	if len(folders) == 0 {
-		return fmt.Errorf("no folders: %w", ErrInvalid)
-	}
-	for _, f := range folders {
-		if !slices.Contains(Folders, f) {
-			return fmt.Errorf("unknown folder %q: %w", f, ErrInvalid)
-		}
-	}
-	return nil
-}
-
-// ValidPath checks a synced path: relative, slash-separated, clean, a file below one of folders,
-// with no empty, "..", or hidden (dot) segment and no backslash or NUL.
-func ValidPath(p string, folders []string) error {
+// ValidPath checks a synced path: relative, slash-separated, clean, a file below one of
+// Folders, with no empty, "..", or hidden (dot) segment and no backslash or NUL.
+func ValidPath(p string) error {
 	bad := fmt.Errorf("bad path %q: %w", p, ErrInvalid)
 	if p == "" || strings.ContainsAny(p, "\\\x00") || strings.HasPrefix(p, "/") || path.Clean(p) != p {
 		return bad
 	}
 	segs := strings.Split(p, "/")
-	if len(segs) < 2 || !slices.Contains(folders, segs[0]) || !slices.Contains(Folders, segs[0]) {
+	if len(segs) < 2 || !slices.Contains(Folders, segs[0]) {
 		return bad
 	}
 	for _, s := range segs {
@@ -68,10 +56,23 @@ func ValidPath(p string, folders []string) error {
 	return nil
 }
 
-// under reports whether p's first segment is one of folders.
-func under(p string, folders []string) bool {
-	top, _, _ := strings.Cut(p, "/")
-	return slices.Contains(folders, top)
+// ItemOf is the item a path belongs to, its first two segments: a skill folder
+// ("skills/a/b/c.md" is "skills/a"), or an entry of agents, commands or rules, a file
+// ("agents/x.md") or a sub-folder ("agents/sub/y.md" is "agents/sub").
+func ItemOf(p string) string {
+	segs := strings.SplitN(p, "/", 3)
+	if len(segs) < 2 {
+		return p
+	}
+	return segs[0] + "/" + segs[1]
+}
+
+// ValidItem checks an item: a valid path of exactly two segments.
+func ValidItem(it string) error {
+	if err := ValidPath(it); err != nil || strings.Count(it, "/") != 1 {
+		return fmt.Errorf("bad item %q: %w", it, ErrInvalid)
+	}
+	return nil
 }
 
 // File is one file of a scan. Src is its absolute path on the Mac (empty from ScanServer).
@@ -83,38 +84,56 @@ type File struct {
 	Src    string
 }
 
-// Scan lists the files of folders under dir on the Mac, sorted by path. It follows symlinked
+// MacScan is a scan of the Mac. Links holds the items whose top entry ("skills/a",
+// "agents/x.md") is a symlink. Warnings holds, per item, the files skipped for a bad name.
+type MacScan struct {
+	Files    []File
+	Links    map[string]bool
+	Warnings map[string]string
+}
+
+// Scan lists the files of Folders under dir on the Mac, sorted by path. It follows symlinked
 // files and directories (a directory already on the current path is skipped, so a loop ends),
-// and skips names starting with "." at any depth, broken links and non-regular files.
-func Scan(dir string, folders []string) ([]File, error) {
-	var out []File
-	for _, f := range folders {
+// and skips names starting with "." at any depth, broken links and non-regular files. A file
+// whose path isn't valid (a backslash in its name) is skipped with a warning on its item.
+func Scan(dir string) (MacScan, error) {
+	sc := MacScan{Links: map[string]bool{}, Warnings: map[string]string{}}
+	skipped := map[string][]string{}
+	for _, f := range Folders {
 		top := filepath.Join(dir, f)
 		fi, err := os.Stat(top)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return MacScan{}, err
 		}
 		if !fi.IsDir() {
 			continue
 		}
 		real, err := filepath.EvalSymlinks(top)
 		if err != nil {
-			return nil, err
+			return MacScan{}, err
 		}
-		if err := scanDir(top, f, map[string]bool{real: true}, &out); err != nil {
-			return nil, err
+		if err := scanDir(top, f, map[string]bool{real: true}, &sc, skipped); err != nil {
+			return MacScan{}, err
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-	return out, nil
+	for it, rels := range skipped {
+		w := "skipped " + rels[0] + ": bad name"
+		if len(rels) > 1 {
+			w += fmt.Sprintf(" (+%d more)", len(rels)-1)
+		}
+		sc.Warnings[it] = w
+	}
+	sort.Slice(sc.Files, func(i, j int) bool { return sc.Files[i].Path < sc.Files[j].Path })
+	return sc, nil
 }
 
-// scanDir adds the files below abs (rel is its slash path) to out. seen holds the real paths
-// of the directories from the top folder down to abs.
-func scanDir(abs, rel string, seen map[string]bool, out *[]File) error {
+// scanDir adds the files below abs (rel is its slash path) to sc, and the files it skips for
+// a bad name to skipped by item. seen holds the real paths of the directories from the top
+// folder down to abs.
+func scanDir(abs, rel string, seen map[string]bool, sc *MacScan, skipped map[string][]string) error {
 	entries, err := os.ReadDir(abs)
 	if err != nil {
 		return err
@@ -128,6 +147,9 @@ func scanDir(abs, rel string, seen map[string]bool, out *[]File) error {
 		if err != nil {
 			continue // a broken link
 		}
+		if !strings.Contains(rel, "/") && e.Type()&fs.ModeSymlink != 0 {
+			sc.Links[r] = true
+		}
 		switch {
 		case fi.IsDir():
 			real, err := filepath.EvalSymlinks(p)
@@ -135,31 +157,33 @@ func scanDir(abs, rel string, seen map[string]bool, out *[]File) error {
 				continue
 			}
 			seen[real] = true
-			err = scanDir(p, r, seen, out)
+			err = scanDir(p, r, seen, sc, skipped)
 			delete(seen, real)
 			if err != nil {
 				return err
 			}
 		case fi.Mode().IsRegular():
-			if err := ValidPath(r, Folders); err != nil {
-				return fmt.Errorf("%s: %w", p, err)
+			if ValidPath(r) != nil {
+				it := ItemOf(r)
+				skipped[it] = append(skipped[it], r)
+				continue
 			}
 			sum, size, err := hashFile(p)
 			if err != nil {
 				return err
 			}
-			*out = append(*out, File{Path: r, SHA256: sum, Size: size, Exec: fi.Mode()&0o100 != 0, Src: p})
+			sc.Files = append(sc.Files, File{Path: r, SHA256: sum, Size: size, Exec: fi.Mode()&0o100 != 0, Src: p})
 		}
 	}
 	return nil
 }
 
-// ScanServer lists the files of folders under dir on the server, by path. It never follows a
+// ScanServer lists the files of Folders under dir on the server, by path. It never follows a
 // symlink: a symlinked top folder, directory or file is skipped, as are hidden names and
 // non-regular files.
-func ScanServer(dir string, folders []string) (map[string]File, error) {
+func ScanServer(dir string) (map[string]File, error) {
 	out := map[string]File{}
-	for _, f := range folders {
+	for _, f := range Folders {
 		top := filepath.Join(dir, f)
 		fi, err := os.Lstat(top)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -192,7 +216,7 @@ func ScanServer(dir string, folders []string) (map[string]File, error) {
 				return err
 			}
 			rel = filepath.ToSlash(rel)
-			if ValidPath(rel, folders) != nil {
+			if ValidPath(rel) != nil {
 				return nil
 			}
 			info, err := d.Info()

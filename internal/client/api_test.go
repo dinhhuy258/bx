@@ -2,6 +2,10 @@ package client
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -70,15 +74,32 @@ func TestClaudeSyncAgainstServe(t *testing.T) {
 	s.ClaudeDir = t.TempDir()
 	c := NewAPI(ts.URL)
 	ctx := context.Background()
-	plan, err := c.SyncPlan(ctx, api.SyncPlanRequest{Folders: []string{"skills"}, Files: []api.SyncFile{{Path: "skills/a/SKILL.md", SHA256: "x", Size: 1}}})
-	if err != nil || len(plan.Add) != 1 || plan.Add[0] != "skills/a/SKILL.md" || plan.Dir != s.ClaudeDir {
+	plan, err := c.SyncPlan(ctx, api.SyncPlanRequest{Files: []api.SyncFile{{Path: "skills/a/SKILL.md", SHA256: "x", Size: 1}}})
+	if err != nil || len(plan.Items) != 1 || plan.Items[0].Name != "skills/a" || plan.Items[0].Status != "new" || plan.Dir != s.ClaudeDir {
 		t.Fatalf("%+v %v", plan, err)
 	}
-	res, err := c.SyncApply(ctx, api.SyncApplyRequest{Folders: []string{"skills"}, Paths: []string{"skills/a/SKILL.md"}, Files: []api.SyncFile{{Path: "skills/a/SKILL.md", Content: []byte("a")}}})
+	res, err := c.SyncApply(ctx, api.SyncApplyRequest{Items: []string{"skills/a"}, Paths: []string{"skills/a/SKILL.md"}, Files: []api.SyncFile{{Path: "skills/a/SKILL.md", Content: []byte("a")}}})
 	if err != nil || res.Added != 1 {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if _, err := c.SyncPlan(ctx, api.SyncPlanRequest{Folders: []string{"other"}}); err == nil || !strings.Contains(err.Error(), "unknown folder") {
+	_, err = c.SyncPlan(ctx, api.SyncPlanRequest{Files: []api.SyncFile{{Path: "other/x.md"}}})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != 400 || !strings.Contains(err.Error(), "bad path") {
 		t.Fatalf("want the server's error text, got %v", err)
+	}
+}
+
+// An old server without the sync routes: the status code reaches the caller.
+func TestStatusErrorCarriesTheCode(t *testing.T) {
+	for _, code := range []int{http.StatusNotFound, http.StatusMethodNotAllowed} {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "nope", code)
+		}))
+		_, err := NewAPI(ts.URL).SyncPlan(context.Background(), api.SyncPlanRequest{})
+		ts.Close()
+		var se *StatusError
+		if !errors.As(err, &se) || se.Code != code || !strings.Contains(err.Error(), fmt.Sprint(code)) {
+			t.Fatalf("%d: %#v", code, err)
+		}
 	}
 }

@@ -84,30 +84,42 @@ type SyncFile struct {
 	Content []byte `json:"content,omitempty"`
 }
 
-// SyncPlanRequest is the body of POST /api/claude/sync/plan: the Mac's files of Folders.
+// SyncPlanRequest is the body of POST /api/claude/sync/plan: every Mac file of the synced
+// folders (skills, agents, commands, rules).
 type SyncPlanRequest struct {
-	Folders []string   `json:"folders"`
-	Files   []SyncFile `json:"files"`
+	Files []SyncFile `json:"files"`
 }
 
-// SyncPlan is its reply. Dir is the server's Claude config dir, for display.
+// SyncPlan is its reply. Dir is the server's Claude config dir, for display. Items is sorted
+// by name.
 type SyncPlan struct {
-	Dir       string   `json:"dir"`
-	Add       []string `json:"add"`
-	Update    []string `json:"update"`
-	Delete    []string `json:"delete"`
-	Unchanged int      `json:"unchanged"`
-	Kept      int      `json:"kept"`
+	Dir   string     `json:"dir"`
+	Items []SyncItem `json:"items"`
 }
 
-// SyncApplyRequest is the body of POST /api/claude/sync. Paths is every Mac file of Folders
-// (the server records those that exist after the apply), Files the adds and updates, Delete
-// the paths to remove.
+// SyncItem is one item of a plan: "skills/<name>" or "<agents|commands|rules>/<file or
+// folder>". Status is "new" (no file of it on the server), "changed", "same", "removed" (bx
+// synced it, the Mac no longer has it, the server still does) or "server-only" (only on the
+// server, never synced by bx: always kept). Add, Update and Delete are its paths a sync would
+// touch. Error says why it can't sync (a symlink or a non-regular file on the server).
+type SyncItem struct {
+	Name   string   `json:"name"`
+	Status string   `json:"status"`
+	Add    []string `json:"add,omitempty"`
+	Update []string `json:"update,omitempty"`
+	Delete []string `json:"delete,omitempty"`
+	Error  string   `json:"error,omitempty"`
+}
+
+// SyncApplyRequest is the body of POST /api/claude/sync. Items is the scope of the sync;
+// nothing outside it is touched. Paths is every Mac file of Items (the server records those
+// that exist after the apply), Files the adds and updates with content, Delete the record
+// paths of Items the Mac no longer has.
 type SyncApplyRequest struct {
-	Folders []string   `json:"folders"`
-	Paths   []string   `json:"paths"`
-	Files   []SyncFile `json:"files"`
-	Delete  []string   `json:"delete"`
+	Items  []string   `json:"items"`
+	Paths  []string   `json:"paths"`
+	Files  []SyncFile `json:"files"`
+	Delete []string   `json:"delete"`
 }
 
 // SyncResult is its reply.
