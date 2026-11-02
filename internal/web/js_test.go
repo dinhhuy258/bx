@@ -54,6 +54,52 @@ if (free.map((b) => b.name).join() !== 'develop') fail('storyBranches: ' + JSON.
 `
 
 func TestPRPickerLooksANumberUp(t *testing.T) {
+	runJS(t, prPickScript)
+}
+
+// shellScript loads the shell, session and project screens on the same fake DOM and checks the
+// shell helpers: routes ('_' = Chats), plain shells, the next free number and the row label.
+const shellScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+}
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => new El(t), body: new El('body') };
+globalThis.location = { hash: '', protocol: 'http:', host: 'x' };
+
+const { shellHref, plainShell, nextShellK, shellLabel, groupName } = await import(process.argv[2] + '/shell.js');
+const { showSession, showShell } = await import(process.argv[2] + '/session.js');
+const { showProject } = await import(process.argv[2] + '/project.js');
+const { api } = await import(process.argv[2] + '/api.js');
+const fail = (m) => { console.error(m); process.exit(1); };
+
+if (typeof showSession !== 'function' || typeof showShell !== 'function' || typeof showProject !== 'function') fail('screens not exported');
+if (shellHref('p', '', 2) !== '#/p/p/sh/_/2') fail('shellHref chats: ' + shellHref('p', '', 2));
+if (shellHref('p', 's1', 1) !== '#/p/p/sh/s1/1') fail('shellHref s1: ' + shellHref('p', 's1', 1));
+if (!(plainShell('zsh') && plainShell('-bash') && plainShell('fish') && !plainShell('npm') && !plainShell(''))) fail('plainShell');
+const k = nextShellK({ shells: [{ story: 's1', k: 1 }, { story: 's1', k: 3 }, { story: '', k: 2 }] }, 's1');
+if (k !== 2) fail('nextShellK: ' + k);
+if (nextShellK({ shells: [{ story: 's1', k: 1 }] }, '') !== 1) fail('nextShellK chats');
+if (shellLabel({ title: '', command: 'zsh' }) !== 'zsh') fail('shellLabel command');
+if (shellLabel({ title: 'dev', command: 'npm' }) !== 'dev') fail('shellLabel title');
+if (shellLabel({}) !== 'shell') fail('shellLabel empty');
+if (groupName('') !== 'Chats' || groupName('s1') !== 's1') fail('groupName');
+const url = api.shellStreamURL('home network', 'fix/login', 2, 80, 24);
+if (url !== 'ws://x/api/projects/home%20network/shells/stream?story=fix%2Flogin&k=2&cols=80&rows=24') fail('shellStreamURL: ' + url);
+`
+
+func TestShellHelpers(t *testing.T) {
+	runJS(t, shellScript)
+}
+
+// runJS runs an ES-module script with node; the script gets the file:// URL of static/js as
+// its first argument and fails by exiting non-zero.
+func runJS(t *testing.T, src string) {
+	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is not installed")
@@ -62,8 +108,8 @@ func TestPRPickerLooksANumberUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join(t.TempDir(), "pick.mjs")
-	if err := os.WriteFile(script, []byte(prPickScript), 0o644); err != nil {
+	script := filepath.Join(t.TempDir(), "test.mjs")
+	if err := os.WriteFile(script, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command(node, script, "file://"+filepath.ToSlash(js)).CombinedOutput(); err != nil {

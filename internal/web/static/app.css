@@ -26,6 +26,15 @@ button.icon, a.icon { background: none; border: none; font-size: 22px; padding: 
 .badge.running { color: var(--run); }
 .badge.starting { color: var(--run); opacity: .7; }
 .badge.gone { color: var(--gone); }
+.badge.shell { color: #5fd7d7; }
+.badge.closed { color: var(--gone); }
+.badge.busy { color: var(--wait); }
+/* shell rows: [ $k ][ label ][ command ]          [ busy ] on one line */
+.row.shell { flex-direction: row; align-items: center; gap: 8px; }
+.row.shell .title { min-width: 0; }
+.row.shell .badge { margin-left: auto; }
+.shi { flex: none; color: #5fd7d7; font-family: Menlo, monospace; font-weight: 600; }
+.cmd { flex: 0 1 auto; min-width: 0; color: var(--dim); font-family: Menlo, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .group > header { display: flex; align-items: center; gap: 8px; padding: 10px 0 2px 14px; color: var(--dim); font-size: 13px; }
 .group > header .title { flex: 1; color: var(--fg); font-weight: 600; }
@@ -67,6 +76,14 @@ html.session-lock body { position: fixed; inset: 0; }
 .hbtns { display: flex; gap: 6px; flex: none; align-items: center; }
 button.hk { height: 40px; min-width: 44px; padding: 0 10px; font-size: 15px; line-height: 1; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; -webkit-user-select: none; user-select: none; }
 button.hk.stop { background: var(--gone); border-color: var(--gone); color: #fff; }
+button.hk:disabled { opacity: .3; }
+/* a closed shell: its last output stays, faded, and a card takes the input row's place */
+.session.closed .term { opacity: .38; }
+.closed-card { display: flex; flex-direction: column; gap: 8px; background: #1b1e24; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+.closed-card .hd { font-weight: 700; }
+.closed-card .why { color: var(--dim); font-size: 13px; margin-bottom: 6px; }
+.closed-card button { width: 100%; padding: 12px; font-weight: 600; }
+.closed-card button.new { color: #5fd7d7; }
 /* [ textarea ][ ▲/▼ ][ Enter ]: 48px tall on one line; a grown box keeps the buttons at the bottom */
 .input { display: flex; gap: 6px; align-items: flex-end; padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 .input textarea { flex: 1; min-width: 0; resize: none; min-height: 48px; max-height: 120px; padding: 12px; line-height: 22px; border-radius: 8px; }

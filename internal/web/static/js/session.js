@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { h, bar, poll, toast, copyText, ask } from './ui.js';
 import { sessionMenu, withForce } from './sessionmenu.js';
+import { shellMenu, shellLabel, closedCard, confirmNewShell, openShell } from './shell.js';
 
 const MAX_INPUT = 64 * 1024; // the server reads frames up to 1 MB
 const ENTER_DELAY = 50; // ms between the text and Enter, so Claude doesn't take Enter as part of a paste
@@ -16,17 +17,29 @@ export function encodeMessage(text) {
   return clean.includes('\n') ? `\x1b[200~${clean}\x1b[201~` : clean.replace(/\t/g, ' ');
 }
 
-export function showSession(root, project, num) {
+// showSession is the screen of Claude session num; showShell the screen of shell k of a story
+// ('' = Chats). Both are showTerminal, so they share the terminal, socket, reconnect, scroll,
+// copy and layout code.
+export const showSession = (root, project, num) => showTerminal(root, project, { num });
+export const showShell = (root, project, story, k) => showTerminal(root, project, { shell: true, story, k });
+
+// showTerminal streams target: { num } for a session, { shell: true, story, k } for a shell. A
+// shell has no 📎, a ^C button where a session has Esc, its own ⋯ sheet, and a closed card
+// instead of Resume once it ends.
+function showTerminal(root, project, target) {
+  const shell = !!target.shell;
+  const { num, k } = target;
+  const story = target.story || '';
   const backHref = `#/p/${encodeURIComponent(project)}`;
-  const titleEl = h('span', {}, `#${num}`);
-  const stateEl = h('span', { class: 'badge' });
+  const titleEl = h('span', {}, shell ? `$${k}` : `#${num}`);
+  const stateEl = shell ? h('span', { class: 'badge shell' }, 'shell') : h('span', { class: 'badge' });
   const termEl = h('div', { class: 'term' });
   const liveBtn = h('button', { class: 'live', hidden: true, onclick: () => toLive() }, '↓ Live');
   const noticeText = h('span');
   const resumeBtn = h('button', { class: 'primary', hidden: true, onclick: () => resume() }, 'Resume');
   const notice = h('div', { class: 'notice', hidden: true }, noticeText, resumeBtn);
   const keep = (e) => e.preventDefault(); // tapping a button must not close the keyboard
-  const input = h('textarea', { rows: 1, placeholder: 'Message Claude…', autocapitalize: 'off',
+  const input = h('textarea', { rows: 1, placeholder: shell ? 'Run a command…' : 'Message Claude…', autocapitalize: 'off',
     autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter' });
   // ▲/▼ send on pointerdown, then repeat while held; a keyboard-activated click (detail 0) sends too
   let holdDelay = null, holdRepeat = null;
@@ -47,14 +60,18 @@ export function showSession(root, project, num) {
     onclick: () => fileInput.click() }, '📎');
   const copyBtn = h('button', { class: 'hk', 'aria-label': 'Copy screen', onpointerdown: keep,
     onclick: () => copyScreen() }, '⧉');
-  const escBtn = h('button', { class: 'hk', 'aria-label': 'Escape', onpointerdown: keep,
-    onclick: () => send('\x1b') }, 'Esc');
-  const menuBtn = h('button', { class: 'hk', 'aria-label': 'Session actions', onclick: () => openMenu() }, '⋯');
+  // a shell gets ^C (always red) where a session has Esc (red while Claude runs)
+  const escBtn = shell
+    ? h('button', { class: 'hk stop', 'aria-label': 'Interrupt', onpointerdown: keep, onclick: () => send('\x03') }, '^C')
+    : h('button', { class: 'hk', 'aria-label': 'Escape', onpointerdown: keep, onclick: () => send('\x1b') }, 'Esc');
+  const menuBtn = h('button', { class: 'hk', 'aria-label': shell ? 'Shell actions' : 'Session actions',
+    onclick: () => openMenu() }, '⋯');
+  const inputRow = h('div', { class: 'input' }, shell ? null : attachBtn, input, stepper, enterBtn);
   const screen = h('div', { class: 'session' },
     bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl],
       h('span', { class: 'hbtns' }, copyBtn, escBtn, menuBtn)),
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
-    h('div', { class: 'input' }, attachBtn, input, stepper, enterBtn), fileInput);
+    inputRow, shell ? null : fileInput);
   root.append(screen);
   document.documentElement.classList.add('session-lock'); // see layout()
 
@@ -68,7 +85,8 @@ export function showSession(root, project, num) {
   const encoder = new TextEncoder();
   let ws = null, opened = false, closed = false, ended = false, retry = null, scrolled = 0, lastState = '';
   let offlineRetry = null; // the slow try while navigator.onLine is false
-  let cur = null; // the last poll's { s: session record, st: session state }
+  let cur = null; // the last poll's { s: session record, st: session state }; for a shell, its api.Shell
+  let shellSnap = null, dirs = {}, storyGone = false; // a shell's last snapshot, folders, and whether its story was closed
   let fails = 0; // closes in a row before the socket opened, with the server reachable
   let backoff = 0; // retries since the socket last opened
 
@@ -80,7 +98,8 @@ export function showSession(root, project, num) {
     if (closed || ended || ws) return;
     clearTimeout(retry);
     opened = false;
-    ws = new WebSocket(api.streamURL(project, num, term.cols, term.rows));
+    ws = new WebSocket(shell ? api.shellStreamURL(project, story, k, term.cols, term.rows)
+      : api.streamURL(project, num, term.cols, term.rows));
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
       opened = true;
@@ -108,7 +127,7 @@ export function showSession(root, project, num) {
       ws = null;
       if (closed) return;
       if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done'))) {
-        showEnded();
+        end();
         return;
       }
       if (!opened) {
@@ -121,7 +140,7 @@ export function showSession(root, project, num) {
         const ok = await reachable();
         if (closed || ended || ws) return; // stopped, ended or reconnected meanwhile
         if (ok && ++fails >= 3) {
-          showEnded();
+          end();
           return;
         }
       }
@@ -178,9 +197,45 @@ export function showSession(root, project, num) {
     notice.hidden = false;
   }
 
-  // openMenu shows the same actions sheet as the project list; a delete goes back there
+  // end is the stream's end: a session offers Resume, a shell shows its closed card
+  function end() {
+    if (shell) showClosed();
+    else showEnded();
+  }
+
+  // showClosed keeps a closed shell's output, faded, and puts a card where the input row was.
+  // A shell can't be resumed, so the screen never reconnects from here.
+  async function showClosed() {
+    ended = true;
+    fails = 0;
+    backoff = 0;
+    screen.classList.add('closed');
+    stateEl.className = 'badge closed';
+    stateEl.textContent = 'closed';
+    menuBtn.disabled = true;
+    input.blur();
+    inputRow.hidden = true;
+    notice.hidden = true;
+    try { // best effort: the last poll's storyGone stands if this fails
+      readShellSnap(await api.snapshot(project));
+    } catch { /* keep the last poll's */ }
+    if (closed) return;
+    screen.append(closedCard({ k, story, storyGone, onBack: () => { location.hash = backHref; },
+      onNew: async () => {
+        const nk = await confirmNewShell(project, shellSnap || { shells: [], dirs }, story);
+        if (nk && !closed) openShell(project, story, nk);
+      } }));
+    layout();
+  }
+
+  // openMenu shows the same actions sheet as the project list; a delete goes back there. A
+  // shell's close ends the stream, which shows the closed card.
   function openMenu() {
-    if (!cur) return;
+    if (!cur || (shell && ended)) return;
+    if (shell) {
+      shellMenu({ project, sh: cur, dir: dirs[story], refresh: () => {}, onClosed: () => {} });
+      return;
+    }
     sessionMenu({ project, num, session: cur.s, state: cur.st.state, act, refresh: () => {}, ask,
       withForce: (a, b, w, o) => withForce(project, a, b, w, o), onDeleted: () => { location.hash = backHref; } });
   }
@@ -463,7 +518,23 @@ export function showSession(root, project, num) {
   window.addEventListener('online', reconnectNow);
   window.addEventListener('pagehide', leaveScroll); // closing the tab or reloading
 
+  // readShellSnap takes the shell's row, folders and story from snap. A missing row doesn't leave
+  // the screen: the stream's end says whether the shell is gone.
+  function readShellSnap(snap) {
+    shellSnap = snap;
+    dirs = snap.dirs || {};
+    storyGone = !!story && !(snap.project.stories || {})[story];
+    const sh = (snap.shells || []).find((s) => s.story === story && s.k === k);
+    if (!sh) return;
+    cur = sh;
+    titleEl.textContent = `$${k} ${shellLabel(sh)}`;
+  }
+
   const stopPoll = poll(async () => {
+    if (shell) {
+      readShellSnap(await api.snapshot(project));
+      return;
+    }
     const snap = await api.snapshot(project);
     const s = (snap.project.sessions || {})[num];
     if (!s) { toast(`No session #${num}`); location.hash = backHref; return; }

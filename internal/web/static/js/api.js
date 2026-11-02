@@ -41,4 +41,11 @@ export const api = {
     call('POST', `/api/projects/${enc(p)}/sessions/${num}/files`, { name, content }),
   streamURL: (p, num, cols, rows) =>
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/sessions/${num}/stream?cols=${cols}&rows=${rows}`,
+  // shells: story '' is Chats (the project folder); the reply of newShell has the new .k
+  newShell: (p, story) => call('POST', `/api/projects/${enc(p)}/shells`, { story }),
+  closeShell: (p, story, k) => call('POST', `/api/projects/${enc(p)}/shells/close`, { story, k }),
+  // an empty title goes back to showing the command
+  renameShell: (p, story, k, title) => call('POST', `/api/projects/${enc(p)}/shells/rename`, { story, k, title }),
+  shellStreamURL: (p, story, k, cols, rows) =>
+    `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/shells/stream?story=${enc(story)}&k=${k}&cols=${cols}&rows=${rows}`,
 };

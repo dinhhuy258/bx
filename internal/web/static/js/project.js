@@ -2,6 +2,7 @@ import { api } from './api.js';
 import { h, bar, poll, toast, ask, confirmBox, sheet } from './ui.js';
 import { sessionMenu, withForce } from './sessionmenu.js';
 import { newStoryMenu } from './newstory.js';
+import { shellHref, shellLabel, plainShell, shellMenu, confirmNewShell, openShell } from './shell.js';
 
 const enc = encodeURIComponent;
 
@@ -42,13 +43,32 @@ export function showProject(root, name) {
     body.replaceChildren(...[...groups].map(([story, rows]) => group(story, rows.sort(order))));
   }
 
+  // shellsOf lists a story's shells ('' = Chats), by number (the server sorts them)
+  const shellsOf = (story) => (snap.shells || []).filter((s) => s.story === story);
+
+  // group lists a story's sessions, then its shells
   function group(story, rows) {
     const d = story && snap.live.diff ? snap.live.diff[story] : null;
     const meta = d ? `+${d.add} −${d.del}${d.dirty ? ` · ${d.dirty} uncommitted` : ''}` : '';
+    const shells = shellsOf(story);
     return h('section', { class: 'group' },
       h('header', {}, h('span', { class: 'title' }, story || 'Chats'), h('span', {}, meta),
         h('button', { class: 'icon', 'aria-label': 'Story actions', onclick: () => storyMenu(story) }, '⋯')),
-      h('ul', { class: 'list' }, rows.length ? rows.map(([n, s]) => sessionRow(n, s)) : h('li', { class: 'empty' }, 'No sessions')));
+      h('ul', { class: 'list' }, rows.length || shells.length
+        ? [rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow)]
+        : h('li', { class: 'empty' }, 'No sessions')));
+  }
+
+  // shellRow is `$k label`, the command after a rename, and `busy` while something other than
+  // the shell itself runs in it
+  function shellRow(sh) {
+    return h('li', {},
+      h('a', { class: 'row shell', href: shellHref(name, sh.story, sh.k) },
+        h('span', { class: 'shi' }, `$${sh.k}`),
+        h('span', { class: 'title' }, shellLabel(sh)),
+        sh.title && sh.command ? h('span', { class: 'cmd' }, sh.command) : null,
+        sh.command && !plainShell(sh.command) ? h('span', { class: 'badge busy' }, 'busy') : null),
+      h('button', { class: 'icon', 'aria-label': 'Shell actions', onclick: () => shellMenu({ project: name, sh, refresh, onClosed: refresh }) }, '⋯'));
   }
 
   function sessionRow(n, s) {
@@ -61,11 +81,14 @@ export function showProject(root, name) {
   }
 
   function storyMenu(story) {
-    if (!story) { sheet('Chats', [{ label: 'New chat', run: () => newSession('') }]); return; }
-    const items = [{ label: 'New session', run: () => newSession(story) }];
+    const shellItem = { label: 'New shell', run: () => newShell(story) };
+    if (!story) { sheet('Chats', [{ label: 'New chat', run: () => newSession('') }, shellItem]); return; }
+    const items = [{ label: 'New session', run: () => newSession(story) }, shellItem];
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
     items.push({ label: 'Close story', run: async () => {
-      if (await confirmBox(`Close ${story}? Its sessions stop and the worktree is removed.`, 'Close')) {
+      const n = shellsOf(story).length;
+      const shells = n ? ` and ${n} ${n === 1 ? 'shell' : 'shells'}` : '';
+      if (await confirmBox(`Close ${story}? Its sessions${shells} stop and the worktree is removed.`, 'Close')) {
         force('stories/close', { name: story }, `Close ${story}`);
       }
     } });
@@ -85,6 +108,11 @@ export function showProject(root, name) {
     if (v === null) return;
     const r = await act('sessions', { story, title: v.title });
     if (r) location.hash = `#/p/${enc(name)}/s/${r.num}`;
+  }
+
+  async function newShell(story) {
+    const k = await confirmNewShell(name, snap, story);
+    if (k) openShell(name, story, k);
   }
 
   async function addRepos(story) {
