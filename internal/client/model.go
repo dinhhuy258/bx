@@ -151,7 +151,6 @@ type Model struct {
 	scrolled      bool // the Claude pane may be back in history; the next key returns to live first
 	copying       bool // the Claude pane is in tmux copy-mode: keys go to tmux until it leaves
 	prompt        ui.Prompt
-	closeDirty    int // uncommitted files of the story in a force prompt
 	seq           string
 	flash         string
 	flashAt       time.Time
