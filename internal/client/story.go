@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -289,8 +290,15 @@ func (m *Model) prItems(prs []api.PR) []string {
 	return items
 }
 
+// directPRRe is a filter that names one pull request: #123 or its URL.
+var directPRRe = regexp.MustCompile(`^(#\d+|https?://[^/\s]+/[^/\s]+/[^/\s]+/pull/\d+\S*)$`)
+
+// directPR reports whether the picker filter q names one pull request. Enter then looks that
+// one up (gh pr view) instead of taking the first row that contains q.
+func directPR(q string) bool { return directPRRe.MatchString(strings.TrimSpace(q)) }
+
 // searchPRs asks GitHub for the pull requests matching what was typed when nothing in the
-// picker does. The picker stays open.
+// picker does, or for the one pull request it names. The picker stays open.
 func (m *Model) searchPRs(q string) tea.Cmd {
 	if q = strings.TrimSpace(q); q == "" {
 		return nil

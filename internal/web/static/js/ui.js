@@ -144,6 +144,8 @@ export function sheet(title, items) {
 // resolves to the tapped item, or null on Cancel. Enter picks the first match. With
 // opts.search(q), a search that matches nothing offers a "Search GitHub" button (Enter does
 // the same); search resolves to the items to list instead, or {pick: item} to pick at once.
+// With opts.direct(q) true (q names one item, like #45), Enter and the button search for it
+// instead of picking the first match, which may only contain it (#456).
 export function pickFrom(title, items, opts = {}) {
   return new Promise((resolve) => {
     let picked = null, shown = [], seq = 0;
@@ -154,12 +156,13 @@ export function pickFrom(title, items, opts = {}) {
     const empty = h('p', { class: 'help', hidden: true }, 'Nothing matches');
     const more = h('button', { type: 'button', hidden: true, onclick: () => search() }, 'Search GitHub');
     const pick = (it) => { picked = it; dlg.close(); };
+    const isDirect = () => !!(opts.search && opts.direct && opts.direct(q.value.trim()));
     const draw = () => {
       const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
       shown = items.filter((it) => words.every((w) => it.label.toLowerCase().includes(w)));
       list.replaceChildren(...shown.map((it) => h('button', { type: 'button', onclick: () => pick(it) }, it.label)));
       empty.hidden = shown.length > 0;
-      more.hidden = shown.length > 0 || !opts.search || !q.value.trim();
+      more.hidden = !opts.search || !q.value.trim() || (shown.length > 0 && !isDirect());
     };
     async function search() {
       const text = q.value.trim();
@@ -184,7 +187,7 @@ export function pickFrom(title, items, opts = {}) {
     q.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      if (shown.length) pick(shown[0]);
+      if (shown.length && !isDirect()) pick(shown[0]);
       else search();
     });
     const dlg = h('dialog', { class: 'pick' }, head, q, list, empty, more,

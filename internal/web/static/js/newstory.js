@@ -18,6 +18,9 @@ const cleanBranch = (s) => s.split('/').map(slug).filter(Boolean).join('/');
 // storyName is naming.StoryName: the slug of the part after the last '/'.
 const storyName = (branch) => slug(branch.slice(branch.lastIndexOf('/') + 1));
 
+// directPR is client.directPR: the filter names one pull request, #123 or its URL.
+export const directPR = (q) => /^(#\d+|https?:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/pull\/\d+\S*)$/.test(q.trim());
+
 // ago is ui.Ago: how long ago unix time t was, in the largest whole unit.
 function ago(t) {
   const s = Date.now() / 1000 - t;
@@ -96,7 +99,7 @@ export function newStoryMenu({ project, snap, refresh }) {
     try { l = await api.prs(project, ''); } catch (e) { toast(e.message); return; }
     const errs = l.errors || [];
     if (!l.prs.length && errs.length) { toast(`gh: ${errs[0]}`); return; }
-    const it = await pickFrom(`Pull requests${errs.length ? ` · gh: ${errs[0]}` : ''}`, prItems(l.prs), { search: async (q) => {
+    const it = await pickFrom(`Pull requests${errs.length ? ` · gh: ${errs[0]}` : ''}`, prItems(l.prs), { direct: directPR, search: async (q) => {
       let r;
       try { r = await api.prs(project, q); } catch (e) { toast(e.message); return null; }
       if (r.direct && r.prs.length === 1) return { pick: prItems(r.prs)[0] };

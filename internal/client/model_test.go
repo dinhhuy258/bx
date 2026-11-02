@@ -942,6 +942,36 @@ func TestPullRequestSearchAndDirectLookup(t *testing.T) {
 	}
 }
 
+func TestPullRequestNumberIsThatPullRequest(t *testing.T) {
+	l := prs()
+	l.PRs = append([]api.PR{{Number: 456, Title: "Newer", Author: "eve", Branch: "feat/newer"}}, l.PRs...)
+	for i := range l.PRs {
+		l.PRs[i].Repo, l.PRs[i].Slug = "", ""
+	}
+	// #456 contains #45 and is listed first; #123 contains #12: both still looked up, not picked
+	for q, pr := range map[string]api.PR{
+		"#45": {Number: 45, Title: "Older", Author: "dan", Branch: "fix/older"},
+		"#12": {Number: 12, Title: "Typo", Author: "bob", Branch: "fix/typo"},
+	} {
+		h := start(t, 160, 30, "idle")
+		h.be.prs = map[string]api.PRList{"": l, q: {PRs: []api.PR{pr}, Direct: true}}
+		h.press("w", "Down", "Down", "Enter")
+		h.typeText(q)
+		h.press("Enter")
+		if got := strings.Join(h.be.actions, "|"); got != fmt.Sprintf("home-network stories source=pr pr=%d", pr.Number) {
+			t.Fatalf("%s: actions = %q", q, got)
+		}
+		if got := strings.Join(h.be.reads, "|"); got != "prs |prs "+q {
+			t.Fatalf("%s: reads = %q", q, got)
+		}
+	}
+	for q, want := range map[string]bool{"#45": true, " #45 ": true, "https://github.com/acme/web/pull/5/files": true, "45": false, "#45 x": false, "fix #45": false, "#": false} {
+		if directPR(q) != want {
+			t.Errorf("directPR(%q) = %v", q, !want)
+		}
+	}
+}
+
 func TestPullRequestGhErrors(t *testing.T) {
 	h := start(t, 160, 30, "idle")
 	h.be.prs = map[string]api.PRList{"": {Errors: []string{"acme requires SSO authorization"}}}
