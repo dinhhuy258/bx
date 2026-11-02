@@ -383,8 +383,11 @@ func (a *App) preparePR(ctx context.Context, p *state.Project, o StoryOpts, plan
 	}
 	t := targets[idx]
 	args := []string{"pr", "view", strconv.Itoa(o.PR), "--json", prFields}
-	out, err := a.GH(t.repo, args...)
+	out, err := a.GH(ctx, t.repo, args...)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	var pr ghPR
@@ -903,8 +906,8 @@ var (
 
 // PullRequests asks gh, in each repository's folder so it picks the repository and host from
 // origin, for the open pull requests (q ""), one pull request (q "#12", "12" or its URL) or a
-// search (any other q, every state).
-func (a *App) PullRequests(p *state.Project, q string) (*PRList, error) {
+// search (any other q, every state). When ctx is done gh is killed and it returns ctx.Err().
+func (a *App) PullRequests(ctx context.Context, p *state.Project, q string) (*PRList, error) {
 	targets, err := a.allTargets(p)
 	if err != nil {
 		return nil, err
@@ -940,7 +943,10 @@ func (a *App) PullRequests(p *state.Project, q string) (*PRList, error) {
 		if label == "" {
 			label = t.rel
 		}
-		raw, err := a.GH(t.repo, args...)
+		raw, err := a.GH(ctx, t.repo, args...)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		var prs []ghPR
 		if err == nil {
 			if out.Direct {

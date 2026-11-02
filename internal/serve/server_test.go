@@ -285,7 +285,7 @@ func TestCreateProjectsAndRepos(t *testing.T) {
 	if len(list) != 3 {
 		t.Fatalf("%+v", list)
 	}
-	s.App.GH = func(string, ...string) (string, error) { return "a/b\nc/d\n", nil }
+	s.App.GH = func(context.Context, string, ...string) (string, error) { return "a/b\nc/d\n", nil }
 	repos, code := get[[]string](t, ts, "/api/github/repos")
 	if code != 200 || strings.Join(repos, ",") != "a/b,c/d" {
 		t.Fatalf("%d %q", code, repos)
@@ -798,7 +798,7 @@ func TestStoryInfoBranchesAndPullRequests(t *testing.T) {
 		t.Fatalf("%d %+v", code, bl)
 	}
 	var dirs []string
-	s.App.GH = func(dir string, args ...string) (string, error) {
+	s.App.GH = func(_ context.Context, dir string, args ...string) (string, error) {
 		dirs = append(dirs, dir)
 		if strings.Contains(strings.Join(args, " "), "--search") {
 			return "", errors.New("gh pr list: acme requires SSO authorization")
@@ -813,6 +813,38 @@ func TestStoryInfoBranchesAndPullRequests(t *testing.T) {
 	prs, code = get[api.PRList](t, ts, "/api/projects/home-network/prs?q=login")
 	if code != 200 || len(prs.PRs) != 0 || len(prs.Errors) != 1 || !strings.Contains(prs.Errors[0], "SSO") {
 		t.Fatalf("gh failure: %d %+v", code, prs)
+	}
+}
+
+func TestPullRequestsStopGHWhenTheClientGoes(t *testing.T) {
+	s, _, ts := newServer(t)
+	for _, path := range []string{"/api/projects/home-network/prs", "/api/projects/home-network/stories"} {
+		killed := make(chan struct{})
+		s.App.GH = func(ctx context.Context, _ string, _ ...string) (string, error) {
+			select {
+			case <-ctx.Done(): // the request's context: the client gave up
+				close(killed)
+				return "", ctx.Err()
+			case <-time.After(5 * time.Second):
+				return "", errors.New("gh: never cancelled")
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		method, body := http.MethodGet, ""
+		if strings.HasSuffix(path, "stories") {
+			method, body = http.MethodPost, `{"source":"pr","pr":7}`
+		}
+		req, _ := http.NewRequestWithContext(ctx, method, ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if res, err := http.DefaultClient.Do(req); err == nil {
+			res.Body.Close()
+		}
+		cancel()
+		select {
+		case <-killed:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s: gh kept running after the client went", path)
+		}
 	}
 }
 

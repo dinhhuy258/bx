@@ -690,7 +690,7 @@ func (s *Server) pullRequests(w http.ResponseWriter, r *http.Request) {
 		httpError(w, statusOf(err), err)
 		return
 	}
-	l, err := s.App.PullRequests(p, r.URL.Query().Get("q"))
+	l, err := s.App.PullRequests(r.Context(), p, r.URL.Query().Get("q"))
 	if err != nil {
 		httpError(w, statusOf(err), err)
 		return

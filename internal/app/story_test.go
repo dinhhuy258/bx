@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dinhhuy258/bx/internal/state"
 )
@@ -324,7 +325,7 @@ type fakeGH struct {
 	dirs []string
 }
 
-func (f *fakeGH) run(dir string, args ...string) (string, error) {
+func (f *fakeGH) run(_ context.Context, dir string, args ...string) (string, error) {
 	f.dirs = append(f.dirs, dir)
 	key := strings.Join(args, " ")
 	for _, k := range []string{dir + " " + key, key} {
@@ -416,7 +417,7 @@ func TestWorkspacePullRequests(t *testing.T) {
 		errs: map[string]string{web + " " + list: "other-org requires SSO authorization", web + " " + view: "no pull requests found"},
 	}
 	a.GH = gh.run
-	got, err := a.PullRequests(p, "")
+	got, err := a.PullRequests(context.Background(), p, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,19 +427,19 @@ func TestWorkspacePullRequests(t *testing.T) {
 	if strings.Join(got.Errors, "|") != "other-org/web: other-org requires SSO authorization" || got.Direct {
 		t.Fatalf("errors %q", got.Errors)
 	}
-	got, _ = a.PullRequests(p, "#5")
+	got, _ = a.PullRequests(context.Background(), p, "#5")
 	if !got.Direct || len(got.PRs) != 1 || got.PRs[0].Repo != "api" || len(got.Errors) != 0 {
 		t.Fatalf("direct %+v", got)
 	}
 	gh.dirs = nil
-	got, _ = a.PullRequests(p, "https://github.com/acme/api/pull/5/files")
+	got, _ = a.PullRequests(context.Background(), p, "https://github.com/acme/api/pull/5/files")
 	if !got.Direct || len(got.PRs) != 1 || strings.Join(gh.dirs, " ") != api {
 		t.Fatalf("url %+v, asked %q", got, gh.dirs)
 	}
-	if got, _ = a.PullRequests(p, "https://github.com/zzz/api/pull/5"); len(got.PRs) != 0 || len(got.Errors) != 1 {
+	if got, _ = a.PullRequests(context.Background(), p, "https://github.com/zzz/api/pull/5"); len(got.PRs) != 0 || len(got.Errors) != 1 {
 		t.Fatalf("url of another repo %+v", got)
 	}
-	got, _ = a.PullRequests(p, "login")
+	got, _ = a.PullRequests(context.Background(), p, "login")
 	if len(got.PRs) != 0 || len(got.Errors) != 0 || got.Direct {
 		t.Fatalf("search %+v", got)
 	}
@@ -498,5 +499,47 @@ func TestStoryInfoBranchesAndOverride(t *testing.T) {
 	gitIn(t, p.Path, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 	if bl, _ = a.Branches(context.Background(), p, true); bl.Note != "fetch failed · showing the last fetched branches" || len(bl.Branches) != 3 {
 		t.Fatalf("%+v", bl)
+	}
+}
+
+func TestRunGHIsKilledWithItsContext(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := runGH(ctx, t.TempDir(), "pr", "list")
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 10*time.Second {
+		t.Fatalf("err %v after %v", err, time.Since(start))
+	}
+}
+
+func TestPullRequestsAndPRStoriesPassTheirContext(t *testing.T) {
+	a, _, p := newApp(t)
+	withOrigin(t, p.Path)
+	ctx, cancel := context.WithCancel(context.Background())
+	var seen []context.Context
+	a.GH = func(c context.Context, _ string, _ ...string) (string, error) {
+		seen = append(seen, c)
+		cancel() // Esc while gh runs
+		<-c.Done()
+		return "", errors.New("gh: killed")
+	}
+	if _, err := a.PullRequests(ctx, p, ""); !errors.Is(err, context.Canceled) {
+		t.Fatalf("PullRequests: %v", err)
+	}
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := a.PrepareStory(ctx, p, StoryOpts{Source: SourcePR, PR: 7}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("PrepareStory: %v", err)
+	}
+	if len(seen) != 2 {
+		t.Fatalf("gh ran %d times", len(seen))
+	}
+	if len(p.Stories) != 0 {
+		t.Fatalf("stories %v", p.Stories)
 	}
 }

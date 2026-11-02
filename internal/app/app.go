@@ -3,6 +3,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -29,8 +30,8 @@ type App struct {
 	// first prompt of unnamed sessions; "" leaves them unnamed.
 	Transcripts string
 	// GH runs gh in dir ("" = bx's own folder); in a repository gh takes the repository and
-	// host from its origin.
-	GH       func(dir string, args ...string) (string, error)
+	// host from its origin. It is killed when ctx is done.
+	GH       func(ctx context.Context, dir string, args ...string) (string, error)
 	Settings *settings.Store
 	// Log records best-effort failures that do not fail the operation; nil is silent.
 	Log func(format string, args ...any)
@@ -49,10 +50,13 @@ func New(cfg *config.Config) *App {
 	return &App{Cfg: cfg, Tmux: tmux.New(r), Git: git.New(), UUID: uuid.NewString, GH: runGH}
 }
 
-func runGH(dir string, args ...string) (string, error) {
-	cmd := exec.Command("gh", args...)
+func runGH(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "gh", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	if err != nil {
 		return "", fmt.Errorf("gh %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 	}
