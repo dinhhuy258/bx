@@ -150,7 +150,7 @@ func frontmatter(path string) map[string]string {
 	if err != nil {
 		return out
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 64*1024)
 	if !sc.Scan() || strings.TrimSpace(sc.Text()) != "---" {
