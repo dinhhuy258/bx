@@ -10,6 +10,7 @@ import (
 
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/state"
+	"github.com/dinhhuy258/bx/internal/uploads"
 )
 
 const defaultTitle = "New session"
@@ -279,9 +280,10 @@ func (a *App) stopStory(p *state.Project, name string) error {
 	return nil
 }
 
-// forgetStory drops the story and its sessions from the state.
+// forgetStory drops the story and its sessions, with their uploads, from the state.
 func (a *App) forgetStory(p *state.Project, name string) error {
 	for _, n := range p.SessionsOf(name) {
+		_ = uploads.Remove(a.Cfg.UploadsDir(), p.Name, n) // best effort: a leftover folder is harmless
 		delete(p.Sessions, n)
 	}
 	delete(p.Stories, name)

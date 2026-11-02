@@ -129,3 +129,15 @@ type SyncResult struct {
 	Updated int `json:"updated"`
 	Deleted int `json:"deleted"`
 }
+
+// UploadRequest is the body of POST /api/projects/{name}/sessions/{num}/files: one file, its
+// content base64 in JSON.
+type UploadRequest struct {
+	Name    string `json:"name"`
+	Content []byte `json:"content"`
+}
+
+// UploadResult is its reply: the absolute path of the file on the server.
+type UploadResult struct {
+	Path string `json:"path"`
+}

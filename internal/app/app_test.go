@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/git"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/tmux"
+	"github.com/dinhhuy258/bx/internal/uploads"
 )
 
 const listSessions = "list-sessions -F #{session_id}\t#{session_name}"
@@ -177,6 +179,51 @@ func TestCloseStoryDirtyThenForce(t *testing.T) {
 	got, _ := a.LoadProject("home-network")
 	if got.Stories["s1"] != nil || got.Sessions[1] != nil {
 		t.Fatalf("records left: %+v", got)
+	}
+}
+
+func TestCloseStoryRemovesUploads(t *testing.T) {
+	a, f, p := newApp(t)
+	if err := a.NewStory(p, "s1", nil); err != nil {
+		t.Fatal(err)
+	}
+	n1 := p.AddSession(&state.Session{Story: "s1", UUID: "u1"})
+	chat := p.AddSession(&state.Session{UUID: "u2"})
+	base := a.Cfg.UploadsDir()
+	now := time.Now()
+	mine, err := uploads.Save(base, "home-network", n1, "photo.jpg", []byte("x"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	others := []string{}
+	for _, o := range []struct {
+		project string
+		num     int
+	}{{"home-network", chat}, {"bunnix", n1}} {
+		path, err := uploads.Save(base, o.project, o.num, "keep.txt", []byte("x"), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		others = append(others, path)
+	}
+	os.WriteFile(filepath.Join(a.Cfg.WorktreeDir("home-network", "s1"), "new.txt"), []byte("x"), 0o644)
+	f.Replies[listSessions] = ""
+	if err := a.CloseStory(p, "s1", false); err == nil {
+		t.Fatal("a dirty story closed without force")
+	}
+	if _, err := os.Stat(mine); err != nil {
+		t.Fatalf("a refused close removed the upload: %v", err)
+	}
+	if err := a.CloseStory(p, "s1", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(uploads.Dir(base, "home-network", n1)); !os.IsNotExist(err) {
+		t.Fatalf("session uploads kept: %v", err)
+	}
+	for _, path := range others {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("another session's upload removed: %v", err)
+		}
 	}
 }
 

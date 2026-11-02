@@ -99,6 +99,9 @@ func TestPaths(t *testing.T) {
 	if got := c.TmuxConf(); got != "/tmp/bxroot/tmux.conf" {
 		t.Errorf("TmuxConf = %s", got)
 	}
+	if got := c.UploadsDir(); got != "/tmp/bxroot/uploads" {
+		t.Errorf("UploadsDir = %s", got)
+	}
 }
 
 func TestActionForKey(t *testing.T) {

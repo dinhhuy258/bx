@@ -197,6 +197,9 @@ func (c *Config) TmuxConf() string { return filepath.Join(c.Root, "tmux.conf") }
 // LogFile is <root>/logs/bx.log.
 func (c *Config) LogFile() string { return filepath.Join(c.Root, "logs", "bx.log") }
 
+// UploadsDir is <root>/uploads: files sent from the phone, outside every repository.
+func (c *Config) UploadsDir() string { return filepath.Join(c.Root, "uploads") }
+
 // EnsureDirs creates every folder under the root.
 func (c *Config) EnsureDirs() error {
 	for _, d := range []string{"projects", "worktrees", "state", "logs", "run"} {

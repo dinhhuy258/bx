@@ -60,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/projects/{name}", s.getProject)
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/stream", s.stream)
+	mux.HandleFunc("POST /api/projects/{name}/sessions/{num}/files", s.uploadFile)
 	mux.HandleFunc("POST /api/projects/{name}/sessions", s.action(func(p *state.Project, r api.Action) (int, error) {
 		if r.Story == "" {
 			return s.App.NewChat(p, r.Title)
