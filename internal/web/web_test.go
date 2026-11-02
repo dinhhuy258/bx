@@ -14,6 +14,7 @@ func TestHandlerServesApp(t *testing.T) {
 	for _, c := range []struct{ path, want string }{
 		{"/", "<title>bx</title>"},
 		{"/vendor/xterm.js", "Terminal"},
+		{"/js/sessionmenu.js", "export function sessionMenu"},
 	} {
 		r, err := http.Get(ts.URL + c.path)
 		if err != nil {

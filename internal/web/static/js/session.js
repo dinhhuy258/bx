@@ -1,5 +1,6 @@
 import { api } from './api.js';
-import { h, bar, poll, toast, copyText } from './ui.js';
+import { h, bar, poll, toast, copyText, ask } from './ui.js';
+import { sessionMenu, withForce } from './sessionmenu.js';
 
 const MAX_INPUT = 64 * 1024; // the server reads frames up to 1 MB
 const ENTER_DELAY = 50; // ms between the text and Enter, so Claude doesn't take Enter as part of a paste
@@ -48,9 +49,10 @@ export function showSession(root, project, num) {
     onclick: () => copyScreen() }, '⧉');
   const escBtn = h('button', { class: 'hk', 'aria-label': 'Escape', onpointerdown: keep,
     onclick: () => send('\x1b') }, 'Esc');
+  const menuBtn = h('button', { class: 'hk', 'aria-label': 'Session actions', onclick: () => openMenu() }, '⋯');
   const screen = h('div', { class: 'session' },
     bar(h('a', { href: backHref, class: 'icon', 'aria-label': 'Back' }, '‹'), [titleEl, stateEl],
-      h('span', { class: 'hbtns' }, copyBtn, escBtn)),
+      h('span', { class: 'hbtns' }, copyBtn, escBtn, menuBtn)),
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice),
     h('div', { class: 'input' }, attachBtn, input, stepper, enterBtn), fileInput);
   root.append(screen);
@@ -66,6 +68,7 @@ export function showSession(root, project, num) {
   const encoder = new TextEncoder();
   let ws = null, opened = false, closed = false, ended = false, retry = null, scrolled = 0, lastState = '';
   let offlineRetry = null; // the slow try while navigator.onLine is false
+  let cur = null; // the last poll's { s: session record, st: session state }
   let fails = 0; // closes in a row before the socket opened, with the server reachable
   let backoff = 0; // retries since the socket last opened
 
@@ -170,9 +173,19 @@ export function showSession(root, project, num) {
     ended = true;
     fails = 0;
     backoff = 0;
-    noticeText.textContent = 'Session ended';
+    noticeText.textContent = lastState === 'done' ? 'Session stopped' : 'Session ended';
     resumeBtn.hidden = false;
     notice.hidden = false;
+  }
+
+  // openMenu shows the same actions sheet as the project list; a delete goes back there
+  function openMenu() {
+    if (!cur) return;
+    sessionMenu({ project, num, session: cur.s, state: cur.st.state, act, refresh: () => {}, ask,
+      withForce: (a, b, w, o) => withForce(project, a, b, w, o), onDeleted: () => { location.hash = backHref; } });
+  }
+  async function act(action, body) {
+    try { return await api.action(project, action, body); } catch (e) { toast(e.message); return null; }
   }
 
   async function resume() {
@@ -455,10 +468,12 @@ export function showSession(root, project, num) {
     const s = (snap.project.sessions || {})[num];
     if (!s) { toast(`No session #${num}`); location.hash = backHref; return; }
     const st = (snap.session_states || {})[num] || { state: '' };
+    cur = { s, st };
     titleEl.textContent = s.title || `#${num}`;
     stateEl.className = `badge ${st.state}`;
     stateEl.textContent = st.state;
     lastState = st.state;
+    if (ended && st.state === 'done') noticeText.textContent = 'Session stopped';
     escBtn.classList.toggle('stop', st.state === 'running');
     updateEnter();
     // resumed elsewhere; 'starting' has a tmux session, so the stream can attach. Never 'gone'.

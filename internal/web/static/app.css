@@ -7,6 +7,7 @@ a { color: inherit; text-decoration: none; }
 /* 16px keeps iOS from zooming when a field gets focus */
 button, select, input, textarea { font: inherit; font-size: 16px; color: inherit; background: #1d1d1d; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { background: var(--gone); border-color: var(--gone); color: #fff; }
 button.icon, a.icon { background: none; border: none; font-size: 22px; padding: 4px 10px; min-width: 44px; min-height: 44px; text-align: center; display: inline-flex; align-items: center; justify-content: center; }
 
 .bar { display: flex; align-items: center; gap: 4px; padding: 0 4px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1; }

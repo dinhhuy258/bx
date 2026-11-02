@@ -1,5 +1,6 @@
 import { api } from './api.js';
 import { h, bar, poll, toast, ask, confirmBox, sheet } from './ui.js';
+import { sessionMenu, withForce } from './sessionmenu.js';
 
 const enc = encodeURIComponent;
 
@@ -55,18 +56,7 @@ export function showProject(root, name) {
       h('a', { class: 'row', href: `#/p/${enc(name)}/s/${n}` },
         h('span', { class: 'title' }, s.title || `#${n}`),
         h('span', { class: `badge ${st.state}` }, st.state === 'gone' || st.state === 'done' ? st.state : st.text)),
-      h('button', { class: 'icon', 'aria-label': 'Session actions', onclick: () => sessionMenu(n, s, st) }, '⋯'));
-  }
-
-  function sessionMenu(n, s, st) {
-    const items = [];
-    if (st.state === 'waiting') items.push({ label: 'Yes (press Enter)', run: () => act('yes', { num: n }) });
-    if (st.state === 'gone' || st.state === 'done') items.push({ label: 'Resume', run: () => act('resume', { num: n }) });
-    items.push({ label: 'Rename', run: async () => {
-      const v = await ask('Rename', [{ name: 'title', label: 'Title', value: s.title }], 'Save');
-      if (v && v.title) act('rename', { num: n, title: v.title });
-    } });
-    sheet(s.title || `#${n}`, items);
+      h('button', { class: 'icon', 'aria-label': 'Session actions', onclick: () => sessionMenu({ project: name, num: n, session: s, state: st.state, act, refresh, ask, withForce: force, onDeleted: refresh }) }, '⋯'));
   }
 
   function storyMenu(story) {
@@ -75,7 +65,7 @@ export function showProject(root, name) {
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
     items.push({ label: 'Close story', run: async () => {
       if (await confirmBox(`Close ${story}? Its sessions stop and the worktree is removed.`, 'Close')) {
-        withForce('stories/close', { name: story }, `Close ${story}`);
+        force('stories/close', { name: story }, `Close ${story}`);
       }
     } });
     sheet(story, items);
@@ -111,7 +101,7 @@ export function showProject(root, name) {
     try { all = await api.projectRepos(name); } catch (e) { toast(e.message); return; }
     const have = new Set(((snap.project.stories[story] || {}).repos || []).map((r) => r.rel));
     const v = await ask(`Add to ${story}`, [{ name: 'repos', label: 'Repositories', type: 'checks', options: all.filter((r) => !have.has(r)) }], 'Add');
-    if (v && v.repos.length) withForce('stories/repos', { name: story, repos: v.repos }, `Add to ${story}`);
+    if (v && v.repos.length) force('stories/repos', { name: story, repos: v.repos }, `Add to ${story}`);
   }
 
   async function act(action, body) {
@@ -120,21 +110,8 @@ export function showProject(root, name) {
     finally { refresh(); }
   }
 
-  // withForce runs an action that the server refuses with 409 when files are uncommitted, and
-  // offers to resend it with force.
-  async function withForce(action, body, what) {
-    try {
-      await api.action(name, action, body);
-    } catch (e) {
-      if (e.status !== 409 || !e.result) { toast(e.message); return; }
-      const detail = e.result.detail ? ` (${e.result.detail})` : '';
-      if (await confirmBox(`${what}: ${e.result.dirty} uncommitted files${detail}. Continue anyway?`, 'Continue')) {
-        try { await api.action(name, action, { ...body, force: true }); } catch (e2) { toast(e2.message); }
-      }
-    } finally {
-      refresh();
-    }
-  }
+  // force is withForce for this project; the list reloads afterwards
+  const force = (action, body, what, o) => withForce(name, action, body, what, o).finally(refresh);
 
   return { stop };
 }

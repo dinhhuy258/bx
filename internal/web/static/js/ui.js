@@ -75,7 +75,8 @@ export function poll(fn, ms = 2000) {
 
 // ask shows a form and resolves to {name: value} (checks: an array), or null on Cancel.
 // Field: {name, label, type?: 'text'|'select'|'checks', value?, placeholder?, options?, list?}
-export function ask(title, fields, ok = 'OK') {
+// opts: {danger?: a red OK button, text?: a help line under the title}
+export function ask(title, fields, ok = 'OK', opts = {}) {
   return new Promise((resolve) => {
     const inputs = [];
     const body = fields.map((f) => {
@@ -100,9 +101,10 @@ export function ask(title, fields, ok = 'OK') {
       : el.value.trim()]));
     // Cancel is type=button: Enter / the keyboard's Go key submits with the first submit button,
     // which must be OK.
-    const dlg = h('dialog', {}, h('form', { method: 'dialog' }, h('h2', {}, title), body,
+    const dlg = h('dialog', {}, h('form', { method: 'dialog' }, h('h2', {}, title),
+      opts.text ? h('p', { class: 'help' }, opts.text) : null, body,
       h('menu', {}, h('button', { type: 'button', onclick: () => dlg.close('cancel') }, 'Cancel'),
-        h('button', { value: 'ok', class: 'primary' }, ok))));
+        h('button', { value: 'ok', class: opts.danger ? 'danger' : 'primary' }, ok))));
     dlg.addEventListener('close', () => {
       const v = dlg.returnValue === 'ok' ? read() : null;
       dlg.remove();
@@ -113,12 +115,13 @@ export function ask(title, fields, ok = 'OK') {
   });
 }
 
-export const confirmBox = (title, ok) => ask(title, [], ok).then((v) => v !== null);
+// confirmBox asks a yes/no question and resolves to true on OK. opts as for ask.
+export const confirmBox = (title, ok, opts) => ask(title, [], ok, opts).then((v) => v !== null);
 
-// sheet is a list of actions: items [{label, run}].
+// sheet is a list of actions: items [{label, run, danger?}]; danger items are red.
 export function sheet(title, items) {
   const dlg = h('dialog', { class: 'sheet' }, h('h2', {}, title),
-    items.map((it) => h('button', { onclick: () => { dlg.close(); it.run(); } }, it.label)),
+    items.map((it) => h('button', { class: it.danger ? 'danger' : '', onclick: () => { dlg.close(); it.run(); } }, it.label)),
     h('button', { onclick: () => dlg.close() }, 'Cancel'));
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
