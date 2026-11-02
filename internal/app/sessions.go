@@ -337,7 +337,7 @@ func (a *App) CloseStory(p *state.Project, name string, force bool) error {
 	return a.forgetStory(p, name)
 }
 
-// stopStory kills the story's running sessions.
+// stopStory kills the story's running sessions and shells.
 func (a *App) stopStory(p *state.Project, name string) error {
 	live, err := a.Live(p)
 	if err != nil {
@@ -346,6 +346,15 @@ func (a *App) stopStory(p *state.Project, name string) error {
 	for _, n := range p.SessionsOf(name) {
 		if id, ok := live[n]; ok {
 			_ = a.Tmux.KillSession(id) // may exit on its own meanwhile
+		}
+	}
+	shells, err := a.Shells(p)
+	if err != nil {
+		return err
+	}
+	for _, sh := range shells {
+		if sh.Story == name {
+			_ = a.Tmux.KillSession(sh.ID) // may exit on its own meanwhile
 		}
 	}
 	return nil

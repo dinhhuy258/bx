@@ -1,0 +1,142 @@
+package app
+
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/dinhhuy258/bx/internal/state"
+)
+
+// ShellName is the tmux session of shell k of a story ("" = the project root). It uses the
+// same replacements as TmuxName. Shells are found by their options, never by this name.
+func ShellName(project, story string, k int) string {
+	name := fmt.Sprintf("bxsh-%s-%d", project, k)
+	if story != "" {
+		name = fmt.Sprintf("bxsh-%s-%s-%d", project, story, k)
+	}
+	return strings.NewReplacer(".", "_", ":", "_").Replace(name)
+}
+
+// Shell is a running shell of a project: shell K of Story ("" = chats, the project folder).
+// Title is its rename ("" = none) and Command what its pane runs now.
+type Shell struct {
+	ID, Story      string
+	K              int
+	Title, Command string
+}
+
+// Shells lists the project's shells, sorted by story then number.
+func (a *App) Shells(p *state.Project) ([]Shell, error) {
+	all, err := a.Tmux.Shells()
+	if err != nil {
+		return nil, err
+	}
+	var out []Shell
+	for _, sh := range all {
+		if sh.Project == p.Name {
+			out = append(out, Shell{ID: sh.ID, Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Story != out[j].Story {
+			return out[i].Story < out[j].Story
+		}
+		return out[i].K < out[j].K
+	})
+	return out, nil
+}
+
+// ShellTarget is the tmux id of shell k of a story.
+func (a *App) ShellTarget(p *state.Project, story string, k int) (string, error) {
+	shells, err := a.Shells(p)
+	if err != nil {
+		return "", err
+	}
+	for _, sh := range shells {
+		if sh.Story == story && sh.K == k {
+			return sh.ID, nil
+		}
+	}
+	return "", fmt.Errorf("shell %s$%d is %w", shellGroup(story), k, ErrNotRunning)
+}
+
+// NewShell starts a shell in the story's folder ("" = the project folder) and returns its
+// number: the lowest one the story's shells do not use. The shell's tmux options say which
+// project, story and number it is.
+func (a *App) NewShell(p *state.Project, story string) (int, error) {
+	if story != "" && p.Stories[story] == nil {
+		return 0, fmt.Errorf("no story %q", story)
+	}
+	shells, err := a.Shells(p)
+	if err != nil {
+		return 0, err
+	}
+	used := map[int]bool{}
+	for _, sh := range shells {
+		if sh.Story == story {
+			used[sh.K] = true
+		}
+	}
+	k := 1
+	for used[k] {
+		k++
+	}
+	id, err := a.Tmux.NewShell(ShellName(p.Name, story, k), a.Dir(p, story))
+	if err != nil {
+		return 0, err
+	}
+	opts := [][2]string{{"@bx_project", p.Name}}
+	if story != "" {
+		opts = append(opts, [2]string{"@bx_story", story})
+	}
+	opts = append(opts, [2]string{"@bx_shell", strconv.Itoa(k)})
+	for _, o := range opts {
+		if err := a.Tmux.SetOption(id, o[0], o[1]); err != nil {
+			return 0, errors.Join(err, a.Tmux.KillSession(id))
+		}
+	}
+	// best effort, as in launch
+	if err := a.Tmux.KeepServer(); err != nil {
+		a.logf("tmux keep server: %v", err)
+	}
+	return k, nil
+}
+
+// CloseShell kills shell k of a story.
+func (a *App) CloseShell(p *state.Project, story string, k int) error {
+	id, err := a.ShellTarget(p, story, k)
+	if err != nil {
+		return err
+	}
+	return a.Tmux.KillSession(id)
+}
+
+// RenameShell sets the name shown for shell k of a story. Control characters become spaces;
+// an empty title removes the name, so the shell shows its command again.
+func (a *App) RenameShell(p *state.Project, story string, k int, title string) error {
+	id, err := a.ShellTarget(p, story, k)
+	if err != nil {
+		return err
+	}
+	title = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, title))
+	if title == "" {
+		return a.Tmux.UnsetOption(id, "@bx_title")
+	}
+	return a.Tmux.SetOption(id, "@bx_title", title)
+}
+
+// shellGroup names a story's group in messages: the story, or "chats" for the project folder.
+func shellGroup(story string) string {
+	if story == "" {
+		return "chats"
+	}
+	return story
+}

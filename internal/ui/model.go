@@ -48,6 +48,35 @@ type Row struct {
 	Num   int    // session number, when Kind == RowSession
 }
 
+// Shell is a running shell: shell K of Story ("" = chats, the project folder).
+type Shell struct {
+	Story   string `json:"story"`
+	K       int    `json:"k"`
+	Title   string `json:"title,omitempty"`   // the rename; "" = use Command
+	Command string `json:"command,omitempty"` // what the pane runs now
+}
+
+// Label is what the shell is called: its title, else its command, else "shell".
+func (s Shell) Label() string {
+	switch {
+	case s.Title != "":
+		return s.Title
+	case s.Command != "":
+		return s.Command
+	}
+	return "shell"
+}
+
+// PlainShell reports whether cmd is a shell waiting for input (zsh, bash, sh or fish; a login
+// shell's leading "-" is ignored) rather than a program running in it.
+func PlainShell(cmd string) bool {
+	switch strings.TrimPrefix(cmd, "-") {
+	case "zsh", "bash", "sh", "fish":
+		return true
+	}
+	return false
+}
+
 // Model is the list state for one project.
 type Model struct {
 	P    *state.Project

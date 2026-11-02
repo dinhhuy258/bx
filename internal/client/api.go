@@ -159,6 +159,12 @@ func (c *API) StreamURL(project string, num, cols, rows int) string {
 	return fmt.Sprintf("%s/api/projects/%s/sessions/%d/stream?cols=%d&rows=%d", ws, url.PathEscape(project), num, cols, rows)
 }
 
+// ShellStreamURL is the WebSocket address of shell k of a story ("" = chats) at a given size.
+func (c *API) ShellStreamURL(project, story string, k, cols, rows int) string {
+	ws := "ws" + strings.TrimPrefix(c.Base, "http")
+	return fmt.Sprintf("%s/api/projects/%s/shells/stream?story=%s&k=%d&cols=%d&rows=%d", ws, url.PathEscape(project), url.QueryEscape(story), k, cols, rows)
+}
+
 // call sends body as JSON and decodes the reply into out. A non-2xx reply becomes an error
 // carrying the server's text; when out is an *api.Result it also gets the refusal.
 // StatusError is a non-2xx reply: its status code and the server's error text.

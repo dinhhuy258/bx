@@ -29,6 +29,8 @@ import (
 
 const listSessions = "list-sessions -F #{session_id}\t#{session_name}"
 
+const listShells = "list-sessions -F " + tmux.ShellFormat
+
 type fakeLister struct{ agents []claude.Agent }
 
 func (f fakeLister) Agents(context.Context) ([]claude.Agent, error) { return f.agents, nil }
@@ -54,7 +56,7 @@ func newServer(t *testing.T) (*Server, *tmux.Fake, *httptest.Server) {
 			t.Fatalf("%v %s", err, out)
 		}
 	}
-	f := &tmux.Fake{Replies: map[string]string{listSessions: "$5\tbx-home-network-1\n"}}
+	f := &tmux.Fake{Replies: map[string]string{listSessions: "$5\tbx-home-network-1\n", listShells: ""}}
 	a := &app.App{Cfg: cfg, Tmux: tmux.New(f), Git: g, UUID: func() string { return "fixed-uuid" }}
 	var err error
 	if a.Settings, err = settings.Open(cfg.SettingsFile(), func(string, ...any) {}); err != nil {
@@ -936,5 +938,63 @@ func TestWatchKeepsStartedSessionsWhenTmuxFails(t *testing.T) {
 	}
 	if p.Sessions[1].Done {
 		t.Fatal("a running session is done")
+	}
+}
+
+func TestShellRoutes(t *testing.T) {
+	s, f, ts := newServer(t)
+	repo := s.Cfg.ProjectDir("home-network")
+	wt := s.Cfg.WorktreeDir("home-network", "s1")
+	newSession := "new-session -d -s bxsh-home-network-s1-1 -c " + wt + " -P -F #{session_id}"
+	f.Replies[newSession] = "$9\n"
+	res, code := post(t, ts, "/api/projects/home-network/shells", api.Action{Story: "s1"})
+	if code != 200 || res.Story != "s1" || res.K != 1 {
+		t.Fatalf("new: %d %+v", code, res)
+	}
+	if !strings.Contains(calls(f), newSession) || !strings.Contains(calls(f), "set-option -t $9 @bx_shell 1") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	if _, code := post(t, ts, "/api/projects/home-network/shells", api.Action{Story: "nope"}); code != 400 {
+		t.Fatalf("unknown story: %d", code)
+	}
+	f.Replies[listShells] = "$9\tbxsh-home-network-s1-1\thome-network\ts1\t1\tdev\tnpm\n"
+	snap, code := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if code != 200 || len(snap.Shells) != 1 || snap.Shells[0] != (api.Shell{Story: "s1", K: 1, Title: "dev", Command: "npm"}) {
+		t.Fatalf("%d %+v", code, snap.Shells)
+	}
+	if snap.Dirs[""] != repo || snap.Dirs["s1"] != wt {
+		t.Fatalf("dirs: %+v", snap.Dirs)
+	}
+	if _, code := post(t, ts, "/api/projects/home-network/shells/rename", api.Action{Story: "s1", K: 1, Title: "api"}); code != 200 {
+		t.Fatalf("rename: %d", code)
+	}
+	if !strings.Contains(calls(f), "set-option -t $9 @bx_title api") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	if _, code := post(t, ts, "/api/projects/home-network/shells/close", api.Action{Story: "s1", K: 1}); code != 200 {
+		t.Fatalf("close: %d", code)
+	}
+	if !strings.Contains(calls(f), "kill-session -t $9") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	if _, code := post(t, ts, "/api/projects/home-network/shells/close", api.Action{Story: "s1", K: 4}); code != http.StatusGone {
+		t.Fatalf("close a gone shell: %d", code)
+	}
+}
+
+func TestSnapshotWithoutShells(t *testing.T) {
+	_, f, ts := newServer(t)
+	f.Errs = map[string]error{listShells: errors.New("tmux list-sessions: boom")}
+	r, err := http.Get(ts.URL + "/api/projects/home-network")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = r.Body.Close() }()
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil || r.StatusCode != 200 {
+		t.Fatalf("%d %v", r.StatusCode, err)
+	}
+	if string(raw["shells"]) != "[]" {
+		t.Fatalf("shells = %s, want []", raw["shells"])
 	}
 }

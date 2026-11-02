@@ -45,7 +45,10 @@ func New(t *testing.T) (*serve.Server, *tmux.Fake, *httptest.Server) {
 			t.Fatalf("%v %s", err, out)
 		}
 	}
-	f := &tmux.Fake{Replies: map[string]string{"list-sessions -F #{session_id}\t#{session_name}": "$5\tbx-home-network-1\n"}}
+	f := &tmux.Fake{Replies: map[string]string{
+		"list-sessions -F #{session_id}\t#{session_name}": "$5\tbx-home-network-1\n",
+		"list-sessions -F " + tmux.ShellFormat:            "",
+	}}
 	a := &app.App{Cfg: cfg, Tmux: tmux.New(f), Git: g, UUID: func() string { return "fixed-uuid" }}
 	var err error
 	if a.Settings, err = settings.Open(cfg.SettingsFile(), func(string, ...any) {}); err != nil {

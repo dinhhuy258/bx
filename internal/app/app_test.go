@@ -21,6 +21,8 @@ import (
 
 const listSessions = "list-sessions -F #{session_id}\t#{session_name}"
 
+const listShells = "list-sessions -F " + tmux.ShellFormat
+
 func newApp(t *testing.T) (*App, *tmux.Fake, *state.Project) {
 	t.Helper()
 	cfg := config.Default(t.TempDir())
@@ -40,7 +42,7 @@ func newApp(t *testing.T) (*App, *tmux.Fake, *state.Project) {
 			t.Fatalf("%v %s", err, out)
 		}
 	}
-	f := &tmux.Fake{Replies: map[string]string{listSessions: ""}}
+	f := &tmux.Fake{Replies: map[string]string{listSessions: "", listShells: ""}}
 	a := &App{Cfg: cfg, Tmux: tmux.New(f), Git: g, UUID: func() string { return "fixed-uuid" }}
 	p := state.New("home-network", repo)
 	if err := a.SaveProject(p); err != nil {

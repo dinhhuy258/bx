@@ -44,6 +44,74 @@ func TestStreamRefusesASessionThatIsNotRunning(t *testing.T) {
 	}
 }
 
+func TestShellStreamRefuses(t *testing.T) {
+	_, _, ts := newServer(t)
+	for path, want := range map[string]int{
+		"/api/projects/home-network/shells/stream?story=s1&k=x": http.StatusBadRequest,
+		"/api/projects/home-network/shells/stream?story=s1&k=0": http.StatusBadRequest,
+		"/api/projects/home-network/shells/stream?story=s1&k=4": http.StatusGone,
+		"/api/projects/nope/shells/stream?story=s1&k=1":         http.StatusNotFound,
+	} {
+		r, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = r.Body.Close()
+		if r.StatusCode != want {
+			t.Errorf("%s: %d, want %d", path, r.StatusCode, want)
+		}
+	}
+}
+
+func TestShellStreamEnds(t *testing.T) {
+	s, f, ts := newServer(t)
+	f.Replies[listShells] = "$9\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tzsh\n"
+	s.App.Tmux = tmux.New(endingFake{f})
+	var mu sync.Mutex
+	var logs []string
+	closed := make(chan struct{})
+	var once sync.Once
+	s.Log = func(format string, args ...any) {
+		l := fmt.Sprintf(format, args...)
+		mu.Lock()
+		logs = append(logs, l)
+		mu.Unlock()
+		if strings.HasSuffix(l, ": closed") {
+			once.Do(func() { close(closed) })
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(ts.URL, "http")+"/api/projects/home-network/shells/stream?story=s1&k=1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.CloseNow() }()
+	for {
+		_, _, err = c.Read(ctx)
+		if err != nil {
+			break
+		}
+	}
+	if websocket.CloseStatus(err) != websocket.StatusNormalClosure || !strings.Contains(err.Error(), "session ended") {
+		t.Fatalf("want a normal close \"session ended\", got %v", err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not close")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	opened := false
+	for _, l := range logs {
+		opened = opened || strings.HasPrefix(l, "stream home-network shell s1$1: open")
+	}
+	if !opened {
+		t.Fatalf("logs: %q", logs)
+	}
+}
+
 // attachFake is a fake tmux whose attach prints a line every 100 ms in the pty, so a stream
 // opens without tmux. It prints because on macOS closing the pty waits for the pending read.
 type attachFake struct{ *tmux.Fake }

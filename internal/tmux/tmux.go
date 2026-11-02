@@ -102,6 +102,60 @@ func (t *Tmux) List() ([]Session, bool, error) {
 	return ss, true, nil
 }
 
+// ShellFormat is the list-sessions format of Shells.
+const ShellFormat = "#{session_id}\t#{session_name}\t#{@bx_project}\t#{@bx_story}\t#{@bx_shell}\t#{@bx_title}\t#{pane_current_command}"
+
+// Shell is one shell session: a session with the @bx_shell option. Project, Story, K and Title
+// are its @bx_project, @bx_story, @bx_shell and @bx_title options; Command is what its pane runs.
+type Shell struct {
+	ID, Name, Project, Story string
+	K                        int
+	Title, Command           string
+}
+
+// NewShell creates a detached session named name running the default shell in dir and
+// returns its id ($n).
+func (t *Tmux) NewShell(name, dir string) (string, error) {
+	return t.run("new-session", "-d", "-s", name, "-c", dir, "-P", "-F", "#{session_id}")
+}
+
+// SetOption sets a session option (a user option starts with @) on target.
+func (t *Tmux) SetOption(target, option, value string) error {
+	_, err := t.x.Run("set-option", "-t", target, option, value)
+	return err
+}
+
+// UnsetOption removes a session option from target.
+func (t *Tmux) UnsetOption(target, option string) error {
+	_, err := t.x.Run("set-option", "-u", "-t", target, option)
+	return err
+}
+
+// Shells lists every session that has a positive @bx_shell option. No server running means
+// no shells.
+func (t *Tmux) Shells() ([]Shell, error) {
+	out, err := t.run("list-sessions", "-F", ShellFormat)
+	if err != nil {
+		if IsNoServer(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var sh []Shell
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.SplitN(line, "\t", 7)
+		if len(f) < 7 {
+			continue
+		}
+		k, err := strconv.Atoi(f[4])
+		if err != nil || k < 1 {
+			continue
+		}
+		sh = append(sh, Shell{ID: f[0], Name: f[1], Project: f[2], Story: f[3], K: k, Title: f[5], Command: f[6]})
+	}
+	return sh, nil
+}
+
 // IsNoServer reports whether err from a tmux command means no server is running on the socket.
 func IsNoServer(err error) bool {
 	if err == nil {

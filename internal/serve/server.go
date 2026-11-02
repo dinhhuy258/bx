@@ -69,6 +69,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/projects/{name}", s.getProject)
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/stream", s.stream)
+	mux.HandleFunc("GET /api/projects/{name}/shells/stream", s.shellStream)
+	mux.HandleFunc("POST /api/projects/{name}/shells", s.actionResult(func(p *state.Project, r api.Action) (api.Result, error) {
+		k, err := s.App.NewShell(p, r.Story)
+		if err == nil {
+			s.Log("shell %s %s$%d: open", p.Name, group(r.Story), k)
+		}
+		return api.Result{Story: r.Story, K: k}, err
+	}))
+	mux.HandleFunc("POST /api/projects/{name}/shells/close", s.action(func(p *state.Project, r api.Action) (int, error) {
+		err := s.App.CloseShell(p, r.Story, r.K)
+		if err == nil {
+			s.Log("shell %s %s$%d: close", p.Name, group(r.Story), r.K)
+		}
+		return 0, err
+	}))
+	mux.HandleFunc("POST /api/projects/{name}/shells/rename", s.action(func(p *state.Project, r api.Action) (int, error) {
+		return 0, s.App.RenameShell(p, r.Story, r.K, r.Title)
+	}))
 	mux.HandleFunc("POST /api/projects/{name}/sessions/{num}/files", s.uploadFile)
 	mux.HandleFunc("POST /api/projects/{name}/sessions", s.action(func(p *state.Project, r api.Action) (int, error) {
 		var num int
@@ -514,7 +532,20 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.Log("tmux sessions: %v", err)
 	}
-	writeJSON(w, api.Snapshot{Project: p, Live: live, SessionStates: sessionStates(p, live, tm, err == nil)})
+	states := sessionStates(p, live, tm, err == nil)
+	shells := []api.Shell{}
+	if all, err := s.App.Shells(p); err != nil {
+		s.Log("tmux shells: %v", err)
+	} else {
+		for _, sh := range all {
+			shells = append(shells, api.Shell{Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command})
+		}
+	}
+	dirs := map[string]string{"": s.App.Dir(p, "")}
+	for name := range p.Stories {
+		dirs[name] = s.App.Dir(p, name)
+	}
+	writeJSON(w, api.Snapshot{Project: p, Live: live, SessionStates: states, Shells: shells, Dirs: dirs})
 }
 
 // sessionStates derives every session's state with the rules the TUI uses (ui.Model), so the
@@ -827,8 +858,17 @@ func statusOf(err error) int {
 
 // action wraps a mutation: decode the body, load the project, run, reply. A refused close of
 // a dirty story is a 409 carrying the number of uncommitted files; a refused delete of a
-// session that is still running is a 409 with Running set.
+// session that is still running is a 409 with Running set. The reply carries the number fn
+// returns.
 func (s *Server) action(fn func(p *state.Project, r api.Action) (int, error)) http.HandlerFunc {
+	return s.actionResult(func(p *state.Project, r api.Action) (api.Result, error) {
+		num, err := fn(p, r)
+		return api.Result{Num: num}, err
+	})
+}
+
+// actionResult is action for a mutation that builds its own reply.
+func (s *Server) actionResult(fn func(p *state.Project, r api.Action) (api.Result, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req api.Action
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -843,7 +883,7 @@ func (s *Server) action(fn func(p *state.Project, r api.Action) (int, error)) ht
 			httpError(w, statusOf(err), err)
 			return
 		}
-		num, err := fn(p, req)
+		res, err := fn(p, req)
 		var dirty *app.DirtyError
 		var running *app.RunningError
 		switch {
@@ -864,8 +904,16 @@ func (s *Server) action(fn func(p *state.Project, r api.Action) (int, error)) ht
 		s.mu.Lock()
 		delete(s.diffs, name) // a new or closed story shows up in the next poll
 		s.mu.Unlock()
-		writeJSON(w, api.Result{Num: num})
+		writeJSON(w, res)
 	}
+}
+
+// group names a shell's group in the log: its story, or "chats" for the project folder.
+func group(story string) string {
+	if story == "" {
+		return "chats"
+	}
+	return story
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

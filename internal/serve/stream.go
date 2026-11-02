@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -42,8 +43,37 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		httpError(w, statusOf(err), err)
 		return
 	}
+	s.bridge(w, r, sid, fmt.Sprintf("%s [%d]", p.Name, num))
+}
+
+// shellStream serves GET /api/projects/{name}/shells/stream?story=&k=: shell k of a story
+// ("" = chats), bridged like a session. When the shell exits the socket closes normally with
+// reason "session ended".
+func (s *Server) shellStream(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	k, err := strconv.Atoi(r.URL.Query().Get("k"))
+	if err != nil || k < 1 {
+		httpError(w, http.StatusBadRequest, errors.New("bad shell number"))
+		return
+	}
+	story := r.URL.Query().Get("story")
+	sid, err := s.App.ShellTarget(p, story, k)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	s.bridge(w, r, sid, fmt.Sprintf("%s shell %s$%d", p.Name, group(story), k))
+}
+
+// bridge attaches to tmux session sid in a pty and bridges it to a WebSocket until either side
+// ends. label names it in the log ("stream <label>: open (80x24)" … "stream <label>: closed").
+func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, label string) {
 	if err := s.App.Tmux.PrepareCopy(); err != nil {
-		s.Log("stream %s [%d]: copy-mode setup: %v", p.Name, num, err)
+		s.Log("stream %s: copy-mode setup: %v", label, err)
 	}
 	cmd, err := s.App.Tmux.AttachCommand(sid)
 	if err != nil {
@@ -68,11 +98,11 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
-		s.Log("stream %s [%d]: %v", p.Name, num, err)
+		s.Log("stream %s: %v", label, err)
 		c.Close(websocket.StatusInternalError, "attach failed")
 		return
 	}
-	s.Log("stream %s [%d]: open (%dx%d)", p.Name, num, cols, rows)
+	s.Log("stream %s: open (%dx%d)", label, cols, rows)
 	defer func() {
 		_ = f.Close()
 		// The pty → socket goroutine is still blocked reading the pty, so the close above
@@ -80,7 +110,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		// up directly: tmux attach detaches on SIGHUP, the session keeps running.
 		_ = cmd.Process.Signal(syscall.SIGHUP)
 		_ = cmd.Wait()
-		s.Log("stream %s [%d]: closed", p.Name, num)
+		s.Log("stream %s: closed", label)
 	}()
 
 	attachDone := make(chan struct{})
@@ -140,12 +170,12 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 				case ctl.Type == "scroll":
 					// before the next frame is read, so a key sent after "back to live" reaches Claude
 					if err := s.App.Tmux.Scroll(sid, ctl.Lines); err != nil {
-						s.Log("stream %s [%d]: scroll: %v", p.Name, num, err)
+						s.Log("stream %s: scroll: %v", label, err)
 					}
 					checkMode()
 				case ctl.Type == "copy":
 					if err := s.App.Tmux.CopyMode(sid); err != nil {
-						s.Log("stream %s [%d]: copy-mode: %v", p.Name, num, err)
+						s.Log("stream %s: copy-mode: %v", label, err)
 					} else {
 						copying.Store(true)
 					}
@@ -175,7 +205,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			pcancel()
 			if err != nil {
 				if pingCtx.Err() == nil {
-					s.Log("stream %s [%d]: ping: %v", p.Name, num, err)
+					s.Log("stream %s: ping: %v", label, err)
 				}
 				cancel()
 				return

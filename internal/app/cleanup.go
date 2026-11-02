@@ -9,8 +9,8 @@ import (
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
-// CleanupItem is something cleanup can remove. Kind is "orphan" (a bx-* tmux session with no
-// record) or "done" (a done session's record). ID names it in CleanupApply.
+// CleanupItem is something cleanup can remove. Kind is "orphan" (a bx-* or bxsh-* tmux session
+// with no record) or "done" (a done session's record). ID names it in CleanupApply.
 type CleanupItem struct {
 	Kind, ID, Label, Detail string
 }
@@ -19,7 +19,8 @@ type CleanupItem struct {
 // project, projects by name and numbers ascending. A tmux name is never parsed back into a
 // project and number: TmuxName replaces "." and ":", and project names contain dashes, so
 // bx-home-network-12 is ambiguous. Instead every expected name is built forward from the
-// records, and any bx-* name outside that set is an orphan.
+// records, and any bx-* name outside that set is an orphan. A shell (bxsh-*) is an orphan when
+// its @bx_project names no project, or its @bx_story a story that project no longer has.
 func (a *App) CleanupScan(ps []*state.Project) ([]CleanupItem, error) {
 	expected := map[string]bool{}
 	for _, p := range ps {
@@ -35,6 +36,19 @@ func (a *App) CleanupScan(ps []*state.Project) ([]CleanupItem, error) {
 	for _, se := range ss {
 		if strings.HasPrefix(se.Name, "bx-") && !expected[se.Name] {
 			orphans = append(orphans, se.Name)
+		}
+	}
+	shells, err := a.Tmux.Shells()
+	if err != nil {
+		return nil, err
+	}
+	byName := make(map[string]*state.Project, len(ps))
+	for _, p := range ps {
+		byName[p.Name] = p
+	}
+	for _, sh := range shells {
+		if p := byName[sh.Project]; p == nil || (sh.Story != "" && p.Stories[sh.Story] == nil) {
+			orphans = append(orphans, sh.Name)
 		}
 	}
 	sort.Strings(orphans)

@@ -12,7 +12,13 @@ type Snapshot struct {
 	Project       *state.Project       `json:"project"`        // the stored record (stories, sessions)
 	Live          ui.Live              `json:"live"`           // agent states, diff, branch, dirty count, server time
 	SessionStates map[int]SessionState `json:"session_states"` // derived from Project, Live and tmux; read by the web client
+	Shells        []Shell              `json:"shells"`         // the running shells, by story then number
+	Dirs          map[string]string    `json:"dirs"`           // the folder of each group: "" (chats) and every story
 }
+
+// Shell is one running shell of a project, from its tmux options. It is ui.Shell, which the
+// list pane renders.
+type Shell = ui.Shell
 
 // SessionState is the derived state of one session, keyed by session number in Snapshot.
 // State is "starting", "running", "waiting", "idle", "done" or "gone"; Text is the TUI's row
@@ -31,11 +37,13 @@ type ProjectSummary struct {
 	BaseOverride    string `json:"base_override,omitempty"`    // the branch new stories start from, set in settings › git
 }
 
-// Action is the body of every POST /api/projects/{name}/<action>.
+// Action is the body of every POST /api/projects/{name}/<action>, shells, shells/close and
+// shells/rename included.
 type Action struct {
 	Num   int      `json:"num,omitempty"`   // yes, resume, rename, stop, delete
-	Story string   `json:"story,omitempty"` // sessions ("" = chat)
-	Title string   `json:"title,omitempty"` // sessions, rename
+	Story string   `json:"story,omitempty"` // sessions ("" = chat), shells, shells/close, shells/rename ("" = chats)
+	Title string   `json:"title,omitempty"` // sessions, rename, shells/rename ("" = show the command)
+	K     int      `json:"k,omitempty"`     // shells/close, shells/rename: the shell number
 	Name  string   `json:"name,omitempty"`  // stories (new branch: a name, or a full branch with "/"), stories/close, stories/repos
 	Force bool     `json:"force,omitempty"` // stories/close: discard uncommitted files; stories/repos: add dirty originals; delete: kill a live session first
 	Repos []string `json:"repos,omitempty"` // stories, stories/repos in a workspace: repositories, relative to it
@@ -60,10 +68,12 @@ type NewProject struct {
 	Repo string `json:"repo,omitempty"` // clone: owner/repo
 }
 
-// Result is the reply of every POST. Num is the new session (POST sessions), Name the new
-// project (POST /api/projects), Dirty the uncommitted files when a close is refused (409).
+// Result is the reply of every POST. Num is the new session (POST sessions), Story and K the
+// new shell (POST shells), Name the new project (POST /api/projects), Dirty the uncommitted
+// files when a close is refused (409).
 type Result struct {
 	Num    int    `json:"num,omitempty"`
+	K      int    `json:"k,omitempty"`
 	Name   string `json:"name,omitempty"`
 	Error  string `json:"error,omitempty"`
 	Dirty  int    `json:"dirty,omitempty"`

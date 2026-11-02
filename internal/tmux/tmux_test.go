@@ -51,6 +51,47 @@ func TestNewSessionAndSessions(t *testing.T) {
 	}
 }
 
+func TestNewShellAndShells(t *testing.T) {
+	f := &Fake{Replies: map[string]string{
+		"new-session -d -s bxsh-p-s1-1 -c /w -P -F #{session_id}": "$7\n",
+		"list-sessions -F " + ShellFormat: "$7\tbxsh-p-s1-1\tp\ts1\t1\tdev\tzsh\n" +
+			"$4\tbx-p-1\t\t\t\t\tclaude\n" +
+			"$8\tbxsh-p-x\tp\t\tx\t\tzsh\n",
+	}}
+	tm := New(f)
+	id, err := tm.NewShell("bxsh-p-s1-1", "/w")
+	if err != nil || id != "$7" {
+		t.Fatalf("%q %v", id, err)
+	}
+	if err := tm.SetOption("$7", "@bx_shell", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tm.UnsetOption("$7", "@bx_title"); err != nil {
+		t.Fatal(err)
+	}
+	sh, err := tm.Shells()
+	want := Shell{ID: "$7", Name: "bxsh-p-s1-1", Project: "p", Story: "s1", K: 1, Title: "dev", Command: "zsh"}
+	if err != nil || len(sh) != 1 || sh[0] != want {
+		t.Fatalf("%+v %v", sh, err)
+	}
+	var calls []string
+	for _, c := range f.Calls {
+		calls = append(calls, strings.Join(c, " "))
+	}
+	got := strings.Join(calls, "|")
+	for _, w := range []string{"set-option -t $7 @bx_shell 1", "set-option -u -t $7 @bx_title"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q in %s", w, got)
+		}
+	}
+	if sh, err := New(failExec{errors.New("tmux list-sessions: no server running on /tmp/x")}).Shells(); err != nil || sh != nil {
+		t.Fatalf("no server: %+v %v", sh, err)
+	}
+	if _, err := New(failExec{errors.New("boom")}).Shells(); err == nil {
+		t.Fatal("other errors are errors")
+	}
+}
+
 type failExec struct{ err error }
 
 func (x failExec) Run(...string) ([]byte, error) { return nil, x.err }

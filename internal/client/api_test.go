@@ -12,10 +12,11 @@ import (
 
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/serve/servetest"
+	"github.com/dinhhuy258/bx/internal/tmux"
 )
 
 func TestAPIAgainstServe(t *testing.T) {
-	_, _, ts := servetest.New(t)
+	_, f, ts := servetest.New(t)
 	c := NewAPI(ts.URL)
 	ctx := context.Background()
 	list, err := c.Projects(ctx)
@@ -41,6 +42,16 @@ func TestAPIAgainstServe(t *testing.T) {
 	}
 	if got := c.StreamURL("home-network", 3, 100, 30); got != "ws"+ts.URL[4:]+"/api/projects/home-network/sessions/3/stream?cols=100&rows=30" {
 		t.Fatal(got)
+	}
+	if got := c.ShellStreamURL("home network", "s 1", 2, 100, 30); got != "ws"+ts.URL[4:]+"/api/projects/home%20network/shells/stream?story=s+1&k=2&cols=100&rows=30" {
+		t.Fatal(got)
+	}
+	if res, err := c.Do(ctx, "home-network", "shells", api.Action{Story: "s1"}); err != nil || res.Story != "s1" || res.K != 1 {
+		t.Fatalf("new shell: %+v %v", res, err)
+	}
+	f.Replies["list-sessions -F "+tmux.ShellFormat] = "$9\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tzsh\n"
+	if _, err := c.Do(ctx, "home-network", "shells/close", api.Action{Story: "s1", K: 1}); err != nil {
+		t.Fatalf("close shell: %v", err)
 	}
 }
 
