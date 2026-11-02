@@ -74,7 +74,7 @@ func init() {
 		{Name: "client", Help: "[--server URL] [--project NAME]: the bx client (default)"},
 		{Name: "serve", Help: "the daemon: projects, stories, sessions and their streams (run by systemd)"},
 		{Name: "notify", Help: "internal: Claude Code hook callback, posts to ntfy"},
-		{Name: "hooks", Help: "hooks install: add the bx notify hooks to ~/.claude/settings.json"},
+		{Name: "hooks", Help: "hooks install: add the bx notify hooks to Claude's settings.json"},
 	} {
 		if _, exists := commands[c.Name]; !exists {
 			c.Run = notImplemented(c.Name)

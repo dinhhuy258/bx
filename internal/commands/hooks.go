@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	cli.Register(cli.Command{Name: "hooks", Help: "hooks install: add the bx notify hooks to ~/.claude/settings.json", Run: runHooks})
+	cli.Register(cli.Command{Name: "hooks", Help: "hooks install: add the bx notify hooks to Claude's settings.json", Run: runHooks})
 }
 
 func runHooks(args []string, out, errOut io.Writer) int {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// Entries returns the two hook entries bx adds to ~/.claude/settings.json.
+// Entries returns the two hook entries bx adds to Claude's settings.json.
 func Entries(bxPath string) map[string]any {
 	entry := func() any {
 		return map[string]any{
