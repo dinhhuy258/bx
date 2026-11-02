@@ -100,11 +100,15 @@ func TestSettingsSyncFoldsAndCursor(t *testing.T) {
 	if _, ok := s.syncRow(); ok {
 		t.Fatal("no list before the first scan: the cursor stays on the last field")
 	}
-	s.SetSync(sampleSync(), allBut(sampleSync()))
-	// skills has changes: open; the others start folded
-	if got := s.Render(120, 40, true, ""); !strings.Contains(got, "▾ [x] skills") || !strings.Contains(got, "▸ [x] agents") || strings.Contains(got, "reviewer.md") {
-		t.Fatalf("folds:\n%s", got)
+	s.SetSync(sampleSync(), nil)
+	// every folder starts open, selected or not
+	got := s.Render(120, 40, true, "")
+	for _, want := range []string{"▾ [ ] skills", "▾ [ ] agents", "reviewer.md", "▾ [ ] commands", "c.md", "▾ [ ] rules", "b.md"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("no %q:\n%s", want, got)
+		}
 	}
+	s.SetSync(sampleSync(), allBut(sampleSync()))
 	to(s, 3)
 	if r, ok := s.syncRow(); !ok || r.folder != "skills" || r.item >= 0 {
 		t.Fatalf("j past the last field: %+v %v", r, ok)
@@ -114,6 +118,10 @@ func TestSettingsSyncFoldsAndCursor(t *testing.T) {
 		t.Fatalf("h folds:\n%s", got)
 	}
 	s.Key("j")
+	s.Key("h") // fold agents
+	if got := s.Render(120, 40, true, ""); !strings.Contains(got, "▸ [x] agents") || strings.Contains(got, "reviewer.md") {
+		t.Fatalf("h folds agents:\n%s", got)
+	}
 	s.Key("l") // unfold agents
 	if got := s.Render(120, 40, true, ""); !strings.Contains(got, "▾ [x] agents") || !strings.Contains(got, "reviewer.md") {
 		t.Fatalf("l unfolds:\n%s", got)
@@ -188,7 +196,7 @@ func TestSettingsSyncOptIn(t *testing.T) {
 		t.Fatalf("changes %d, scope %q", s.SyncChanges(), s.SyncScope())
 	}
 	got := s.Render(120, 40, true, "")
-	for _, want := range []string{"▾ [ ] skills", "not synced (7)", "▸ [ ] agents", "not synced (2)", "▸ [ ] commands", "▸ [ ] rules"} {
+	for _, want := range []string{"▾ [ ] skills", "not synced (7)", "▾ [ ] agents", "not synced (2)", "▾ [ ] commands", "▾ [ ] rules", "[ ] reviewer.md"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("no %q:\n%s", want, got)
 		}

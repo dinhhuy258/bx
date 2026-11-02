@@ -52,11 +52,10 @@ type syncList struct {
 	note     string
 	data     SyncData
 	include  map[string]bool // selected items
-	folded   map[string]bool
-	foldSet  bool // folds were set from the first data
-	confirm  bool // the confirmation box is open
-	top      int  // its first shown line
-	boxLines int  // how many change lines it showed last time
+	folded   map[string]bool // folded by h; nil until the first data
+	confirm  bool            // the confirmation box is open
+	top      int             // its first shown line
+	boxLines int             // how many change lines it showed last time
 }
 
 // syncRow is a row of the list: a folder (item < 0) or an item of it.
@@ -84,8 +83,8 @@ func (s *Settings) SyncFailed(msg string) {
 }
 
 // SetSync shows d, with the items of include checked; every other item starts unchecked.
-// Folds and the cursor's row are kept from the last data; on the first data, folders with
-// nothing checked to do start folded.
+// Every folder starts unfolded, so each item can be checked right away; folds (h/l) and the
+// cursor's row are kept from the last data.
 func (s *Settings) SetSync(d SyncData, include []string) {
 	key := s.rowKey()
 	s.sync.state, s.sync.note, s.sync.data = syncReady, "", d
@@ -93,13 +92,8 @@ func (s *Settings) SetSync(d SyncData, include []string) {
 	for _, e := range include {
 		s.sync.include[e] = true
 	}
-	if !s.sync.foldSet {
-		s.sync.folded, s.sync.foldSet = map[string]bool{}, true
-		for _, f := range syncFolders {
-			s.sync.folded[f] = !slices.ContainsFunc(s.folderItems(f), func(it SyncItem) bool {
-				return it.Error != "" || it.Warning != "" || s.changed(it)
-			})
-		}
+	if s.sync.folded == nil {
+		s.sync.folded = map[string]bool{}
 	}
 	s.restoreCursor(key)
 }

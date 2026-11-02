@@ -15,9 +15,12 @@ bx settings                          dev
        [x] quick-build  ~ changed  ↪
        [ ] rails-cons…  not synced
        [x] systematic…  = same  skipped…
-   ▸ [x] agents         up to date (2)
-   ▸ [x] commands       up to date (1)
-   ▸ [ ] rules          not synced (2)
+   ▾ [x] agents         up to date (2)
+       [x] reviewer.md  = same
+       [x] sub          = same
+   ▾ [x] commands       up to date (1)
+       [x] c.md         = same
+     … 3 more
 
  3 server-only items kept
 
@@ -25,5 +28,3 @@ bx settings                          dev
  ones keep what they started with.
  space select · h/l fold · s sync… · r
  refresh
-
-

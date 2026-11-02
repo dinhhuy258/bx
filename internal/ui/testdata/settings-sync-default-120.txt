@@ -16,14 +16,15 @@ bx settings                                                                     
                      │        [ ] quick-build           not synced  ↪
                      │        [ ] rails-console         not synced
                      │        [ ] systematic-debugging  not synced  skipped a\b.md: bad name
-                     │    ▸ [ ] agents                  not synced (2)
-                     │    ▸ [ ] commands                not synced (1)
-                     │    ▸ [ ] rules                   not synced (2)
+                     │    ▾ [ ] agents                  not synced (2)
+                     │        [ ] reviewer.md           not synced
+                     │        [ ] sub                   not synced
+                     │    ▾ [ ] commands                not synced (1)
+                     │        [ ] c.md                  not synced
+                     │    ▾ [ ] rules                   not synced (2)
+                     │        [ ] a.md                  not synced
+                     │        [ ] b.md                  not synced
                      │
                      │  3 server-only items kept
                      │
                      │ space select · h/l fold · s sync… · r refresh
-
-
-
-

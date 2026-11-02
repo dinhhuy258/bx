@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -128,13 +127,34 @@ func TestSyncSeedsOnlyOnce(t *testing.T) {
 		t.Fatalf("a rescan seeds again:\n%s", v)
 	}
 	h2 := syncStart(t, root)
-	h2.press("S") // nothing selected: both folders start folded
-	if v := view(h2); !strings.Contains(v, "▸ [ ] skills") || !strings.Contains(v, "▸ [ ] agents") || len(h2.m.settings.SyncScope()) != 0 {
+	h2.press("S")
+	if v := view(h2); !strings.Contains(v, "[ ] gone") || !strings.Contains(v, "[ ] x.md") || len(h2.m.settings.SyncScope()) != 0 {
 		t.Fatalf("a new client seeds again:\n%s", v)
 	}
 	h2.press("s")
 	if v := view(h2); !strings.Contains(v, "Nothing selected") || strings.Contains(v, "to bx serve?") || len(h2.be.applies) != 0 {
 		t.Fatalf("s with nothing selected:\n%s", v)
+	}
+}
+
+// Folders start open each time the screen opens; a fold lasts until it closes and is not saved.
+func TestSyncFoldsResetOnOpen(t *testing.T) {
+	root := t.TempDir()
+	h := syncStart(t, root)
+	h.press("S", "j", "j", "j", "h") // fold skills
+	if v := view(h); !strings.Contains(v, "▸ [-] skills") || strings.Contains(v, "gone") {
+		t.Fatalf("h folds:\n%s", v)
+	}
+	h.press("r")
+	if v := view(h); !strings.Contains(v, "▸ [-] skills") {
+		t.Fatalf("a rescan keeps the fold:\n%s", v)
+	}
+	h.press("Esc", "S")
+	if v := view(h); !strings.Contains(v, "▾ [-] skills") || !strings.Contains(v, "▾ [x] agents") || !strings.Contains(v, "[x] gone") {
+		t.Fatalf("reopened:\n%s", v)
+	}
+	if b, _ := os.ReadFile(openedFile(root)); strings.Contains(string(b), "fold") {
+		t.Fatalf("folds saved:\n%s", b)
 	}
 }
 
@@ -153,7 +173,7 @@ func TestSyncSeedHonorsOldExclude(t *testing.T) {
 	if b, _ := os.ReadFile(openedFile(root)); strings.Contains(string(b), "sync_exclude") {
 		t.Fatalf("sync_exclude kept:\n%s", b)
 	}
-	if v := view(h); !strings.Contains(v, "▸ [-] agents") || !strings.Contains(v, "• 1 to sync") || slices.Contains(h.m.settings.SyncScope(), "agents/x.md") {
+	if v := view(h); !strings.Contains(v, "[-] agents") || !strings.Contains(v, "[x] b.md") || !strings.Contains(v, "[ ] x.md") || !strings.Contains(v, "• 1 to sync") {
 		t.Fatalf("the seeded selection:\n%s", v)
 	}
 }
