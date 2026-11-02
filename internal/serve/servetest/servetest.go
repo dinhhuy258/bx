@@ -52,7 +52,7 @@ func New(t *testing.T) (*serve.Server, *tmux.Fake, *httptest.Server) {
 		t.Fatal(err)
 	}
 	p := state.New("home-network", repo)
-	if err := a.NewStory(p, "s1", nil); err != nil {
+	if _, err := a.NewStory(context.Background(), p, app.StoryOpts{Name: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	p.AddSession(&state.Session{Story: "s1", UUID: "u1", Title: "Add lease time"})

@@ -63,10 +63,25 @@ func TestWorktreeAddDiffRemove(t *testing.T) {
 	}
 }
 
-func TestDefaultBranch(t *testing.T) {
+func TestLocalDefault(t *testing.T) {
 	repo := initRepo(t)
-	if b, err := New().DefaultBranch(repo); err != nil || b != "main" {
+	g := New()
+	if b, err := g.LocalDefault(repo); err != nil || b != "main" {
 		t.Fatalf("default = %q err %v", b, err)
+	}
+	gitRun(t, repo, "branch", "-m", "main", "develop")
+	gitRun(t, repo, "branch", "trunk")
+	if b, err := g.LocalDefault(repo); err != nil || b != "develop" {
+		t.Fatalf("develop-only repo: %q err %v", b, err)
+	}
+	gitRun(t, repo, "branch", "master")
+	if b, _ := g.LocalDefault(repo); b != "master" {
+		t.Fatalf("master before develop: %q", b)
+	}
+	gitRun(t, repo, "checkout", "-q", "-b", "other")
+	gitRun(t, repo, "branch", "-D", "master", "develop", "trunk")
+	if _, err := g.LocalDefault(repo); err == nil {
+		t.Fatal("no default branch found one")
 	}
 }
 
@@ -76,7 +91,7 @@ func TestInitMakesMain(t *testing.T) {
 	if err := g.Init(dest); err != nil {
 		t.Fatal(err)
 	}
-	if b, err := g.DefaultBranch(dest); err != nil || b != "main" {
+	if b, err := g.LocalDefault(dest); err != nil || b != "main" {
 		t.Fatalf("default = %q err %v", b, err)
 	}
 }

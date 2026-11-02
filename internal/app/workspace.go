@@ -45,55 +45,57 @@ func (a *App) checkRepos(p *state.Project, rels []string) error {
 // added is a worktree made for a story, so a failure can undo it.
 type added struct{ repo, dir, branch string }
 
+// undo removes the worktrees made and deletes their branches; a branch "" was there before and
+// is kept.
 func (a *App) undo(wts []added) {
 	for _, w := range slices.Backward(wts) {
 		_ = a.Git.WorktreeRemove(w.repo, w.dir, true)
-		_ = a.Git.DeleteBranch(w.repo, w.branch)
+		if w.branch != "" {
+			_ = a.Git.DeleteBranch(w.repo, w.branch)
+		}
 	}
 }
 
-// newWorkspaceStory builds the story folder: each picked repository is a worktree on branch,
-// from its main or master, and everything else a link to the original. Any failure undoes
+// newWorkspaceStory builds the story folder of a plan: each repository of it is a worktree on
+// the branch, made as planned, and everything else a link to the original. Any failure undoes
 // everything made so far.
-func (a *App) newWorkspaceStory(p *state.Project, name, branch string, rels []string) error {
-	if err := a.checkRepos(p, rels); err != nil {
-		return err
+func (a *App) newWorkspaceStory(p *state.Project, plan *StoryPlan) error {
+	rels := make([]string, len(plan.repos))
+	for i, rp := range plan.repos {
+		rels[i] = rp.rel
 	}
-	mirror := a.Cfg.WorktreeDir(p.Name, name)
-	if _, err := os.Lstat(mirror); err == nil {
-		return fmt.Errorf("%s already exists", mirror)
-	}
-	story := &state.Story{Branch: branch}
+	mirror := a.Cfg.WorktreeDir(p.Name, plan.Story)
 	var made []added
 	fail := func(err error) error {
 		a.undo(made)
+		a.dropMade(plan)
 		_ = os.RemoveAll(mirror) // only links and empty folders are left; RemoveAll does not follow links
 		return err
 	}
-	for _, rel := range rels {
-		repo, dir := filepath.Join(p.Path, rel), filepath.Join(mirror, rel)
-		base, err := a.Git.DefaultBranch(repo)
-		if err != nil {
+	if err := a.checkRepos(p, rels); err != nil {
+		a.dropMade(plan)
+		return err
+	}
+	if _, err := os.Lstat(mirror); err == nil {
+		a.dropMade(plan)
+		return fmt.Errorf("%s already exists", mirror)
+	}
+	story := &state.Story{Branch: plan.Branch}
+	for _, rp := range plan.repos {
+		dir := filepath.Join(mirror, rp.rel)
+		if err := a.addWorktree(rp, dir, plan.Branch); err != nil {
+			return fail(fmt.Errorf("%s: %w", rp.rel, err))
+		}
+		made = append(made, added{rp.repo, dir, rp.created(plan.Branch)})
+		if err := copyEnv(rp.repo, dir); err != nil {
 			return fail(err)
 		}
-		if err := a.Git.WorktreeAdd(repo, dir, branch, base); err != nil {
-			return fail(fmt.Errorf("%s: %w", rel, err))
-		}
-		made = append(made, added{repo, dir, branch})
-		if err := copyEnv(repo, dir); err != nil {
-			return fail(err)
-		}
-		story.Repos = append(story.Repos, state.StoryRepo{Rel: rel, Base: base})
+		story.Repos = append(story.Repos, state.StoryRepo{Rel: rp.rel, Base: rp.base})
 	}
 	if err := fill(p.Path, mirror, "", story.RepoNames()); err != nil {
 		return fail(err)
 	}
-	p.Stories[name] = story
-	if err := a.SaveProject(p); err != nil {
-		delete(p.Stories, name)
-		return fail(err)
-	}
-	return nil
+	return a.record(p, plan, story, fail)
 }
 
 // fill links every entry of orig/rel into mirror/rel, except the repos, and makes the folders
@@ -176,7 +178,8 @@ func copyFile(src, dst string) error {
 }
 
 // AddStoryRepos makes repositories of the workspace part of a story: the link to each becomes a
-// worktree on the story's branch. Without force a repository whose original has uncommitted
+// worktree on the story's branch, from the repository's base as last fetched (it runs under the
+// write lock, so it does not fetch). Without force a repository whose original has uncommitted
 // files is refused with *DirtyError, since those changes are not in the story. A repository
 // that fails gets its link back; the ones before it stay added.
 func (a *App) AddStoryRepos(p *state.Project, name string, rels []string, force bool) error {
@@ -228,7 +231,7 @@ func (a *App) addStoryRepo(p *state.Project, story *state.Story, mirror, rel str
 		_ = os.Symlink(repo, dir)
 		return err
 	}
-	base, err := a.Git.DefaultBranch(repo)
+	base, err := a.offlineBase(p, repo, rel)
 	if err != nil {
 		return restore(err)
 	}

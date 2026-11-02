@@ -29,7 +29,7 @@ func TestAPIAgainstServe(t *testing.T) {
 	if err != nil || res.Num != 2 {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if _, err := c.Do(ctx, "home-network", "stories", api.Action{Name: "Bad Name"}); err == nil || err.Error() == "" {
+	if _, err := c.Do(ctx, "home-network", "stories", api.Action{Name: "!!!"}); err == nil || err.Error() == "" {
 		t.Fatalf("want the server's error text, got %v", err)
 	}
 	if res, err := c.CreateProject(ctx, api.NewProject{Kind: "new", Name: "scratch"}); err != nil || res.Name != "scratch" {

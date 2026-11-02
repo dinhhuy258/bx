@@ -28,8 +28,10 @@ type App struct {
 	// Transcripts is Claude's projects folder (~/.claude/projects), where Titles reads the
 	// first prompt of unnamed sessions; "" leaves them unnamed.
 	Transcripts string
-	GH          func(args ...string) (string, error)
-	Settings    *settings.Store
+	// GH runs gh in dir ("" = bx's own folder); in a repository gh takes the repository and
+	// host from its origin.
+	GH       func(dir string, args ...string) (string, error)
+	Settings *settings.Store
 	// Log records best-effort failures that do not fail the operation; nil is silent.
 	Log func(format string, args ...any)
 }
@@ -47,8 +49,10 @@ func New(cfg *config.Config) *App {
 	return &App{Cfg: cfg, Tmux: tmux.New(r), Git: git.New(), UUID: uuid.NewString, GH: runGH}
 }
 
-func runGH(args ...string) (string, error) {
-	out, err := exec.Command("gh", args...).CombinedOutput()
+func runGH(dir string, args ...string) (string, error) {
+	cmd := exec.Command("gh", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("gh %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 	}
@@ -71,30 +75,6 @@ func (a *App) LoadProject(name string) (*state.Project, error) {
 
 // SaveProject writes the state file.
 func (a *App) SaveProject(p *state.Project) error { return state.Save(a.Cfg.StateFile(p.Name), p) }
-
-// NewStory creates branch feat/<name> and the worktree, then records the story. In a workspace
-// it branches the repos picked (paths relative to the project folder) instead.
-func (a *App) NewStory(p *state.Project, name string, repos []string) error {
-	if !nameRe.MatchString(name) {
-		return fmt.Errorf("story name %q: use lowercase letters, digits, . _ -", name)
-	}
-	if _, exists := p.Stories[name]; exists {
-		return fmt.Errorf("story %q already exists", name)
-	}
-	if p.IsWorkspace() {
-		return a.newWorkspaceStory(p, name, "feat/"+name, repos)
-	}
-	base, err := a.Git.DefaultBranch(p.Path)
-	if err != nil {
-		return err
-	}
-	branch := "feat/" + name
-	if err := a.Git.WorktreeAdd(p.Path, a.Cfg.WorktreeDir(p.Name, name), branch, base); err != nil {
-		return err
-	}
-	p.Stories[name] = &state.Story{Branch: branch}
-	return a.SaveProject(p)
-}
 
 // Dir returns where a session runs: the worktree or the project folder.
 func (a *App) Dir(p *state.Project, story string) string {

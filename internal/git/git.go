@@ -28,13 +28,28 @@ func (g *Git) run(dir string, args ...string) (string, error) {
 	return strings.TrimRight(string(out), "\n"), nil
 }
 
-// WorktreeAdd creates path on a new branch from base. Fails if the branch already exists
-// or is checked out elsewhere (git enforces one checkout per branch).
+// WorktreeAdd creates path on a new branch from base, with no upstream even when base is a
+// remote branch (origin/develop). Fails if the branch already exists or is checked out
+// elsewhere (git enforces one checkout per branch).
 func (g *Git) WorktreeAdd(repo, path, branch, base string) error {
+	return g.worktreeAdd(repo, path, "--no-track", "-b", branch, path, base)
+}
+
+// WorktreeAddTrack creates path on a new branch from upstream (origin/<branch>), tracking it.
+func (g *Git) WorktreeAddTrack(repo, path, branch, upstream string) error {
+	return g.worktreeAdd(repo, path, "--track", "-b", branch, path, upstream)
+}
+
+// WorktreeAddExisting creates path on a local branch that already exists.
+func (g *Git) WorktreeAddExisting(repo, path, branch string) error {
+	return g.worktreeAdd(repo, path, path, branch)
+}
+
+func (g *Git) worktreeAdd(repo, path string, args ...string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	_, err := g.run(repo, "worktree", "add", path, "-b", branch, base)
+	_, err := g.run(repo, append([]string{"worktree", "add"}, args...)...)
 	return err
 }
 
@@ -63,16 +78,6 @@ func (g *Git) DeleteBranch(repo, branch string) error {
 // CurrentBranch returns the branch checked out in dir.
 func (g *Git) CurrentBranch(dir string) (string, error) {
 	return g.run(dir, "rev-parse", "--abbrev-ref", "HEAD")
-}
-
-// DefaultBranch returns main or master, whichever exists, preferring main.
-func (g *Git) DefaultBranch(repo string) (string, error) {
-	for _, b := range []string{"main", "master"} {
-		if _, err := g.run(repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+b); err == nil {
-			return b, nil
-		}
-	}
-	return "", fmt.Errorf("no main or master branch in %s", repo)
 }
 
 var statRe = regexp.MustCompile(`(\d+) insertion|(\d+) deletion`)

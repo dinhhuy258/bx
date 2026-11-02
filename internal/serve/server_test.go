@@ -61,7 +61,7 @@ func newServer(t *testing.T) (*Server, *tmux.Fake, *httptest.Server) {
 		t.Fatal(err)
 	}
 	p := state.New("home-network", repo)
-	if err := a.NewStory(p, "s1", nil); err != nil {
+	if _, err := a.NewStory(context.Background(), p, app.StoryOpts{Name: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	p.AddSession(&state.Session{Story: "s1", UUID: "u1", Title: "Add lease time"})
@@ -155,7 +155,7 @@ func TestActionsGoThroughApp(t *testing.T) {
 	if snap.Project.Sessions[1].Title != "renamed" || snap.Project.Sessions[2] == nil {
 		t.Fatalf("%+v", snap.Project)
 	}
-	if res, code := post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "Bad Name"}); code != 400 || res.Error == "" {
+	if res, code := post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "!!!"}); code != 400 || res.Error == "" {
 		t.Fatalf("bad story name: %d %+v", code, res)
 	}
 	if _, code := post(t, ts, "/api/projects/nope/yes", api.Action{Num: 1}); code != 404 {
@@ -257,7 +257,7 @@ func TestCreateProjectsAndRepos(t *testing.T) {
 	if len(list) != 3 {
 		t.Fatalf("%+v", list)
 	}
-	s.App.GH = func(...string) (string, error) { return "a/b\nc/d\n", nil }
+	s.App.GH = func(string, ...string) (string, error) { return "a/b\nc/d\n", nil }
 	repos, code := get[[]string](t, ts, "/api/github/repos")
 	if code != 200 || strings.Join(repos, ",") != "a/b,c/d" {
 		t.Fatalf("%d %q", code, repos)
@@ -635,6 +635,202 @@ func TestKeepTmuxServer(t *testing.T) {
 	s.KeepTmuxServer()
 	if calls(f) != keep || len(logged) != 1 {
 		t.Fatalf("calls %q log %q", calls(f), logged)
+	}
+}
+
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	c := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+	c.Dir = dir
+	out, err := c.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v %s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// withOrigin gives the project repo a bare origin holding main and develop, HEAD develop, and
+// returns a clone of it that pushes there.
+func withOrigin(t *testing.T, repo string) (seed string) {
+	t.Helper()
+	root := t.TempDir()
+	bare, seed := filepath.Join(root, "origin.git"), filepath.Join(root, "seed")
+	gitIn(t, root, "init", "-q", "--bare", bare)
+	gitIn(t, repo, "branch", "develop")
+	gitIn(t, repo, "remote", "add", "origin", bare)
+	gitIn(t, repo, "push", "-q", "origin", "main", "develop")
+	gitIn(t, bare, "symbolic-ref", "HEAD", "refs/heads/develop")
+	gitIn(t, repo, "remote", "set-head", "origin", "--auto")
+	gitIn(t, root, "clone", "-q", bare, seed)
+	return seed
+}
+
+func TestNewStoryStartsASessionOnTheRemoteDefault(t *testing.T) {
+	s, f, ts := newServer(t)
+	withOrigin(t, s.Cfg.ProjectDir("home-network"))
+	res, code := post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "Login Timeout", Type: "fix"})
+	if code != 200 || res.Story != "login-timeout" || res.Num != 2 || res.SessionError != "" ||
+		res.Message != "Created login-timeout on fix/login-timeout ← origin/develop" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	wt := s.Cfg.WorktreeDir("home-network", "login-timeout")
+	if !strings.Contains(calls(f), "new-session -d -s bx-home-network-2 -c "+wt+" ") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	p, _ := s.App.LoadProject("home-network")
+	if st := p.Stories["login-timeout"]; st == nil || st.Base != "origin/develop" || p.LastType != "fix" || p.Sessions[2].Story != "login-timeout" {
+		t.Fatalf("%+v", p)
+	}
+	s.mu.Lock()
+	started := s.started["home-network"][2]
+	s.mu.Unlock()
+	if !started {
+		t.Fatal("the new session is not marked started")
+	}
+}
+
+func TestNewStoryPreparesOutsideTheWriteLock(t *testing.T) {
+	s, _, ts := newServer(t)
+	fired := make(chan struct{})
+	s.prepared = func() { close(fired) }
+	s.write.Lock()
+	done := make(chan int)
+	go func() {
+		r, err := http.Post(ts.URL+"/api/projects/home-network/stories", "application/json", strings.NewReader(`{"name":"s2"}`))
+		if err != nil {
+			done <- 0
+			return
+		}
+		_ = r.Body.Close()
+		done <- r.StatusCode
+	}()
+	select {
+	case <-fired: // PrepareStory ran while the lock was held here
+	case <-time.After(10 * time.Second):
+		s.write.Unlock()
+		t.Fatal("PrepareStory waited for the write lock")
+	}
+	select {
+	case code := <-done:
+		t.Fatalf("created under someone else's lock: %d", code)
+	case <-time.After(100 * time.Millisecond):
+	}
+	s.write.Unlock()
+	if code := <-done; code != 200 {
+		t.Fatalf("code %d", code)
+	}
+}
+
+func TestNewStoryExistsThenUseExisting(t *testing.T) {
+	s, _, ts := newServer(t)
+	seed := withOrigin(t, s.Cfg.ProjectDir("home-network"))
+	gitIn(t, seed, "checkout", "-q", "-b", "feat/x")
+	gitIn(t, seed, "push", "-q", "origin", "feat/x")
+	res, code := post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "x"})
+	if code != 409 || res.Exists != "origin" || res.Branch != "feat/x" || res.Detail != "" || res.Error != "branch feat/x exists on origin" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if p, _ := s.App.LoadProject("home-network"); p.Stories["x"] != nil {
+		t.Fatal("a refused story was recorded")
+	}
+	res, code = post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "x", UseExisting: true})
+	if code != 200 || res.Story != "x" || res.Message != "Created x on feat/x" {
+		t.Fatalf("%d %+v", code, res)
+	}
+}
+
+func TestNewStorySessionFailureKeepsTheStory(t *testing.T) {
+	s, f, ts := newServer(t)
+	f.Err = errors.New("tmux: boom")
+	res, code := post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "y"})
+	if code != 200 || res.Story != "y" || res.Num != 0 || !strings.Contains(res.SessionError, "boom") || res.Message != "Created y on feat/y ← main" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if p, _ := s.App.LoadProject("home-network"); p.Stories["y"] == nil {
+		t.Fatal("story lost with its session")
+	}
+}
+
+func TestStoryInfoBranchesAndPullRequests(t *testing.T) {
+	s, _, ts := newServer(t)
+	withOrigin(t, s.Cfg.ProjectDir("home-network"))
+	info, code := get[api.StoryInfo](t, ts, "/api/projects/home-network/storyinfo")
+	if code != 200 || info.Base != "origin/develop" || info.Detected != "origin/develop" || len(info.Types) != 7 {
+		t.Fatalf("%d %+v", code, info)
+	}
+	if _, code := get[api.StoryInfo](t, ts, "/api/projects/nope/storyinfo"); code != 404 {
+		t.Fatalf("unknown project: %d", code)
+	}
+	bl, code := get[api.BranchList](t, ts, "/api/projects/home-network/branches?fetch=1")
+	names := map[string]api.Branch{}
+	for _, b := range bl.Branches {
+		names[b.Name] = b
+	}
+	if code != 200 || bl.Note != "" || !names["develop"].Remote || !names["develop"].Local || !names["feat/s1"].Local || names["feat/s1"].Remote || names["main"].Time == 0 {
+		t.Fatalf("%d %+v", code, bl)
+	}
+	var dirs []string
+	s.App.GH = func(dir string, args ...string) (string, error) {
+		dirs = append(dirs, dir)
+		if strings.Contains(strings.Join(args, " "), "--search") {
+			return "", errors.New("gh pr list: acme requires SSO authorization")
+		}
+		return `[{"number":12,"title":"Fix login","author":{"login":"alice"},"headRefName":"fix/login","isCrossRepository":true,"headRepositoryOwner":{"login":"bob"},"state":"OPEN"}]`, nil
+	}
+	prs, code := get[api.PRList](t, ts, "/api/projects/home-network/prs")
+	if code != 200 || len(prs.PRs) != 1 || prs.PRs[0] != (api.PR{Number: 12, Title: "Fix login", Author: "alice", Branch: "fix/login", Owner: "bob", State: "OPEN", Fork: true}) ||
+		len(dirs) != 1 || dirs[0] != s.Cfg.ProjectDir("home-network") {
+		t.Fatalf("%d %+v %q", code, prs, dirs)
+	}
+	prs, code = get[api.PRList](t, ts, "/api/projects/home-network/prs?q=login")
+	if code != 200 || len(prs.PRs) != 0 || len(prs.Errors) != 1 || !strings.Contains(prs.Errors[0], "SSO") {
+		t.Fatalf("gh failure: %d %+v", code, prs)
+	}
+}
+
+func TestBaseOverride(t *testing.T) {
+	s, _, ts := newServer(t)
+	withOrigin(t, s.Cfg.ProjectDir("home-network"))
+	if res, code := post(t, ts, "/api/projects/home-network/base", api.Action{Base: "nope"}); code != 400 || res.Error == "" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if _, code := post(t, ts, "/api/projects/home-network/base", api.Action{Base: "main"}); code != 200 {
+		t.Fatal(code)
+	}
+	list, _ := get[[]api.ProjectSummary](t, ts, "/api/projects")
+	if len(list) != 1 || list[0].BaseOverride != "main" {
+		t.Fatalf("%+v", list)
+	}
+	if info, _ := get[api.StoryInfo](t, ts, "/api/projects/home-network/storyinfo"); info.Base != "origin/main" || info.Override != "main" {
+		t.Fatalf("%+v", info)
+	}
+	if _, code := post(t, ts, "/api/projects/home-network/base", api.Action{}); code != 200 {
+		t.Fatal(code)
+	}
+	list, _ = get[[]api.ProjectSummary](t, ts, "/api/projects")
+	if list[0].BaseOverride != "" {
+		t.Fatalf("%+v", list)
+	}
+}
+
+func TestDiffUsesTheRecordedBase(t *testing.T) {
+	s, _, ts := newServer(t)
+	seed := withOrigin(t, s.Cfg.ProjectDir("home-network"))
+	os.WriteFile(filepath.Join(seed, "dev.txt"), []byte("1\n2\n3\n"), 0o644)
+	gitIn(t, seed, "add", ".")
+	gitIn(t, seed, "commit", "-qm", "dev")
+	gitIn(t, seed, "push", "-q", "origin", "develop")
+	if res, code := post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "login"}); code != 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	wt := s.Cfg.WorktreeDir("home-network", "login")
+	os.WriteFile(filepath.Join(wt, "mine.txt"), []byte("x\n"), 0o644)
+	gitIn(t, wt, "add", ".")
+	gitIn(t, wt, "commit", "-qm", "mine")
+	// against main (the old default) the story would also count develop's 3 lines
+	snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if d := snap.Live.Diff["login"]; d.Add != 1 {
+		t.Fatalf("diff %+v", d)
 	}
 }
 

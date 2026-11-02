@@ -65,7 +65,7 @@ func TestNewProject(t *testing.T) {
 func TestCloneProjectUsesGH(t *testing.T) {
 	a, _, _ := newApp(t)
 	var got []string
-	a.GH = func(args ...string) (string, error) {
+	a.GH = func(_ string, args ...string) (string, error) {
 		got = args
 		return "", a.Git.Init(args[3])
 	}
@@ -86,7 +86,7 @@ func TestCloneProjectUsesGH(t *testing.T) {
 
 func TestGitHubRepos(t *testing.T) {
 	a, _, _ := newApp(t)
-	a.GH = func(args ...string) (string, error) { return "a/b\nc/d\n", nil }
+	a.GH = func(_ string, args ...string) (string, error) { return "a/b\nc/d\n", nil }
 	repos, err := a.GitHubRepos()
 	if err != nil || strings.Join(repos, ",") != "a/b,c/d" {
 		t.Fatal(repos, err)

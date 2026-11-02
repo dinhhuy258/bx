@@ -27,13 +27,20 @@ type Project struct {
 	Stories  map[string]*Story `json:"stories"`
 	Sessions map[int]*Session  `json:"-"`
 	NextNum  int               `json:"next_num"`
+	// BaseOverride is the branch new stories start from instead of the detected default; ""
+	// detects it.
+	BaseOverride string `json:"base_override,omitempty"`
+	// LastType is the branch type the last new story picked ("fix"), highlighted next time.
+	LastType string `json:"last_type,omitempty"`
 }
 
 // Story is a branch with a worktree. The worktree path is derived from root, project and story.
 // In a workspace the story folder mirrors the project folder: each of Repos is a worktree on
-// Branch, everything else a link to the original.
+// Branch, everything else a link to the original. Base is the ref a single-repo story forked
+// from (origin/develop, or main without a remote); "" for stories made before it was recorded.
 type Story struct {
 	Branch string      `json:"branch"`
+	Base   string      `json:"base,omitempty"`
 	Repos  []StoryRepo `json:"repos,omitempty"`
 }
 
@@ -116,11 +123,15 @@ type projectWire struct {
 	Stories  map[string]*Story       `json:"stories"`
 	Sessions map[string]*sessionWire `json:"sessions"`
 	NextNum  int                     `json:"next_num"`
+	// added in version 2 without a bump: a file without them has no override and no last type
+	BaseOverride string `json:"base_override,omitempty"`
+	LastType     string `json:"last_type,omitempty"`
 }
 
 // MarshalJSON writes the wire shape from the design doc.
 func (p *Project) MarshalJSON() ([]byte, error) {
-	w := projectWire{Version: CurrentVersion, Path: p.Path, Kind: p.Kind, Stories: p.Stories, Sessions: map[string]*sessionWire{}, NextNum: p.NextNum}
+	w := projectWire{Version: CurrentVersion, Path: p.Path, Kind: p.Kind, Stories: p.Stories, Sessions: map[string]*sessionWire{}, NextNum: p.NextNum,
+		BaseOverride: p.BaseOverride, LastType: p.LastType}
 	if w.Stories == nil {
 		w.Stories = map[string]*Story{}
 	}
@@ -143,6 +154,7 @@ func (p *Project) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	p.Version, p.Path, p.Kind, p.NextNum = w.Version, w.Path, w.Kind, w.NextNum
+	p.BaseOverride, p.LastType = w.BaseOverride, w.LastType
 	p.Stories = w.Stories
 	if p.Stories == nil {
 		p.Stories = map[string]*Story{}

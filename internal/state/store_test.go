@@ -45,6 +45,44 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBaseOverrideLastTypeAndStoryBase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "api.json")
+	p := New("api", "/root/projects/api")
+	p.BaseOverride, p.LastType = "release/1.4", "fix"
+	p.Stories["login"] = &Story{Branch: "fix/login", Base: "origin/develop"}
+	if err := Save(path, p); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(p)
+	for _, want := range []string{`"base_override":"release/1.4"`, `"last_type":"fix"`, `"base":"origin/develop"`, `"version":2`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("file lacks %s: %s", want, b)
+		}
+	}
+	got, err := Load(path, "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseOverride != "release/1.4" || got.LastType != "fix" || got.Stories["login"].Base != "origin/develop" {
+		t.Fatalf("%+v %+v", got, got.Stories["login"])
+	}
+	// a version 2 file from before the fields: no override, no last type, no base
+	old := filepath.Join(t.TempDir(), "old.json")
+	os.WriteFile(old, []byte(`{"version":2,"path":"/p","stories":{"s1":{"branch":"feat/s1"}},"sessions":{},"next_num":1}`), 0o644)
+	got, err = Load(old, "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseOverride != "" || got.LastType != "" || got.Stories["s1"].Base != "" || got.Stories["s1"].Branch != "feat/s1" {
+		t.Fatalf("%+v", got)
+	}
+	got.BaseOverride = ""
+	b, _ = json.Marshal(got)
+	if strings.Contains(string(b), "base_override") || strings.Contains(string(b), "last_type") {
+		t.Fatalf("empty fields written: %s", b)
+	}
+}
+
 func TestCorruptFileIsQuarantined(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bunnix.json")

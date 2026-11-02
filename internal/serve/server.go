@@ -41,6 +41,8 @@ type Server struct {
 	closing  bool
 	seen     map[string]map[int]bool // by project, the sessions in tmux at the last watch
 	started  map[string]map[int]bool // by project, the sessions bx serve started since the last watch
+
+	prepared func() // tests: called by newStory between PrepareStory and taking write; nil in production
 }
 
 // WatchEvery is how often Watch looks at tmux.
@@ -81,8 +83,12 @@ func (s *Server) Handler() http.Handler {
 		}
 		return num, err
 	}))
-	mux.HandleFunc("POST /api/projects/{name}/stories", s.action(func(p *state.Project, r api.Action) (int, error) {
-		return 0, s.App.NewStory(p, r.Name, r.Repos)
+	mux.HandleFunc("POST /api/projects/{name}/stories", s.newStory)
+	mux.HandleFunc("GET /api/projects/{name}/storyinfo", s.storyInfo)
+	mux.HandleFunc("GET /api/projects/{name}/branches", s.branches)
+	mux.HandleFunc("GET /api/projects/{name}/prs", s.pullRequests)
+	mux.HandleFunc("POST /api/projects/{name}/base", s.action(func(p *state.Project, r api.Action) (int, error) {
+		return 0, s.App.SetBaseOverride(p, r.Base)
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/stories/repos", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.AddStoryRepos(p, r.Name, r.Repos, r.Force)
@@ -320,7 +326,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		m := ui.NewModel(p, ui.Options{})
 		m.SetLive(live)
-		sum := api.ProjectSummary{Name: name}
+		sum := api.ProjectSummary{Name: name, BaseOverride: p.BaseOverride}
 		sum.Running, sum.Waiting = m.Counts()
 		for _, n := range sortedNums(p) {
 			if !p.Sessions[n].Done && m.State(n) == claude.Waiting {
@@ -544,6 +550,125 @@ func (s *Server) workspaceRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, repos)
 }
 
+// newStory creates a story and starts its first session. The slow part (fetching the base,
+// asking origin and gh) runs before the write lock, so it blocks no other change; the client
+// going away cancels it. The story is then made under the lock, from a fresh load. A branch that
+// exists is a 409 with Exists; a session that fails to start keeps the story and is reported in
+// SessionError.
+func (s *Server) newStory(w http.ResponseWriter, r *http.Request) {
+	var req api.Action
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, 400, fmt.Errorf("decode body: %w", err))
+		return
+	}
+	name := r.PathValue("name")
+	p, err := s.load(name)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	plan, err := s.App.PrepareStory(r.Context(), p, app.StoryOpts{Name: req.Name, Type: req.Type, Source: req.Source, Branch: req.Branch,
+		PR: req.PR, PRRepo: req.PRRepo, Repos: req.Repos, UseExisting: req.UseExisting})
+	if err != nil {
+		storyError(w, err)
+		return
+	}
+	if s.prepared != nil {
+		s.prepared()
+	}
+	s.write.Lock()
+	defer s.write.Unlock()
+	if p, err = s.load(name); err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	res, err := s.App.CreateStory(p, plan)
+	if err != nil {
+		storyError(w, err)
+		return
+	}
+	s.Log("stories: %s: %s", name, res.Message())
+	s.mu.Lock()
+	delete(s.diffs, name) // the new story shows up in the next poll
+	s.mu.Unlock()
+	out := api.Result{Story: res.Story, Message: res.Message()}
+	if num, err := s.App.NewSession(p, res.Story, ""); err != nil {
+		out.SessionError = err.Error()
+	} else {
+		out.Num = num
+		s.markStarted(name, num)
+	}
+	writeJSON(w, out)
+}
+
+// storyError replies to a refused story: a 409 with Exists for a branch that exists.
+func storyError(w http.ResponseWriter, err error) {
+	var exists *app.BranchExistsError
+	if errors.As(err, &exists) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error(), Exists: exists.Where, Branch: exists.Branch})
+		return
+	}
+	httpError(w, statusOf(err), err)
+}
+
+// storyInfo is the base and last type of a new story, for its prompt. It does not fetch.
+func (s *Server) storyInfo(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	info, err := s.App.StoryInfo(r.Context(), p)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	writeJSON(w, api.StoryInfo{Base: info.Base, Detected: info.Detected, Override: info.Override, LastType: info.LastType, Types: info.Types})
+}
+
+// branches lists the branches of a project for the existing branch picker; with fetch=1 it
+// fetches origin first, outside the write lock.
+func (s *Server) branches(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	bl, err := s.App.Branches(r.Context(), p, r.URL.Query().Get("fetch") == "1")
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	out := api.BranchList{Branches: make([]api.Branch, len(bl.Branches)), Note: bl.Note}
+	for i, b := range bl.Branches {
+		out.Branches[i] = api.Branch{Name: b.Name, Local: b.Local, Remote: b.Remote, Time: b.Time.Unix(), Repos: b.Repos}
+	}
+	writeJSON(w, out)
+}
+
+// pullRequests lists pull requests for the picker (q: a search, #12 or a PR URL). A gh failure
+// is in Errors with a 200; only a bad project is an HTTP error.
+func (s *Server) pullRequests(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	l, err := s.App.PullRequests(p, r.URL.Query().Get("q"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	out := api.PRList{PRs: make([]api.PR, len(l.PRs)), Errors: l.Errors, Direct: l.Direct}
+	for i, pr := range l.PRs {
+		out.PRs[i] = api.PR{Number: pr.Number, Title: pr.Title, Author: pr.Author, Branch: pr.Branch, Owner: pr.Owner, Repo: pr.Repo,
+			Slug: pr.Slug, State: pr.State, Fork: pr.Fork}
+	}
+	writeJSON(w, out)
+}
+
 // collect builds the live view of a project: agents, branch and dirty count of the project
 // folder (not for a workspace, which is no repository), and the diff and dirty count of every
 // story worktree.
@@ -608,8 +733,12 @@ func (s *Server) diff(p *state.Project) map[string]ui.Diff {
 			d[name] = sd
 		}
 	} else {
-		base, _ := s.App.Git.DefaultBranch(p.Path)
-		for name := range p.Stories {
+		fallback, _ := s.App.Git.LocalDefault(p.Path) // for stories made before their base was recorded
+		for name, st := range p.Stories {
+			base := st.Base
+			if base == "" {
+				base = fallback
+			}
 			d[name] = s.storyDiff(s.App.Dir(p, name), base)
 		}
 	}

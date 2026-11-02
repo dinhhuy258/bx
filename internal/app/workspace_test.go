@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -72,13 +73,13 @@ func TestWorkspaceRepos(t *testing.T) {
 
 func TestWorkspaceStoryMirror(t *testing.T) {
 	a, p := newWorkspace(t)
-	if err := a.NewStory(p, "login", nil); err == nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login"}); err == nil {
 		t.Fatal("story without repos")
 	}
-	if err := a.NewStory(p, "login", []string{"nope"}); err == nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"nope"}}); err == nil {
 		t.Fatal("unknown repo accepted")
 	}
-	if err := a.NewStory(p, "login", []string{"api", "libs/auth"}); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api", "libs/auth"}}); err != nil {
 		t.Fatal(err)
 	}
 	m := a.Dir(p, "login")
@@ -107,8 +108,15 @@ func TestWorkspaceStoryMirror(t *testing.T) {
 
 func TestWorkspaceStoryRollsBack(t *testing.T) {
 	a, p := newWorkspace(t)
-	gitIn(t, filepath.Join(p.Path, "web"), "branch", "feat/login") // web cannot take the branch
-	err := a.NewStory(p, "login", []string{"api", "web"})
+	web := filepath.Join(p.Path, "web")
+	gitIn(t, web, "branch", "feat/login")
+	var be *BranchExistsError
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api", "web"}}); !errors.As(err, &be) ||
+		be.Where != "local" || strings.Join(be.Repos, ",") != "web" || err.Error() != "branch feat/login exists locally in web" {
+		t.Fatalf("err = %v", err)
+	}
+	gitIn(t, web, "checkout", "-q", "feat/login") // web cannot take its branch: it is checked out
+	_, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api", "web"}, UseExisting: true})
 	if err == nil || !strings.Contains(err.Error(), "web") {
 		t.Fatalf("err = %v", err)
 	}
@@ -131,7 +139,7 @@ func TestWorkspaceStoryRollsBack(t *testing.T) {
 
 func TestWorkspaceCloseKeepsOriginals(t *testing.T) {
 	a, p := newWorkspace(t)
-	if err := a.NewStory(p, "login", []string{"api"}); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
 		t.Fatal(err)
 	}
 	m := a.Dir(p, "login")
@@ -162,7 +170,7 @@ func TestWorkspaceCloseKeepsOriginals(t *testing.T) {
 
 func TestAddStoryRepos(t *testing.T) {
 	a, p := newWorkspace(t)
-	if err := a.NewStory(p, "login", []string{"api"}); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
 		t.Fatal(err)
 	}
 	m := a.Dir(p, "login")
@@ -199,7 +207,7 @@ func TestAddStoryRepos(t *testing.T) {
 
 func TestAddStoryRepoFailureRelinks(t *testing.T) {
 	a, p := newWorkspace(t)
-	if err := a.NewStory(p, "login", []string{"api"}); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
 		t.Fatal(err)
 	}
 	gitIn(t, filepath.Join(p.Path, "web"), "branch", "feat/login")
@@ -213,7 +221,7 @@ func TestAddStoryRepoFailureRelinks(t *testing.T) {
 
 func TestGuard(t *testing.T) {
 	a, p := newWorkspace(t)
-	if err := a.NewStory(p, "login", []string{"api"}); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
 		t.Fatal(err)
 	}
 	m := a.Dir(p, "login")
@@ -247,7 +255,7 @@ func TestGuard(t *testing.T) {
 func TestWorkspaceSessionGetsGuard(t *testing.T) {
 	a, p := newWorkspace(t)
 	a.Self = "/usr/local/bin/bx"
-	if err := a.NewStory(p, "login", []string{"api"}); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
 		t.Fatal(err)
 	}
 	story := a.options(p, &state.Session{Story: "login"})

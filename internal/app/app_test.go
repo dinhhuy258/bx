@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -66,20 +67,20 @@ func TestTmuxName(t *testing.T) {
 
 func TestNewStoryCreatesWorktreeAndRecord(t *testing.T) {
 	a, _, p := newApp(t)
-	if err := a.NewStory(p, "s1", nil); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(a.Cfg.WorktreeDir("home-network", "s1")); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.NewStory(p, "Bad Name", nil); err == nil {
-		t.Fatal("bad name accepted")
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "!!!"}); err == nil {
+		t.Fatal("a name with nothing left after cleanup accepted")
 	}
 }
 
 func TestNewSessionStartsItsOwnTmuxSession(t *testing.T) {
 	a, f, p := newApp(t)
-	if err := a.NewStory(p, "s1", nil); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	num, err := a.NewSession(p, "s1", "Check syntax")
@@ -295,7 +296,7 @@ func TestMarkDone(t *testing.T) {
 
 func TestCloseStoryDirtyThenForce(t *testing.T) {
 	a, f, p := newApp(t)
-	if err := a.NewStory(p, "s1", nil); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	p.AddSession(&state.Session{Story: "s1", UUID: "u1"})
@@ -326,7 +327,7 @@ func TestCloseStoryDirtyThenForce(t *testing.T) {
 
 func TestCloseStoryRemovesUploads(t *testing.T) {
 	a, f, p := newApp(t)
-	if err := a.NewStory(p, "s1", nil); err != nil {
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "s1"}); err != nil {
 		t.Fatal(err)
 	}
 	n1 := p.AddSession(&state.Session{Story: "s1", UUID: "u1"})

@@ -28,6 +28,7 @@ type ProjectSummary struct {
 	Running         int    `json:"running"`
 	Waiting         int    `json:"waiting"`
 	WaitingSessions []int  `json:"waiting_sessions,omitempty"` // numbers, ascending; for the a key
+	BaseOverride    string `json:"base_override,omitempty"`    // the branch new stories start from, set in settings › git
 }
 
 // Action is the body of every POST /api/projects/{name}/<action>.
@@ -35,9 +36,20 @@ type Action struct {
 	Num   int      `json:"num,omitempty"`   // yes, resume, rename, stop, delete
 	Story string   `json:"story,omitempty"` // sessions ("" = chat)
 	Title string   `json:"title,omitempty"` // sessions, rename
-	Name  string   `json:"name,omitempty"`  // stories, stories/close, stories/repos
+	Name  string   `json:"name,omitempty"`  // stories (new branch: a name, or a full branch with "/"), stories/close, stories/repos
 	Force bool     `json:"force,omitempty"` // stories/close: discard uncommitted files; stories/repos: add dirty originals; delete: kill a live session first
 	Repos []string `json:"repos,omitempty"` // stories, stories/repos in a workspace: repositories, relative to it
+	// stories: Type is the branch type of a new branch (feat, fix, chore, hotfix, refactor,
+	// docs, none; "" = the last one); Source is "" or "new", "branch" or "pr"; Branch the
+	// existing branch, PR the pull request and PRRepo its workspace repository; UseExisting
+	// uses a new branch that exists (after a 409 with Exists).
+	Type        string `json:"type,omitempty"`
+	Source      string `json:"source,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	PR          int    `json:"pr,omitempty"`
+	PRRepo      string `json:"pr_repo,omitempty"`
+	UseExisting bool   `json:"use_existing,omitempty"`
+	Base        string `json:"base,omitempty"` // base: the base override; "" removes it
 }
 
 // NewProject is the body of POST /api/projects.
@@ -59,6 +71,65 @@ type Result struct {
 	// Running is set when a delete is refused (409) because the session's tmux session is
 	// alive; resend with force to kill it.
 	Running bool `json:"running,omitempty"`
+	// POST stories: Story is the new story, Num its first session, Message the success line
+	// and SessionError why that session did not start (the story is kept).
+	Story        string `json:"story,omitempty"`
+	Message      string `json:"message,omitempty"`
+	SessionError string `json:"session_error,omitempty"`
+	// Exists is set when a new branch is refused (409) because it exists: "local", "origin"
+	// or "both"; Branch is that branch. Resend with use_existing to use it.
+	Exists string `json:"exists,omitempty"`
+	Branch string `json:"branch,omitempty"`
+}
+
+// StoryInfo is GET /api/projects/{name}/storyinfo, for the new story prompt: the base a new
+// branch starts from (with the override; "each repo's default" in a workspace whose repos
+// differ), the detected one, the override, the last type and every type.
+type StoryInfo struct {
+	Base     string   `json:"base"`
+	Detected string   `json:"detected"`
+	Override string   `json:"override,omitempty"`
+	LastType string   `json:"last_type,omitempty"`
+	Types    []string `json:"types"`
+}
+
+// Branch is one branch of GET /api/projects/{name}/branches: local, on origin or both, Time
+// its last commit (unix seconds), Repos the workspace repositories that have it.
+type Branch struct {
+	Name   string   `json:"name"`
+	Local  bool     `json:"local,omitempty"`
+	Remote bool     `json:"remote,omitempty"`
+	Time   int64    `json:"time"`
+	Repos  []string `json:"repos,omitempty"`
+}
+
+// BranchList is its reply, newest first. Note says a fetch failed.
+type BranchList struct {
+	Branches []Branch `json:"branches"`
+	Note     string   `json:"note,omitempty"`
+}
+
+// PR is one pull request of GET /api/projects/{name}/prs. Owner is its head repository's
+// owner, Repo its workspace repository ("" in a single-repo project), Slug that repository's
+// owner/repo; Fork says the head is in another repository.
+type PR struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	Author string `json:"author"`
+	Branch string `json:"branch"`
+	Owner  string `json:"owner,omitempty"`
+	Repo   string `json:"repo,omitempty"`
+	Slug   string `json:"slug,omitempty"`
+	State  string `json:"state,omitempty"`
+	Fork   bool   `json:"fork,omitempty"`
+}
+
+// PRList is its reply. Errors are the gh failures (per repository in a workspace); Direct
+// says the query named one pull request (#12 or its URL).
+type PRList struct {
+	PRs    []PR     `json:"prs"`
+	Errors []string `json:"errors,omitempty"`
+	Direct bool     `json:"direct,omitempty"`
 }
 
 // Settings is GET /api/settings and the reply of PUT: every section and field the server offers,

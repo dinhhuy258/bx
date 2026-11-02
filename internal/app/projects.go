@@ -78,7 +78,7 @@ func (a *App) CloneProject(repo string) (string, error) {
 	if _, err := os.Stat(dest); err == nil {
 		return "", fmt.Errorf("%s already exists", dest)
 	}
-	if _, err := a.GH("repo", "clone", repo, dest); err != nil {
+	if _, err := a.GH("", "repo", "clone", repo, dest); err != nil {
 		return "", err
 	}
 	return name, a.register(name, dest, state.KindRepo)
@@ -101,7 +101,7 @@ func (a *App) NewProject(name string) (string, error) {
 
 // GitHubRepos lists up to 100 repositories of the gh user, as owner/repo.
 func (a *App) GitHubRepos() ([]string, error) {
-	out, err := a.GH("repo", "list", "--limit", "100", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner")
+	out, err := a.GH("", "repo", "list", "--limit", "100", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner")
 	if err != nil {
 		return nil, err
 	}
