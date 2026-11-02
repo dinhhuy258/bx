@@ -88,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 		return 0, s.App.RenameShell(p, r.Story, r.K, r.Title)
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/sessions/{num}/files", s.uploadFile)
+	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/artifacts", s.listArtifacts)
 	mux.HandleFunc("POST /api/projects/{name}/sessions", s.action(func(p *state.Project, r api.Action) (int, error) {
 		var num int
 		var err error

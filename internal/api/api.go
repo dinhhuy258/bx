@@ -2,6 +2,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
@@ -227,6 +229,20 @@ type UploadRequest struct {
 // UploadResult is its reply: the absolute path of the file on the server.
 type UploadResult struct {
 	Path string `json:"path"`
+}
+
+// Artifact is one HTML page in a session's artifacts folder. URL is "" when the file server
+// is off.
+type Artifact struct {
+	Name     string    `json:"name"`
+	Size     int64     `json:"size"`
+	Modified time.Time `json:"modified"`
+	URL      string    `json:"url,omitempty"`
+}
+
+// ArtifactList is GET /api/projects/{name}/sessions/{num}/artifacts, newest first.
+type ArtifactList struct {
+	Files []Artifact `json:"files"`
 }
 
 // CleanupItem is one thing cleanup can remove: Kind "orphan" (a bx-* tmux session with no
