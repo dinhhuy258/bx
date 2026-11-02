@@ -21,8 +21,11 @@ type Config struct {
 
 // Serve holds `bx serve` settings. Listen is "auto" (the Tailscale address, port 7357)
 // or an explicit host:port; only Tailscale (100.64.0.0/10) and loopback addresses are accepted.
+// FilesListen is the artifact file server: "auto" (Listen's host, port 7358), "off", or an
+// explicit host:port under the same rule.
 type Serve struct {
-	Listen string `toml:"listen"`
+	Listen      string `toml:"listen"`
+	FilesListen string `toml:"files_listen"`
 }
 
 // Client holds `bx` client settings: the server URL and the keys that work from both panes.
@@ -67,7 +70,7 @@ func Default(root string) *Config {
 				"settings": {"S"}, "stop": {"s"}, "delete": {"X"}, "cleanup": {"C"},
 			},
 		},
-		Serve:  Serve{Listen: "auto"},
+		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
 		Client: Client{PaneLeft: "C-h", PaneRight: "C-l", CopyMode: "M-c"},
 	}
 }
@@ -97,7 +100,8 @@ type rawConfig struct {
 		List map[string]bind `toml:"list"`
 	} `toml:"keys"`
 	Serve struct {
-		Listen *string `toml:"listen"`
+		Listen      *string `toml:"listen"`
+		FilesListen *string `toml:"files_listen"`
 	} `toml:"serve"`
 	Client struct {
 		Server    *string `toml:"server"`
@@ -111,6 +115,9 @@ func (r rawConfig) applyTo(c *Config) {
 	applyBinds(c.Keys.List, r.Keys.List)
 	if r.Serve.Listen != nil {
 		c.Serve.Listen = *r.Serve.Listen
+	}
+	if r.Serve.FilesListen != nil {
+		c.Serve.FilesListen = *r.Serve.FilesListen
 	}
 	if r.Client.Server != nil {
 		c.Client.Server = *r.Client.Server
@@ -166,6 +173,13 @@ func (c *Config) LogFile() string { return filepath.Join(c.Root, "logs", "bx.log
 
 // UploadsDir is <root>/uploads: files sent from the phone, outside every repository.
 func (c *Config) UploadsDir() string { return filepath.Join(c.Root, "uploads") }
+
+// ArtifactsDir is <root>/artifacts: the HTML pages Claude makes for each session, outside every
+// repository, served read-only by bx serve's file listener.
+func (c *Config) ArtifactsDir() string { return filepath.Join(c.Root, "artifacts") }
+
+// PluginDir is <root>/claude-plugin: the Claude Code plugin bx gives every session it starts.
+func (c *Config) PluginDir() string { return filepath.Join(c.Root, "claude-plugin") }
 
 // EnsureDirs creates every folder under the root.
 func (c *Config) EnsureDirs() error {

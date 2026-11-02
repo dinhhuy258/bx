@@ -162,3 +162,23 @@ func TestLeftoverYesBindLoads(t *testing.T) {
 		t.Fatalf("an old yes bind must load: %v", err)
 	}
 }
+
+func TestArtifactsConfig(t *testing.T) {
+	root := t.TempDir()
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Serve.FilesListen != "auto" {
+		t.Errorf("files_listen default = %q", c.Serve.FilesListen)
+	}
+	if c.ArtifactsDir() != filepath.Join(root, "artifacts") || c.PluginDir() != filepath.Join(root, "claude-plugin") {
+		t.Errorf("dirs %q %q", c.ArtifactsDir(), c.PluginDir())
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[serve]\nfiles_listen = \"off\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = Load(root); err != nil || c.Serve.FilesListen != "off" {
+		t.Fatalf("override: %q %v", c.Serve.FilesListen, err)
+	}
+}
