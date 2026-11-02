@@ -39,6 +39,7 @@ type Server struct {
 	streams  map[*stream]bool     // see stream.go
 	closing  bool
 	seen     map[string]map[int]bool // by project, the sessions in tmux at the last watch
+	started  map[string]map[int]bool // by project, the sessions bx serve started since the last watch
 }
 
 // WatchEvery is how often Watch looks at tmux.
@@ -51,7 +52,8 @@ type diffCache struct {
 
 // New builds a Server.
 func New(a *app.App, cfg *config.Config, l claude.Lister, log func(string, ...any)) *Server {
-	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{}, seen: map[string]map[int]bool{}}
+	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{},
+		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}}
 }
 
 // Handler routes the API.
@@ -66,10 +68,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/stream", s.stream)
 	mux.HandleFunc("POST /api/projects/{name}/sessions/{num}/files", s.uploadFile)
 	mux.HandleFunc("POST /api/projects/{name}/sessions", s.action(func(p *state.Project, r api.Action) (int, error) {
+		var num int
+		var err error
 		if r.Story == "" {
-			return s.App.NewChat(p, r.Title)
+			num, err = s.App.NewChat(p, r.Title)
+		} else {
+			num, err = s.App.NewSession(p, r.Story, r.Title)
 		}
-		return s.App.NewSession(p, r.Story, r.Title)
+		if err == nil {
+			s.markStarted(p.Name, num)
+		}
+		return num, err
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/stories", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.NewStory(p, r.Name, r.Repos)
@@ -85,7 +94,11 @@ func (s *Server) Handler() http.Handler {
 		return 0, s.App.AnswerYes(p, r.Num)
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/resume", s.action(func(p *state.Project, r api.Action) (int, error) {
-		return 0, s.App.Resume(p, r.Num)
+		err := s.App.Resume(p, r.Num)
+		if err == nil {
+			s.markStarted(p.Name, r.Num)
+		}
+		return 0, err
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/rename", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.Rename(p, r.Num, r.Title)
@@ -124,12 +137,13 @@ func (s *Server) ResumeAll(ctx context.Context) {
 			s.Log("resume: %s: %v", name, err)
 			continue
 		}
-		n, err := s.App.ResumeAll(p, idx)
+		nums, err := s.App.ResumeAll(p, idx)
 		if err != nil {
 			s.Log("resume: %s: %v", name, err)
 		}
-		if n > 0 {
-			s.Log("resume: %s: %d sessions", name, n)
+		if len(nums) > 0 {
+			s.markStarted(name, nums...)
+			s.Log("resume: %s: %d sessions", name, len(nums))
 		}
 	}
 }
@@ -151,14 +165,34 @@ func (s *Server) Watch(ctx context.Context, every time.Duration) {
 	}
 }
 
-// watchOnce marks done the sessions that were in tmux at the last call and no longer are,
-// while the tmux server still answers. With no tmux server it forgets what it saw, so sessions
-// lost with the server are never marked done once a new one starts. It re-checks under the
-// write lock: a session resumed since the list stays as it is.
+// markStarted records sessions bx serve just started or resumed, so watchOnce treats them as
+// seen even if Claude exits before the next tick.
+func (s *Server) markStarted(name string, nums ...int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.started[name] == nil {
+		s.started[name] = map[int]bool{}
+	}
+	for _, n := range nums {
+		s.started[name][n] = true
+	}
+}
+
+// watchOnce marks done the sessions that were in tmux at the last call, or that bx serve
+// started since, and no longer are, while the tmux server still answers. With no tmux server
+// it forgets what it saw, so sessions lost with the server are never marked done once a new
+// one starts. It re-checks under the write lock: a session resumed since the list stays as it
+// is.
 func (s *Server) watchOnce() {
+	// taken before the list, so every session in it was started before the list
+	s.mu.Lock()
+	started := s.started
+	s.started = map[string]map[int]bool{}
+	s.mu.Unlock()
 	ss, up, err := s.App.Tmux.List()
 	if err != nil {
 		s.Log("watch: tmux: %v", err)
+		s.keepStarted(started)
 		return
 	}
 	if !up {
@@ -174,12 +208,14 @@ func (s *Server) watchOnce() {
 	names, err := state.ListProjects(s.stateDir())
 	if err != nil {
 		s.Log("watch: %v", err)
+		s.keepStarted(started)
 		return
 	}
 	for _, name := range names {
 		p, err := s.App.LoadProject(name)
 		if err != nil {
 			s.Log("watch: %s: %v", name, err)
+			s.keepStarted(map[string]map[int]bool{name: started[name]})
 			continue
 		}
 		now := map[int]bool{}
@@ -188,9 +224,15 @@ func (s *Server) watchOnce() {
 				now[n] = true
 			}
 		}
+		before := map[int]bool{}
 		s.mu.Lock()
-		before := s.seen[name]
+		for n := range s.seen[name] {
+			before[n] = true
+		}
 		s.mu.Unlock()
+		for n := range started[name] {
+			before[n] = true
+		}
 		var exited []int
 		for n := range before {
 			if se := p.Sessions[n]; !now[n] && se != nil && !se.Done {
@@ -204,6 +246,15 @@ func (s *Server) watchOnce() {
 		s.mu.Lock()
 		s.seen[name] = now
 		s.mu.Unlock()
+	}
+}
+
+// keepStarted puts back the started sessions a watch could not check, for the next one.
+func (s *Server) keepStarted(started map[string]map[int]bool) {
+	for name, nums := range started {
+		for n := range nums {
+			s.markStarted(name, n)
+		}
 	}
 }
 

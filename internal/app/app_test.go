@@ -144,9 +144,9 @@ func TestResumeAllSkipsDoneLiveAndForeign(t *testing.T) {
 	p.AddSession(&state.Session{UUID: "u3"})             // Claude runs outside bx
 	p.AddSession(&state.Session{UUID: "u4"})             // gone: resume
 	f.Replies[listSessions] = "$5\tbx-home-network-1\n"
-	n, err := a.ResumeAll(p, map[string]claude.Agent{"u3": {SessionID: "u3"}})
-	if err != nil || n != 1 {
-		t.Fatalf("%d %v", n, err)
+	nums, err := a.ResumeAll(p, map[string]claude.Agent{"u3": {SessionID: "u3"}})
+	if err != nil || len(nums) != 1 || nums[0] != 4 {
+		t.Fatalf("%v %v", nums, err)
 	}
 	if calls(f) != "new-session -d -s bx-home-network-4 -c "+p.Path+" -P -F #{session_id} claude --resume u4\nset-option -s exit-empty off" {
 		t.Fatalf("calls:\n%s", calls(f))

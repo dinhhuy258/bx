@@ -133,18 +133,19 @@ func (a *App) Resume(p *state.Project, num int) error {
 }
 
 // ResumeAll restarts every session that is not done, has no tmux session, and is not live in
-// Claude elsewhere (agents, by uuid). bx serve calls it at startup, after a reboot.
-func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) (int, error) {
+// Claude elsewhere (agents, by uuid), and returns their numbers. bx serve calls it at startup,
+// after a reboot.
+func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) ([]int, error) {
 	live, err := a.Live(p)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	nums := make([]int, 0, len(p.Sessions))
 	for n := range p.Sessions {
 		nums = append(nums, n)
 	}
 	sort.Ints(nums)
-	resumed := 0
+	var resumed []int
 	for _, n := range nums {
 		s := p.Sessions[n]
 		if _, alive := live[n]; s.Done || alive {
@@ -156,7 +157,7 @@ func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) (int, 
 		if err := a.launch(p, n, claude.StartArgs(s.UUID, true, a.options(p, s))); err != nil {
 			return resumed, err
 		}
-		resumed++
+		resumed = append(resumed, n)
 	}
 	return resumed, nil
 }

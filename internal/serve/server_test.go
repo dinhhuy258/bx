@@ -339,6 +339,33 @@ func TestWatchMarksExitedSessionsDone(t *testing.T) {
 	}
 }
 
+func TestWatchMarksDoneASessionThatExitsBeforeTheFirstTick(t *testing.T) {
+	s, _, ts := newServer(t)
+	p, _ := s.App.LoadProject("home-network")
+	p.AddSession(&state.Session{UUID: "u2", Title: "gone"})                // 2: ResumeAll
+	p.AddSession(&state.Session{UUID: "u3", Title: "stopped", Done: true}) // 3: r
+	if err := s.App.SaveProject(p); err != nil {
+		t.Fatal(err)
+	}
+	s.ResumeAll(context.Background())
+	if res, code := post(t, ts, "/api/projects/home-network/resume", api.Action{Num: 3}); code != 200 {
+		t.Fatalf("resume: %d %+v", code, res)
+	}
+	if res, code := post(t, ts, "/api/projects/home-network/sessions", api.Action{Story: "s1"}); code != 200 || res.Num != 4 {
+		t.Fatalf("new: %d %+v", code, res)
+	}
+	s.watchOnce() // tmux answers with session 1 only: 2, 3 and 4 exited at once
+	p, _ = s.App.LoadProject("home-network")
+	for _, n := range []int{2, 3, 4} {
+		if !p.Sessions[n].Done {
+			t.Errorf("session %d exited before the first tick and is not done", n)
+		}
+	}
+	if p.Sessions[1].Done {
+		t.Fatal("a running session is done")
+	}
+}
+
 func TestWatchIgnoresTmuxServerGone(t *testing.T) {
 	s, f, _ := newServer(t)
 	s.watchOnce()
