@@ -90,7 +90,7 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, label strin
 	defer cancel()
 	st := &stream{cancel: cancel}
 	if !s.track(st) {
-		c.Close(websocket.StatusGoingAway, "server shutting down")
+		_ = c.Close(websocket.StatusGoingAway, "server shutting down")
 		return
 	}
 	defer s.untrack(st)
@@ -99,7 +99,7 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, label strin
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
 		s.Log("stream %s: %v", label, err)
-		c.Close(websocket.StatusInternalError, "attach failed")
+		_ = c.Close(websocket.StatusInternalError, "attach failed")
 		return
 	}
 	s.Log("stream %s: open (%dx%d)", label, cols, rows)
@@ -220,11 +220,11 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, label strin
 	<-pingDone
 	switch {
 	case ctx.Err() == nil: // tmux attach exited by itself: the session is gone
-		c.Close(websocket.StatusNormalClosure, "session ended")
+		_ = c.Close(websocket.StatusNormalClosure, "session ended")
 	case s.isClosing():
-		c.Close(websocket.StatusGoingAway, "server shutting down")
+		_ = c.Close(websocket.StatusGoingAway, "server shutting down")
 	default:
-		c.Close(websocket.StatusNormalClosure, "bye")
+		_ = c.Close(websocket.StatusNormalClosure, "bye")
 	}
 }
 

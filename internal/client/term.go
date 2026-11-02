@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/http"
 	"sync"
 
@@ -130,8 +131,14 @@ func (t *Term) Resize(cols, rows int) {
 func (t *Term) Cols() int { return t.cols }
 func (t *Term) Rows() int { return t.rows }
 
-// Close stops the input reader.
-func (t *Term) Close() { _ = t.emu.Close() }
+// Close stops the input reader: readInput gets EOF, closes Input and exits. It closes the
+// emulator's input pipe directly rather than calling emu.Close, which sets an unsynchronized
+// flag that readInput checks on every Read (a data race).
+func (t *Term) Close() {
+	if c, ok := t.emu.InputPipe().(io.Closer); ok {
+		_ = c.Close()
+	}
+}
 
 // Stream is one WebSocket to the server for this Term.
 type Stream struct {

@@ -75,7 +75,7 @@ func Save(path string, p *Project) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	cleanup := func() { tmp.Close(); os.Remove(tmpName) }
+	cleanup := func() { _ = tmp.Close(); _ = os.Remove(tmpName) }
 	if _, err := tmp.Write(append(data, '\n')); err != nil {
 		cleanup()
 		return err
@@ -85,11 +85,11 @@ func Save(path string, p *Project) error {
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return err
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return err
 	}
 	return nil
@@ -108,10 +108,10 @@ func Lock(path string) (*Locker, error) {
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("another bx process holds %s.lock", path)
 	}
-	f.Truncate(0)
+	_ = f.Truncate(0) // the PID below is informational
 	fmt.Fprintf(f, "%d\n", os.Getpid())
 	return &Locker{f: f}, nil
 }
@@ -121,8 +121,8 @@ func (l *Locker) Unlock() {
 	if l == nil || l.f == nil {
 		return
 	}
-	syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
-	l.f.Close()
+	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
+	_ = l.f.Close()
 	l.f = nil
 }
 

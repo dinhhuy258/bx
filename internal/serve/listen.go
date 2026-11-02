@@ -37,7 +37,7 @@ func resolveListen(cfg string, addrs func() ([]net.Addr, error)) (string, error)
 		return cfg, nil
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || !(ip.IsLoopback() || tailscaleNet.Contains(ip)) {
+	if ip == nil || !ip.IsLoopback() && !tailscaleNet.Contains(ip) {
 		return "", fmt.Errorf("serve.listen %q: %q is not a Tailscale address (100.64.0.0/10) or localhost; bx serve has no login and refuses other interfaces", cfg, host)
 	}
 	return cfg, nil

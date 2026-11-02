@@ -37,7 +37,9 @@ func New(t *testing.T) (*serve.Server, *tmux.Fake, *httptest.Server) {
 	if err := g.Init(repo); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(repo, "README.md"), []byte("x\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{{"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"}} {
 		c := exec.Command("git", args...)
 		c.Dir = repo

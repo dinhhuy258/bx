@@ -493,7 +493,7 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "CLAUDE SAYS HI") || !strings.Contains(v, " home-network › s1 › [1] Add lease time") || !strings.Contains(v, "◆ asks") {
 		t.Fatal(v)
 	}
-	if c := h.m.View().Cursor; c == nil || c.Position.X < ui.ListWidth {
+	if c := h.m.View().Cursor; c == nil || c.X < ui.ListWidth {
 		t.Fatalf("cursor should be in the Claude pane: %+v", c)
 	}
 	h.press("x") // goes to Claude, not to the list

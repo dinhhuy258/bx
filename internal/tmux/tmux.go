@@ -276,7 +276,7 @@ func WriteConf(path string) error {
 		return err
 	}
 	if _, err := f.WriteString(conf); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	return f.Close()

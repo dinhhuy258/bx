@@ -2,3 +2,15 @@ version: "2"
 linters:
   default: standard
   enable: [errcheck, govet, staticcheck, unused, misspell]
+  settings:
+    errcheck:
+      # Help and usage text: nothing useful to do if printing fails.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    rules:
+      # Test setup and cleanup: a failed call shows up as a failing test anyway.
+      - path: _test\.go
+        linters: [errcheck]
