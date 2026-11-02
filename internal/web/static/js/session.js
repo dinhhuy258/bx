@@ -1,7 +1,7 @@
 import { api } from './api.js';
 import { h, bar, poll, toast, copyText, ask } from './ui.js';
 import { sessionMenu, withForce } from './sessionmenu.js';
-import { shellMenu, shellLabel, closedCard, confirmNewShell, openShell } from './shell.js';
+import { shellMenu, shellLabel, closedCard, confirmNewShell, openShell, findShell } from './shell.js';
 
 const MAX_INPUT = 64 * 1024; // the server reads frames up to 1 MB
 const ENTER_DELAY = 50; // ms between the text and Enter, so Claude doesn't take Enter as part of a paste
@@ -87,6 +87,7 @@ function showTerminal(root, project, target) {
   let offlineRetry = null; // the slow try while navigator.onLine is false
   let cur = null; // the last poll's { s: session record, st: session state }; for a shell, its api.Shell
   let shellSnap = null, dirs = {}, storyGone = false; // a shell's last snapshot, folders, and whether its story was closed
+  let shellMissing = false; // the last snapshot has no row for this shell: it is gone
   let fails = 0; // closes in a row before the socket opened, with the server reachable
   let backoff = 0; // retries since the socket last opened
 
@@ -126,7 +127,7 @@ function showTerminal(root, project, target) {
     ws.onclose = async (e) => {
       ws = null;
       if (closed) return;
-      if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done'))) {
+      if (e.reason === 'session ended' || (!opened && (lastState === 'gone' || lastState === 'done' || shellMissing))) {
         end();
         return;
       }
@@ -139,6 +140,10 @@ function showTerminal(root, project, target) {
         showNotice('Reconnecting…');
         const ok = await reachable();
         if (closed || ended || ws) return; // stopped, ended or reconnected meanwhile
+        if (ok && shellMissing) { // the snapshot reachable() read has no row for this shell
+          end();
+          return;
+        }
         if (ok && ++fails >= 3) {
           end();
           return;
@@ -152,7 +157,9 @@ function showTerminal(root, project, target) {
   // front of a server that is down, so it doesn't count.
   function reachable() {
     if (navigator.onLine === false) return Promise.resolve(false);
-    const check = api.snapshot(project).then(() => true, (e) => !!e.status && e.status < 500);
+    // a shell's snapshot also says whether the shell is still there
+    const check = api.snapshot(project).then((snap) => { if (shell) readShellSnap(snap); return true; },
+      (e) => !!e.status && e.status < 500);
     return Promise.race([check, new Promise((r) => setTimeout(() => r(false), 5000))]);
   }
 
@@ -519,12 +526,14 @@ function showTerminal(root, project, target) {
   window.addEventListener('pagehide', leaveScroll); // closing the tab or reloading
 
   // readShellSnap takes the shell's row, folders and story from snap. A missing row doesn't leave
-  // the screen: the stream's end says whether the shell is gone.
+  // the screen: it is noted in shellMissing, and a stream that fails to open then ends at once
+  // (a drop of a shell that is still there keeps reconnecting).
   function readShellSnap(snap) {
     shellSnap = snap;
     dirs = snap.dirs || {};
     storyGone = !!story && !(snap.project.stories || {})[story];
-    const sh = (snap.shells || []).find((s) => s.story === story && s.k === k);
+    const sh = findShell(snap, story, k);
+    shellMissing = !sh;
     if (!sh) return;
     cur = sh;
     titleEl.textContent = `$${k} ${shellLabel(sh)}`;

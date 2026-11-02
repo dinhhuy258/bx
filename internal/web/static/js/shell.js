@@ -18,6 +18,9 @@ export const plainShell = (cmd) => PLAIN.includes(String(cmd || '').replace(/^-/
 // shellLabel is the rename, else the running command, else 'shell'.
 export const shellLabel = (sh) => sh.title || sh.command || 'shell';
 
+// findShell is shell k of a story in a project snapshot, or undefined when it is gone.
+export const findShell = (snap, story, k) => (snap.shells || []).find((s) => s.story === story && s.k === k);
+
 // groupName names a story for people: 'Chats' for the project folder.
 export const groupName = (story) => story || 'Chats';
 

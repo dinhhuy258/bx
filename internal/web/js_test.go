@@ -58,7 +58,8 @@ func TestPRPickerLooksANumberUp(t *testing.T) {
 }
 
 // shellScript loads the shell, session and project screens on the same fake DOM and checks the
-// shell helpers: routes ('_' = Chats), plain shells, the next free number and the row label.
+// shell helpers: routes ('_' = Chats), plain shells, the next free number, the row label and
+// finding a shell in a snapshot (missing = gone, which ends a failed stream at once).
 const shellScript = `
 class Node {}
 class El extends Node {
@@ -71,7 +72,7 @@ globalThis.Node = Node;
 globalThis.document = { createElement: (t) => new El(t), body: new El('body') };
 globalThis.location = { hash: '', protocol: 'http:', host: 'x' };
 
-const { shellHref, plainShell, nextShellK, shellLabel, groupName } = await import(process.argv[2] + '/shell.js');
+const { shellHref, plainShell, nextShellK, shellLabel, groupName, findShell } = await import(process.argv[2] + '/shell.js');
 const { showSession, showShell } = await import(process.argv[2] + '/session.js');
 const { showProject } = await import(process.argv[2] + '/project.js');
 const { api } = await import(process.argv[2] + '/api.js');
@@ -88,6 +89,9 @@ if (shellLabel({ title: '', command: 'zsh' }) !== 'zsh') fail('shellLabel comman
 if (shellLabel({ title: 'dev', command: 'npm' }) !== 'dev') fail('shellLabel title');
 if (shellLabel({}) !== 'shell') fail('shellLabel empty');
 if (groupName('') !== 'Chats' || groupName('s1') !== 's1') fail('groupName');
+const snap = { shells: [{ story: 's1', k: 1, command: 'zsh' }, { story: '', k: 2 }] };
+if (findShell(snap, 's1', 1)?.command !== 'zsh' || !findShell(snap, '', 2)) fail('findShell present');
+if (findShell(snap, 's1', 2) || findShell(snap, '', 1) || findShell({}, 's1', 1)) fail('findShell gone');
 const url = api.shellStreamURL('home network', 'fix/login', 2, 80, 24);
 if (url !== 'ws://x/api/projects/home%20network/shells/stream?story=fix%2Flogin&k=2&cols=80&rows=24') fail('shellStreamURL: ' + url);
 `
