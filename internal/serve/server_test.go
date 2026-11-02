@@ -838,7 +838,7 @@ func TestPullRequestsStopGHWhenTheClientGoes(t *testing.T) {
 		req, _ := http.NewRequestWithContext(ctx, method, ts.URL+path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		if res, err := http.DefaultClient.Do(req); err == nil {
-			res.Body.Close()
+			_ = res.Body.Close()
 		}
 		cancel()
 		select {
