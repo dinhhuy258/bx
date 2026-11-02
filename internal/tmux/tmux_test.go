@@ -182,3 +182,19 @@ func TestRealServer(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIsNoServer(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{errors.New("tmux list-sessions: no server running on /x"), true},
+		{errors.New("tmux set-option -s exit-empty off: error connecting to /x (No such file or directory)"), true},
+		{errors.New("tmux list-sessions: boom"), false},
+	} {
+		if got := IsNoServer(c.err); got != c.want {
+			t.Errorf("IsNoServer(%v) = %v, want %v", c.err, got, c.want)
+		}
+	}
+}

@@ -26,6 +26,7 @@ func setup() (*config.Config, *app.App, *log.Logger, error) {
 	}
 	logger := log.New(f, "", log.LstdFlags)
 	a := app.New(cfg)
+	a.Log = logger.Printf
 	if a.Self, err = os.Executable(); err != nil {
 		logger.Printf("no bx binary path, workspace stories run without the guard: %v", err)
 	}

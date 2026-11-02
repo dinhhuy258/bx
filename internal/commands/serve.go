@@ -56,6 +56,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 	}
 	s := serve.New(a, cfg, claude.CLI{}, log)
 	s.ResumeAll(context.Background()) // after a reboot: start every session that should be running
+	s.KeepTmuxServer()                // a tmux server already running outlives its last session
 	srv := &http.Server{Addr: addr, Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

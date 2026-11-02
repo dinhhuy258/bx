@@ -107,7 +107,10 @@ func (a *App) launch(p *state.Project, num int, args []string) error {
 	if _, err := a.Tmux.NewSession(TmuxName(p.Name, num), a.Dir(p, p.Sessions[num].Story), shellJoin(args)); err != nil {
 		return err
 	}
-	_ = a.Tmux.KeepServer() // best effort: a Claude that exits at once may take the server with it
+	// best effort: a Claude that exits at once may take the server with it
+	if err := a.Tmux.KeepServer(); err != nil {
+		a.logf("tmux keep server: %v", err)
+	}
 	return nil
 }
 

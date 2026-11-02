@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -452,5 +453,19 @@ func TestCleanupScanBuildsNamesForward(t *testing.T) {
 	}
 	if disk.Sessions[done] != nil || disk.Sessions[12] == nil {
 		t.Fatalf("%+v", disk.Sessions)
+	}
+}
+
+func TestLaunchLogsKeepServerFailure(t *testing.T) {
+	a, f, p := newApp(t)
+	f.Errs = map[string]error{"set-option -s exit-empty off": errors.New("boom")}
+	var logged []string
+	a.Log = func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
+	num, err := a.NewChat(p, "")
+	if err != nil || num != 1 {
+		t.Fatalf("a failed keep server failed the start: %d %v", num, err)
+	}
+	if len(logged) != 1 || !strings.Contains(logged[0], "boom") {
+		t.Fatalf("log: %q", logged)
 	}
 }

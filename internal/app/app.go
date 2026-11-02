@@ -30,6 +30,15 @@ type App struct {
 	Transcripts string
 	GH          func(args ...string) (string, error)
 	Settings    *settings.Store
+	// Log records best-effort failures that do not fail the operation; nil is silent.
+	Log func(format string, args ...any)
+}
+
+// logf calls Log when it is set.
+func (a *App) logf(format string, args ...any) {
+	if a.Log != nil {
+		a.Log(format, args...)
+	}
 }
 
 // New returns an App on bx's private tmux server, with the real git and gh.

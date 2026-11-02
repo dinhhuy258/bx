@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -608,5 +609,54 @@ func TestCleanupRefusesWhenAProjectFailsToLoad(t *testing.T) {
 	}
 	if strings.Contains(calls(f), "kill-session") {
 		t.Fatalf("calls:\n%s", calls(f))
+	}
+}
+
+func TestKeepTmuxServer(t *testing.T) {
+	s, f, _ := newServer(t)
+	var logged []string
+	s.Log = func(format string, args ...any) { logged = append(logged, fmt.Sprintf(format, args...)) }
+	const keep = "set-option -s exit-empty off"
+
+	f.Errs = map[string]error{keep: errors.New("tmux set-option: no server running on /x")}
+	s.KeepTmuxServer()
+	if len(logged) != 0 {
+		t.Fatalf("no server logged: %q", logged)
+	}
+
+	f.Errs[keep] = errors.New("tmux set-option: boom")
+	s.KeepTmuxServer()
+	if len(logged) != 1 || !strings.Contains(logged[0], "tmux: keep server: tmux set-option: boom") {
+		t.Fatalf("log: %q", logged)
+	}
+
+	delete(f.Errs, keep)
+	f.Calls = nil
+	s.KeepTmuxServer()
+	if calls(f) != keep || len(logged) != 1 {
+		t.Fatalf("calls %q log %q", calls(f), logged)
+	}
+}
+
+func TestWatchKeepsStartedSessionsWhenTmuxFails(t *testing.T) {
+	s, f, ts := newServer(t)
+	if res, code := post(t, ts, "/api/projects/home-network/sessions", api.Action{Story: "s1"}); code != 200 || res.Num != 2 {
+		t.Fatalf("new: %d %+v", code, res)
+	}
+	f.Errs = map[string]error{listSessions: errors.New("tmux list-sessions: boom")}
+	s.watchOnce()
+	p, _ := s.App.LoadProject("home-network")
+	if p.Sessions[2].Done {
+		t.Fatal("a session started before a failed watch is done")
+	}
+	delete(f.Errs, listSessions)
+	f.Replies[listSessions] = "$5\tbx-home-network-1\n" // session 2 exited while tmux failed
+	s.watchOnce()
+	p, _ = s.App.LoadProject("home-network")
+	if !p.Sessions[2].Done {
+		t.Fatal("a started session the failed watch could not check is not done")
+	}
+	if p.Sessions[1].Done {
+		t.Fatal("a running session is done")
 	}
 }

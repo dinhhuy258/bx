@@ -18,6 +18,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
+	"github.com/dinhhuy258/bx/internal/tmux"
 	"github.com/dinhhuy258/bx/internal/ui"
 	"github.com/dinhhuy258/bx/internal/web"
 )
@@ -145,6 +146,15 @@ func (s *Server) ResumeAll(ctx context.Context) {
 			s.markStarted(name, nums...)
 			s.Log("resume: %s: %d sessions", name, len(nums))
 		}
+	}
+}
+
+// KeepTmuxServer sets exit-empty off on a tmux server that is already running, so it outlives
+// its last session even when bx serve starts none. With no server there is nothing to keep:
+// the first new session sets it.
+func (s *Server) KeepTmuxServer() {
+	if err := s.App.Tmux.KeepServer(); err != nil && !tmux.IsNoServer(err) {
+		s.Log("tmux: keep server: %v", err)
 	}
 }
 

@@ -88,7 +88,7 @@ func (t *Tmux) Sessions() ([]Session, error) {
 func (t *Tmux) List() ([]Session, bool, error) {
 	out, err := t.run("list-sessions", "-F", "#{session_id}\t#{session_name}")
 	if err != nil {
-		if s := err.Error(); strings.Contains(s, "no server running") || strings.Contains(s, "error connecting") {
+		if IsNoServer(err) {
 			return nil, false, nil
 		}
 		return nil, false, err
@@ -100,6 +100,15 @@ func (t *Tmux) List() ([]Session, bool, error) {
 		}
 	}
 	return ss, true, nil
+}
+
+// IsNoServer reports whether err from a tmux command means no server is running on the socket.
+func IsNoServer(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "no server running") || strings.Contains(s, "error connecting")
 }
 
 // KillSession kills a session by id.
