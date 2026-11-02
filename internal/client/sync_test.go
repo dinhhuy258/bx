@@ -80,8 +80,8 @@ func TestSyncSelectionIsSaved(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
 	h.m.opened.Projects, h.m.opened.Current = []string{"lab"}, "lab" // kept as they are by the save
-	h.press("S", "j", "j", "j") // the skills folder
-	h.press("j", " ")           // skills/a
+	h.press("S", "j", "j", "j")                                      // the skills folder
+	h.press("j", " ")                                                // skills/a
 	o := loadOpened(root)
 	if !reflect.DeepEqual(o.SyncExclude, []string{"skills/a"}) || !reflect.DeepEqual(o.Projects, []string{"lab"}) || o.Current != "lab" {
 		t.Fatalf("client.json = %+v", o)
