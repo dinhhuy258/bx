@@ -107,6 +107,24 @@ func TestStateText(t *testing.T) {
 	}
 }
 
+func TestAlive(t *testing.T) {
+	p, live := sampleHomeNetwork()
+	m := NewModel(p, Options{AutoExpandWaiting: true})
+	m.SetLive(live)
+	if !m.Alive(1) || !m.Alive(3) || m.Alive(5) || m.Alive(99) {
+		t.Fatalf("without states: 1=%v 3=%v 5(done)=%v 99=%v", m.Alive(1), m.Alive(3), m.Alive(5), m.Alive(99))
+	}
+	delete(live.Agents, "u1")
+	m.SetLive(live)
+	if m.Alive(1) {
+		t.Fatal("a gone session is not alive")
+	}
+	m.SetStates(map[int]string{1: "starting", 3: "gone", 5: "running"})
+	if !m.Alive(1) || m.Alive(3) || m.Alive(5) {
+		t.Fatalf("with states: 1=%v 3=%v 5(done)=%v", m.Alive(1), m.Alive(3), m.Alive(5))
+	}
+}
+
 func TestCounts(t *testing.T) {
 	m, _ := sampleModel(Options{AutoExpandWaiting: true})
 	run, wait := m.Counts()

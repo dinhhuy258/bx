@@ -15,6 +15,9 @@ const (
 	PromptNewProject // a project name
 	PromptDiscardSettings
 	PromptAddRepoForce // y/n: add repositories whose originals have uncommitted files
+	PromptStop         // y/n: stop a live session (Target is its number)
+	PromptDelete       // y/n: delete a session's record (Target is its number)
+	PromptDeleteForce  // y/n: the session is still open; kill it and delete
 )
 
 // PromptResult is what a key did to the prompt.
@@ -45,7 +48,12 @@ func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 
 // YesNo reports whether the prompt is a y/n question.
 func (p *Prompt) YesNo() bool {
-	return p.Kind == PromptCloseStory || p.Kind == PromptCloseStoryForce || p.Kind == PromptDiscardSettings || p.Kind == PromptAddRepoForce
+	switch p.Kind {
+	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
+		PromptStop, PromptDelete, PromptDeleteForce:
+		return true
+	}
+	return false
 }
 
 // Key feeds one key (bx key name plus the typed text). On Submit the caller reads Input and

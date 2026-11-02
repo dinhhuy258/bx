@@ -39,3 +39,20 @@ func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 		t.Fatal(r)
 	}
 }
+
+func TestLifecyclePromptsAreYesNo(t *testing.T) {
+	for _, k := range []PromptKind{PromptStop, PromptDelete, PromptDeleteForce} {
+		var p Prompt
+		p.Open(k, "1", "sure? y/n", "")
+		if !p.YesNo() {
+			t.Fatalf("kind %d is not y/n", k)
+		}
+		if r := p.Key("Enter", ""); r != PromptCancel {
+			t.Fatalf("kind %d: Enter gave %v, want cancel", k, r)
+		}
+		p.Open(k, "1", "sure? y/n", "")
+		if r := p.Key("y", "y"); r != PromptSubmit || p.Target != "1" {
+			t.Fatalf("kind %d: y gave %v", k, r)
+		}
+	}
+}

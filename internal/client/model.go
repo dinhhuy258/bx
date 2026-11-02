@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -431,6 +432,14 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 		um.SetProject(msg.snap.Project)
 	}
 	um.SetLive(msg.snap.Live)
+	var states map[int]string
+	if msg.snap.SessionStates != nil {
+		states = make(map[int]string, len(msg.snap.SessionStates))
+		for n, st := range msg.snap.SessionStates {
+			states[n] = st.State
+		}
+	}
+	um.SetStates(states)
 	if msg.project == m.project {
 		m.m = um
 		if m.pendingSel != 0 {
@@ -602,7 +611,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "fold_all":
 		m.m.FoldAll()
 	case "focus":
-		if sess != nil && !m.m.Gone(num) {
+		if sess != nil && sess.Done {
+			m.setFlash("done · r to resume")
+		} else if sess != nil && !m.m.Gone(num) {
 			m.focusMode = true
 			return m, m.enterClaude()
 		}
@@ -621,15 +632,26 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.openPrompt(ui.PromptRename, "", "new title", sess.Title)
 		}
 	case "resume":
-		if sess != nil && m.m.Gone(num) {
+		if sess != nil && (m.m.Gone(num) || sess.Done) {
 			_ = m.do("resume", api.Action{Num: num})
+		}
+	case "stop":
+		if sess != nil && !sess.Done {
+			if !m.m.Alive(num) {
+				return m, m.stop(num)
+			}
+			m.openPrompt(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("stop [%d] %s? y/n", num, sess.Title), "")
+		}
+	case "delete":
+		if sess != nil {
+			m.openPrompt(ui.PromptDelete, strconv.Itoa(num), fmt.Sprintf("delete [%d] %s? y/n", num, sess.Title), "")
 		}
 	case "add_repo":
 		if row.Kind == ui.RowStory && row.Story != "" && m.m.P.IsWorkspace() {
 			return m, m.loadStoryRepos(row.Story, true)
 		}
 	case "close_story":
-		if row.Story != "" {
+		if row.Kind == ui.RowStory && row.Story != "" {
 			m.openPrompt(ui.PromptCloseStory, row.Story, fmt.Sprintf("close story %s, stop its sessions and remove its worktree? y/n", row.Story), "")
 		}
 	case "waiting":
@@ -791,6 +813,10 @@ func (m *Model) live() {
 func (m *Model) enterClaude() tea.Cmd {
 	num, sess := m.m.SelectedSession()
 	if sess == nil {
+		return nil
+	}
+	if sess.Done {
+		m.setFlash("done · r to resume")
 		return nil
 	}
 	if m.m.Gone(num) {
@@ -1015,6 +1041,23 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			m.setFlash("closed story " + target)
 			return m.poll()
 		}
+	case ui.PromptStop:
+		num, _ := strconv.Atoi(target)
+		return m.stop(num)
+	case ui.PromptDelete, ui.PromptDeleteForce:
+		num, _ := strconv.Atoi(target)
+		force := kind == ui.PromptDeleteForce
+		res, err := m.be.Do(m.ctx, m.project, "delete", api.Action{Num: num, Force: force})
+		switch {
+		case err != nil && res.Running && !force:
+			m.openPrompt(ui.PromptDeleteForce, target, fmt.Sprintf("[%d] is still open · kill it and delete? y/n", num), "")
+		case err != nil:
+			m.setFlash("error: " + err.Error())
+		default:
+			m.leaveSession(num)
+			m.setFlash(fmt.Sprintf("deleted [%d] · transcript kept in ~/.claude", num))
+			return m.poll()
+		}
 	case ui.PromptDiscardSettings:
 		m.settings = nil
 	case ui.PromptAddFolder:
@@ -1030,6 +1073,27 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		return m.create(api.NewProject{Kind: "new", Name: text})
 	}
 	return nil
+}
+
+// stop ends a session's Claude and marks it done, so it is not resumed at startup.
+func (m *Model) stop(num int) tea.Cmd {
+	if m.do("stop", api.Action{Num: num}) != nil {
+		return nil
+	}
+	m.leaveSession(num)
+	m.setFlash(fmt.Sprintf("stopped [%d]", num))
+	return m.poll()
+}
+
+// leaveSession empties the Claude pane when it shows num, which was just stopped or deleted.
+// Closing the stream first makes its later "session ended" close stale, so the flash stays.
+func (m *Model) leaveSession(num int) {
+	if num != m.streamNum {
+		return
+	}
+	m.closeStream()
+	m.claudeFocused, m.focusMode = false, false
+	m.resizeTerm()
 }
 
 // newStory creates a story; repos are its repositories in a workspace.

@@ -79,7 +79,7 @@ func Default(root string) *Config {
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
 				"waiting": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"activity": {"A"}, "prev_project": {"["}, "next_project": {"]"}, "close_project": {"x"},
-				"settings": {"S"},
+				"settings": {"S"}, "stop": {"s"}, "delete": {"X"},
 			},
 		},
 		List:   List{AutoExpandWaiting: true},

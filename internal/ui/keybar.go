@@ -23,7 +23,7 @@ var labels = map[string]string{
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
 	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "yes": "yes", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
 	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
-	"settings": "settings", "add_repo": "add repo",
+	"settings": "settings", "add_repo": "add repo", "stop": "stop", "delete": "delete",
 }
 
 // KeyBar builds the bottom line of the client.

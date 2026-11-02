@@ -38,6 +38,7 @@ type fakeBackend struct {
 	applyRes  api.SyncResult
 	applyErr  error
 	applies   []api.SyncApplyRequest
+	running   map[int]bool // delete without force on these sessions is refused as still running
 }
 
 func (f *fakeBackend) SyncPlan(_ context.Context, r api.SyncPlanRequest) (api.SyncPlan, error) {
@@ -86,6 +87,8 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 		return api.Result{Num: 9}, nil
 	case action == "stories/close" && !a.Force && f.dirty > 0:
 		return api.Result{Error: "dirty", Dirty: f.dirty}, errors.New("dirty")
+	case action == "delete" && !a.Force && f.running[a.Num]:
+		return api.Result{Error: "running", Running: true}, errors.New("running")
 	case action == "stories/repos" && !a.Force && f.origDirty > 0:
 		return api.Result{Error: "dirty", Dirty: f.origDirty, Detail: fmt.Sprintf("web: %d", f.origDirty)}, errors.New("dirty")
 	}
@@ -244,6 +247,12 @@ func (h *harness) press(keys ...string) {
 		}
 		h.update(msg)
 	}
+}
+
+// markDone makes session 1 of home-network done on the server and polls it.
+func (h *harness) markDone() {
+	h.be.snaps["home-network"].Project.Sessions[1].Done = true
+	h.update(tickMsg(time.Now()))
 }
 
 func (h *harness) typeText(s string) {
@@ -526,7 +535,7 @@ func TestPromptsCallTheBackend(t *testing.T) {
 func TestCloseStoryAsksAgainWhenDirty(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.dirty = 2
-	h.press("D")
+	h.press("k", "D") // from the story row
 	if !strings.Contains(h.m.View().Content, "close story s1") {
 		t.Fatal(h.m.View().Content)
 	}
@@ -537,6 +546,86 @@ func TestCloseStoryAsksAgainWhenDirty(t *testing.T) {
 	h.press("y")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories/close s1|home-network stories/close s1 force" {
 		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestCloseStoryOnlyFromStoryRows(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("D") // the cursor starts on session 1
+	if h.m.prompt.Active() || strings.Contains(h.m.View().Content, "close story") {
+		t.Fatalf("D on a session row must do nothing:\n%s", h.m.View().Content)
+	}
+	h.press("k", "D")
+	if !strings.Contains(h.m.View().Content, "close story s1") {
+		t.Fatal(h.m.View().Content)
+	}
+}
+
+func TestStopAsksThenStops(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("s")
+	if !strings.Contains(h.m.View().Content, "stop [1] Add lease time? y/n") {
+		t.Fatal(h.m.View().Content)
+	}
+	h.press("y")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stop 1" {
+		t.Fatalf("actions = %q", got)
+	}
+	if !strings.Contains(h.m.View().Content, "stopped [1]") {
+		t.Fatal(h.m.View().Content)
+	}
+}
+
+func TestStopTheOpenSessionClosesItsStream(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("Enter", "C-h", "s", "y")
+	if h.m.streamNum != 0 || !h.conns[0].closed || h.m.claudeFocused {
+		t.Fatalf("num=%d closed=%v focused=%v", h.m.streamNum, h.conns[0].closed, h.m.claudeFocused)
+	}
+	h.update(streamClosedMsg{conn: h.conns[0], err: websocket.CloseError{Code: websocket.StatusNormalClosure, Reason: "session ended"}})
+	if h.m.flash != "stopped [1]" {
+		t.Fatalf("flash = %q", h.m.flash)
+	}
+}
+
+func TestResumeDoneSession(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.markDone()
+	h.press("r")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network resume 1" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestDoneSessionRefusesEnterAndFocus(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.markDone()
+	for _, k := range []string{"Enter", "F"} {
+		h.m.flash = ""
+		h.press(k)
+		if len(h.opened) != 0 || h.m.claudeFocused || !strings.Contains(h.m.View().Content, "done · r to resume") {
+			t.Fatalf("%s: opened=%q focused=%v\n%s", k, h.opened, h.m.claudeFocused, h.m.View().Content)
+		}
+	}
+}
+
+func TestDeleteAsksTwiceWhenRunning(t *testing.T) {
+	h := start(t, 160, 30, "running")
+	h.be.running = map[int]bool{1: true}
+	h.press("X")
+	if !strings.Contains(h.m.View().Content, "delete [1] Add lease time? y/n") {
+		t.Fatal(h.m.View().Content)
+	}
+	h.press("y")
+	if !strings.Contains(h.m.View().Content, "[1] is still open · kill it and delete? y/n") {
+		t.Fatal(h.m.View().Content)
+	}
+	h.press("y")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network delete 1|home-network delete 1 force" {
+		t.Fatalf("actions = %q", got)
+	}
+	if !strings.Contains(h.m.View().Content, "deleted [1] · transcript kept in ~/.claude") {
+		t.Fatal(h.m.View().Content)
 	}
 }
 

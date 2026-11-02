@@ -60,6 +60,7 @@ type Model struct {
 	last Live
 
 	folded map[string]bool // story → folded; client memory only
+	states map[int]string  // session number → the server's derived state name; nil = unknown
 }
 
 // NewModel builds a model and selects the first session of the first story.
@@ -298,6 +299,27 @@ func (m *Model) Gone(num int) bool {
 	}
 	_, ok := m.Live.Agents[s.UUID]
 	return !ok
+}
+
+// SetStates stores the server's derived state names by session number (Snapshot.SessionStates),
+// which know about tmux. nil means unknown.
+func (m *Model) SetStates(st map[int]string) { m.states = st }
+
+// Alive reports whether a session still has a tmux session, so stopping it kills a process.
+// Without states from the server it falls back to the agents list.
+func (m *Model) Alive(num int) bool {
+	s := m.P.Sessions[num]
+	if s == nil || s.Done {
+		return false
+	}
+	if m.states != nil {
+		switch m.states[num] {
+		case "starting", "running", "waiting", "idle":
+			return true
+		}
+		return false
+	}
+	return !m.Gone(num)
 }
 
 // StateText is the second line of a session row.
