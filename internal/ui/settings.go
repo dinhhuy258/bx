@@ -17,16 +17,22 @@ const (
 	SettingsKeep  SettingsResult = iota // still editing
 	SettingsSave                        // Enter: send Changes
 	SettingsClose                       // Esc or C-c: the caller asks first when Changes is not empty
+	SettingsSelect                      // Space changed the sync selection: save SyncExclude
+	SettingsRescan                      // r: scan and plan again
+	SettingsUpToDate                    // s with nothing to sync
+	SettingsSyncApply                   // y in the confirmation: sync SyncScope
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
-// fields the server sent. Edits stay here until they are saved.
+// fields the server sent. Edits stay here until they are saved. The Claude section also shows
+// the sync list below its fields; fld is the cursor over the fields, then the list's rows.
 type Settings struct {
 	Server   string // the server's host, for the header
 	sections []settings.Section
 	saved    map[string]string // what the server holds; a missing key is the default
 	edits    map[string]string // changed keys only
 	sec, fld int
+	sync     syncList
 }
 
 // NewSettings starts an empty screen; Load fills it.
@@ -48,7 +54,7 @@ func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 	}
 	maps.DeleteFunc(s.edits, func(k, v string) bool { return s.saved[k] == v })
 	s.sec = min(s.sec, max(len(s.sections)-1, 0))
-	s.fld = min(s.fld, max(len(s.fields())-1, 0))
+	s.fld = min(s.fld, max(len(s.fields())+len(s.syncRows())-1, 0))
 }
 
 // Changes are the edited keys and their new values.
@@ -68,8 +74,22 @@ func (s *Settings) value(key string) string {
 	return s.saved[key]
 }
 
-// Key feeds one key: Tab next section, j/k field, h/l the value, Enter save, Esc close.
+// field is the field under the cursor, if it is on one.
+func (s *Settings) field() (settings.Field, bool) {
+	fs := s.fields()
+	if s.fld >= len(fs) {
+		return settings.Field{}, false
+	}
+	return fs[s.fld], true
+}
+
+// Key feeds one key: Tab next section, j/k field or sync row, h/l the value or a folder's
+// fold, Space a sync checkbox, s the sync confirmation, r a rescan, Enter save, Esc close.
+// While the confirmation is open only y, n and Esc act.
 func (s *Settings) Key(key string) SettingsResult {
+	if s.sync.confirm {
+		return s.confirmKey(key)
+	}
 	switch key {
 	case "Esc", "C-c":
 		return SettingsClose
@@ -79,28 +99,52 @@ func (s *Settings) Key(key string) SettingsResult {
 	if !s.Loaded() {
 		return SettingsKeep
 	}
+	_, onField := s.field()
 	switch key {
 	case "Tab":
 		s.sec, s.fld = (s.sec+1)%len(s.sections), 0
 	case "j", "Down", "C-j":
-		s.fld = min(s.fld+1, len(s.fields())-1)
+		s.fld = min(s.fld+1, max(len(s.fields())+len(s.syncRows())-1, 0))
 	case "k", "Up", "C-k":
 		s.fld = max(s.fld-1, 0)
 	case "h", "Left":
-		s.step(-1)
+		if onField {
+			s.step(-1)
+		} else {
+			s.fold(true)
+		}
 	case "l", "Right":
-		s.step(1)
+		if onField {
+			s.step(1)
+		} else {
+			s.fold(false)
+		}
+	case "Space":
+		if s.toggle() {
+			return SettingsSelect
+		}
+	case "s":
+		switch {
+		case !s.syncShown() || s.sync.state != syncReady:
+		case s.SyncChanges() == 0:
+			return SettingsUpToDate
+		default:
+			s.sync.confirm, s.sync.top = true, 0
+		}
+	case "r":
+		if s.syncShown() && s.sync.state != syncLoading {
+			return SettingsRescan
+		}
 	}
 	return SettingsKeep
 }
 
 // step moves the selected choice field to the previous or next allowed value, wrapping.
 func (s *Settings) step(delta int) {
-	fs := s.fields()
-	if len(fs) == 0 {
+	f, ok := s.field()
+	if !ok {
 		return
 	}
-	f := fs[s.fld]
 	if f.Kind != settings.Choice || len(f.Choices) == 0 {
 		return
 	}
@@ -138,8 +182,15 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 			}
 		}
 		lines = append(lines, truncate(" "+strings.Join(tabs, pal.dim.Render(" · ")), w), "")
+		if s.sync.confirm {
+			return pad(append(lines, s.confirmLines(w, h-len(lines), pal)...), h)
+		}
 		lines = append(lines, s.fieldLines(w, pal)...)
-		return pad(append(lines, s.helpLines(w, pal)...), h)
+		help := s.helpLines(w, pal)
+		if s.syncShown() {
+			lines = append(lines, s.syncLines(w, h-len(lines)-len(help), pal)...)
+		}
+		return pad(append(lines, help...), h)
 	}
 	const left = 20
 	right := w - left - 3
@@ -156,10 +207,19 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 		r = append(r, wrap(help, right, pal.dim)...)
 	}
 	r = append(r, "")
-	r = append(r, s.fieldLines(right, pal)...)
-	if f := s.fields(); len(f) > 0 && f[s.fld].Help != "" {
-		r = append(r, "")
-		r = append(r, wrap(f[s.fld].Help, right, pal.dim)...)
+	switch {
+	case s.sync.confirm:
+		r = append(r, s.confirmLines(right, h-len(lines)-len(r), pal)...)
+	default:
+		r = append(r, s.fieldLines(right, pal)...)
+		var help []string
+		if text := s.cursorHelp(); text != "" {
+			help = append([]string{""}, wrap(text, right, pal.dim)...)
+		}
+		if s.syncShown() {
+			r = append(r, s.syncLines(right, h-len(lines)-len(r)-len(help), pal)...)
+		}
+		r = append(r, help...)
 	}
 	sep := pal.dim.Render("│")
 	for i := 0; i < max(len(l), len(r)); i++ {
@@ -217,13 +277,24 @@ func (s *Settings) helpLines(w int, pal palette) []string {
 	if help := s.sections[s.sec].Help; help != "" {
 		out = append(out, wrap(help, w-1, pal.dim)...)
 	}
-	if f := s.fields(); len(f) > 0 && f[s.fld].Help != "" {
-		out = append(out, wrap(f[s.fld].Help, w-1, pal.dim)...)
+	if text := s.cursorHelp(); text != "" {
+		out = append(out, wrap(text, w-1, pal.dim)...)
 	}
 	for i := 1; i < len(out); i++ {
 		out[i] = " " + out[i]
 	}
 	return out
+}
+
+// cursorHelp is the help of the field under the cursor, or the keys of the sync list.
+func (s *Settings) cursorHelp() string {
+	if f, ok := s.field(); ok {
+		return f.Help
+	}
+	if _, ok := s.syncRow(); ok {
+		return syncHint
+	}
+	return ""
 }
 
 // wrap breaks text into lines of at most w cells, each drawn in style.
@@ -246,15 +317,19 @@ func wrap(text string, w int, style lipgloss.Style) []string {
 	return out
 }
 
-// SettingsBar is the key bar of the settings screen, with the count of unsaved changes.
-func SettingsBar(changes int, narrow bool) string {
-	parts := []string{"tab section", "j/k move", "h/l change", "⏎ save", "esc close"}
+// SettingsBar is the key bar of the settings screen, with the count of unsaved changes and of
+// the items a sync would change.
+func SettingsBar(changes, toSync int, narrow bool) string {
+	parts := []string{"tab section", "j/k move", "h/l change", "space select", "s sync…", "r refresh", "⏎ save", "esc close"}
 	if narrow {
-		parts = []string{"⏎ save", "h/l change", "esc"}
+		parts = []string{"⏎ save", "s sync", "esc"}
 	}
 	text := strings.Join(parts, " · ")
 	if changes > 0 {
 		text += fmt.Sprintf("    • %d unsaved", changes)
+	}
+	if toSync > 0 {
+		text += fmt.Sprintf("  • %d to sync", toSync)
 	}
 	return text
 }

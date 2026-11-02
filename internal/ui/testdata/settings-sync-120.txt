@@ -1,0 +1,29 @@
+bx settings                                                                                                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ › Claude            │ Claude
+                     │ For new sessions. Running and resumed ones keep what they started with.
+                     │
+                     │    Model            ◂ default           ▸
+                     │    Effort           ◂ default           ▸
+                     │    Permission mode  ◂ acceptEdits       ▸
+                     │
+                     │  Sync to bx serve  Mac /Users/me/.claude → /home/bx/.claude · checked 22:41
+                     │    ▾ [-] skills                  +1 ~2 −1
+                     │  ›     [x] brainstorm            + new
+                     │        [ ] linked                skills/linked: refusing to write through a symlink
+                     │        [x] old-skill             − removed on the Mac
+                     │        [x] plan                  ~ changed
+                     │        [x] quick-build           ~ changed  ↪
+                     │        [ ] rails-console         not synced
+                     │        [x] systematic-debugging  = same  skipped a\b.md: bad name
+                     │    ▸ [x] agents                  up to date (2)
+                     │    ▸ [x] commands                up to date (1)
+                     │    ▸ [ ] rules                   not synced (2)
+                     │
+                     │  3 server-only items kept
+                     │
+                     │ space select · h/l fold · s sync… · r refresh
+
+
+
+

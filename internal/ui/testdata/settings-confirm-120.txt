@@ -1,0 +1,19 @@
+bx settings                                                                                                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ › Claude            │ Claude
+                     │ For new sessions. Running and resumed ones keep what they started with.
+                     │
+                     │   ╭────────────────────────────────────────────────────────────╮
+                     │   │ Sync 4 changes to bx serve?                                │
+                     │   │                                                            │
+                     │   │   + skills/brainstorm                                      │
+                     │   │   − skills/old-skill  deleted on the server                │
+                     │   │   ~ skills/plan                                            │
+                     │   │   ~ skills/quick-build                                     │
+                     │   │                                                            │
+                     │   │    y sync    n / esc cancel                                │
+                     │   ╰────────────────────────────────────────────────────────────╯
+
+
+
+

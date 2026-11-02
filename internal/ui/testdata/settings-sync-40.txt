@@ -1,0 +1,29 @@
+bx settings                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Claude
+
+   Model         ◂ default           ▸
+   Effort        ◂ default           ▸
+   Permission …  ◂ acceptEdits       ▸
+
+ Sync to bx serve  Mac /Users/me/.claud…
+   ▾ [-] skills         +1 ~2 −1
+ ›     [x] brainstorm   + new
+       [ ] linked       skills/linked: …
+       [x] old-skill    − removed on th…
+       [x] plan         ~ changed
+       [x] quick-build  ~ changed  ↪
+       [ ] rails-cons…  not synced
+       [x] systematic…  = same  skipped…
+   ▸ [x] agents         up to date (2)
+   ▸ [x] commands       up to date (1)
+   ▸ [ ] rules          not synced (2)
+
+ 3 server-only items kept
+
+ For new sessions. Running and resumed
+ ones keep what they started with.
+ space select · h/l fold · s sync… · r
+ refresh
+
+

@@ -1281,7 +1281,7 @@ func (m *Model) bar() string {
 	case m.settings != nil && m.flash != "":
 		text = m.flash
 	case m.settings != nil:
-		text = ui.SettingsBar(len(m.settings.Changes()), m.narrow)
+		text = ui.SettingsBar(len(m.settings.Changes()), m.settings.SyncChanges(), m.narrow)
 	case m.focusMode:
 		run, waiting := 0, []ui.WaitingElsewhere(nil)
 		for _, p := range m.projects {
