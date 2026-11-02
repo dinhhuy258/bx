@@ -51,7 +51,7 @@ type syncList struct {
 	state    syncState
 	note     string
 	data     SyncData
-	exclude  map[string]bool // unselected items
+	include  map[string]bool // selected items
 	folded   map[string]bool
 	foldSet  bool // folds were set from the first data
 	confirm  bool // the confirmation box is open
@@ -83,14 +83,15 @@ func (s *Settings) SyncFailed(msg string) {
 	s.restoreCursor(key)
 }
 
-// SetSync shows d, with the items of exclude unselected. Folds and the cursor's row are kept
-// from the last data; on the first data, folders with nothing to do start folded.
-func (s *Settings) SetSync(d SyncData, exclude []string) {
+// SetSync shows d, with the items of include checked; every other item starts unchecked.
+// Folds and the cursor's row are kept from the last data; on the first data, folders with
+// nothing checked to do start folded.
+func (s *Settings) SetSync(d SyncData, include []string) {
 	key := s.rowKey()
 	s.sync.state, s.sync.note, s.sync.data = syncReady, "", d
-	s.sync.exclude = map[string]bool{}
-	for _, e := range exclude {
-		s.sync.exclude[e] = true
+	s.sync.include = map[string]bool{}
+	for _, e := range include {
+		s.sync.include[e] = true
 	}
 	if !s.sync.foldSet {
 		s.sync.folded, s.sync.foldSet = map[string]bool{}, true
@@ -103,17 +104,17 @@ func (s *Settings) SetSync(d SyncData, exclude []string) {
 	s.restoreCursor(key)
 }
 
-// SyncExclude is the unselected items, sorted.
-func (s *Settings) SyncExclude() []string {
-	out := make([]string, 0, len(s.sync.exclude))
-	for e := range s.sync.exclude {
+// SyncInclude is the selected items, sorted.
+func (s *Settings) SyncInclude() []string {
+	out := make([]string, 0, len(s.sync.include))
+	for e := range s.sync.include {
 		out = append(out, e)
 	}
 	slices.Sort(out)
 	return out
 }
 
-// SyncScope is the checked items a sync sends: everything on the Mac and the removed ones.
+// SyncScope is the checked items a sync sends.
 func (s *Settings) SyncScope() []string {
 	var out []string
 	for _, it := range s.syncItems() {
@@ -148,7 +149,7 @@ func (s *Settings) syncItems() []SyncItem {
 
 func selectable(it SyncItem) bool { return it.Error == "" && it.Status != "" }
 
-func (s *Settings) checked(it SyncItem) bool { return selectable(it) && !s.sync.exclude[it.Name] }
+func (s *Settings) checked(it SyncItem) bool { return selectable(it) && s.sync.include[it.Name] }
 
 func (s *Settings) changed(it SyncItem) bool {
 	return s.checked(it) && it.Status != "same"
@@ -263,9 +264,9 @@ func (s *Settings) toggle() bool {
 	all := !slices.ContainsFunc(items, func(it SyncItem) bool { return !s.checked(it) })
 	for _, it := range items {
 		if all {
-			s.sync.exclude[it.Name] = true
+			delete(s.sync.include, it.Name)
 		} else {
-			delete(s.sync.exclude, it.Name)
+			s.sync.include[it.Name] = true
 		}
 	}
 	return true

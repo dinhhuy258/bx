@@ -77,6 +77,22 @@ func (m *Model) gotSyncPlan(msg syncPlanMsg) {
 		return
 	}
 	m.syncMac, m.syncPlan = msg.mac, msg.plan
+	var synced []string
+	exists := map[string]bool{}
+	for _, it := range msg.plan.Items {
+		exists[it.Name] = true
+		if it.Synced {
+			synced = append(synced, it.Name)
+		}
+	}
+	for it := range msg.mac.Warnings {
+		exists[it] = true
+	}
+	seeded := m.opened.seedSync(synced)
+	pruned := m.opened.keepSync(func(it string) bool { return exists[it] })
+	if seeded || pruned {
+		m.saveOpenedSync()
+	}
 	big := map[string]string{}
 	for _, f := range msg.mac.Files {
 		if it := claudesync.ItemOf(f.Path); f.Size > claudesync.MaxFile && big[it] == "" {
@@ -119,7 +135,7 @@ func (m *Model) gotSyncPlan(msg syncPlanMsg) {
 		}
 	}
 	sort.Slice(d.Items, func(i, j int) bool { return d.Items[i].Name < d.Items[j].Name })
-	m.settings.SetSync(d, m.opened.SyncExclude)
+	m.settings.SetSync(d, m.opened.SyncInclude)
 }
 
 func megabytes(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/(1<<20)) }
@@ -194,9 +210,14 @@ func (m *Model) gotSyncApplied(msg syncAppliedMsg) tea.Cmd {
 	return m.scanSync()
 }
 
-// saveSyncExclude remembers the unselected items in client.json.
-func (m *Model) saveSyncExclude() {
-	m.opened.SyncExclude = m.settings.SyncExclude()
+// saveSyncInclude remembers the selected items in client.json.
+func (m *Model) saveSyncInclude() {
+	m.opened.SyncInclude = m.settings.SyncInclude()
+	m.saveOpenedSync()
+}
+
+// saveOpenedSync saves client.json after the sync selection changed.
+func (m *Model) saveOpenedSync() {
 	if err := m.opened.save(m.cfg.Root); err != nil {
 		m.setFlash("save sync selection: " + err.Error())
 	}

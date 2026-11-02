@@ -8,12 +8,14 @@ import (
 )
 
 // opened is what this client keeps between runs: the projects it has open, in name order, the
-// one shown last, and the Claude sync items left unselected (sorted). It lives in
-// <root>/client.json on the client machine; the server never sees it.
+// one shown last, and the Claude sync items selected (sorted; nil until the first plan seeds
+// it, empty when nothing is selected). It lives in <root>/client.json on the client machine;
+// the server never sees it.
 type opened struct {
 	Projects    []string `json:"projects"`
 	Current     string   `json:"current,omitempty"`
-	SyncExclude []string `json:"sync_exclude,omitempty"`
+	SyncInclude []string `json:"sync_include,omitzero"`
+	SyncExclude []string `json:"sync_exclude,omitempty"` // the old unselected list, read only to seed SyncInclude once
 }
 
 func openedFile(root string) string { return filepath.Join(root, "client.json") }
@@ -70,4 +72,28 @@ func (o *opened) keep(exists func(string) bool) bool {
 	n := len(o.Projects)
 	o.Projects = slices.DeleteFunc(o.Projects, func(p string) bool { return !exists(p) })
 	return len(o.Projects) != n
+}
+
+// seedSync sets the sync selection the first time: the items bx synced before (synced) minus
+// those of the old unselected list, which it then drops. It reports whether it seeded.
+func (o *opened) seedSync(synced []string) bool {
+	if o.SyncInclude != nil {
+		return false
+	}
+	o.SyncInclude = []string{}
+	for _, it := range synced {
+		if !slices.Contains(o.SyncExclude, it) {
+			o.SyncInclude = append(o.SyncInclude, it)
+		}
+	}
+	slices.Sort(o.SyncInclude)
+	o.SyncExclude = nil
+	return true
+}
+
+// keepSync drops the selected items that no longer exist. It reports whether the list changed.
+func (o *opened) keepSync(exists func(string) bool) bool {
+	n := len(o.SyncInclude)
+	o.SyncInclude = slices.DeleteFunc(o.SyncInclude, func(it string) bool { return !exists(it) })
+	return len(o.SyncInclude) != n
 }

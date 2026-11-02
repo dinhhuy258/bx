@@ -938,12 +938,14 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 			return settingsMsg{s: s, err: err, saved: true}
 		}
 	case ui.SettingsSelect:
-		m.saveSyncExclude()
+		m.saveSyncInclude()
 	case ui.SettingsRescan:
 		m.syncDone = false
 		return m.scanSync()
 	case ui.SettingsUpToDate:
 		m.setFlash("Up to date")
+	case ui.SettingsNothingSelected:
+		m.setFlash("Nothing selected")
 	case ui.SettingsSyncApply:
 		return m.applySync()
 	}

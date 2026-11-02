@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,10 +29,21 @@ func sampleSync() SyncData {
 	}
 }
 
-// syncSettings is the sample screen with the sample list; rules and rails-console unselected.
+// allBut is the names of d's selectable items, minus names.
+func allBut(d SyncData, names ...string) []string {
+	var out []string
+	for _, it := range d.Items {
+		if selectable(it) && !slices.Contains(names, it.Name) {
+			out = append(out, it.Name)
+		}
+	}
+	return out
+}
+
+// syncSettings is the sample screen with the sample list; all selected but rules and rails-console.
 func syncSettings() *Settings {
 	s := sampleSettings()
-	s.SetSync(sampleSync(), []string{"rules/a.md", "rules/b.md", "skills/rails-console"})
+	s.SetSync(sampleSync(), allBut(sampleSync(), "rules/a.md", "rules/b.md", "skills/rails-console"))
 	return s
 }
 
@@ -74,6 +86,10 @@ func TestSettingsSyncGolden(t *testing.T) {
 	golden(t, "settings-sync-40", s.Render(40, 30, true, ""), 40)
 	s.Key("s")
 	golden(t, "settings-confirm-120", s.Render(120, 20, true, ""), 120)
+	s2 := sampleSettings() // fresh: nothing selected
+	s2.SetSync(sampleSync(), nil)
+	to(s2, 4)
+	golden(t, "settings-sync-default-120", s2.Render(120, 30, true, ""), 120)
 }
 
 func TestSettingsSyncFoldsAndCursor(t *testing.T) {
@@ -84,7 +100,7 @@ func TestSettingsSyncFoldsAndCursor(t *testing.T) {
 	if _, ok := s.syncRow(); ok {
 		t.Fatal("no list before the first scan: the cursor stays on the last field")
 	}
-	s.SetSync(sampleSync(), nil)
+	s.SetSync(sampleSync(), allBut(sampleSync()))
 	// skills has changes: open; the others start folded
 	if got := s.Render(120, 40, true, ""); !strings.Contains(got, "▾ [x] skills") || !strings.Contains(got, "▸ [x] agents") || strings.Contains(got, "reviewer.md") {
 		t.Fatalf("folds:\n%s", got)
@@ -107,7 +123,7 @@ func TestSettingsSyncFoldsAndCursor(t *testing.T) {
 	}
 	// a rescan keeps the folds and the cursor's row
 	s.Key("j") // agents/reviewer.md
-	s.SetSync(sampleSync(), nil)
+	s.SetSync(sampleSync(), allBut(sampleSync()))
 	if r, _ := s.syncRow(); s.sync.data.Items[r.item].Name != "agents/reviewer.md" || s.sync.folded["agents"] || !s.sync.folded["skills"] {
 		t.Fatalf("after a rescan: %+v %v", r, s.sync.folded)
 	}
@@ -118,7 +134,7 @@ func TestSettingsSyncFoldsAndCursor(t *testing.T) {
 
 func TestSettingsSyncSelect(t *testing.T) {
 	s := sampleSettings()
-	s.SetSync(sampleSync(), nil)
+	s.SetSync(sampleSync(), allBut(sampleSync()))
 	if got, want := s.SyncChanges(), 6; got != want { // rules/a, brainstorm, old-skill, plan, quick-build, rails-console
 		t.Fatalf("changes = %d, want %d", got, want)
 	}
@@ -127,9 +143,9 @@ func TestSettingsSyncSelect(t *testing.T) {
 		t.Fatal("space on a folder selects")
 	}
 	// all selectable skills cleared; linked (an error) never counts
-	want := []string{"skills/brainstorm", "skills/old-skill", "skills/plan", "skills/quick-build", "skills/rails-console", "skills/systematic-debugging"}
-	if got := s.SyncExclude(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("exclude = %q", got)
+	want := []string{"agents/reviewer.md", "agents/sub", "commands/c.md", "rules/a.md", "rules/b.md"}
+	if got := s.SyncInclude(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("include = %q", got)
 	}
 	if got := s.Render(120, 40, true, ""); !strings.Contains(got, "[ ] skills") || !strings.Contains(got, "not synced (7)") {
 		t.Fatalf("cleared:\n%s", got)
@@ -141,24 +157,57 @@ func TestSettingsSyncSelect(t *testing.T) {
 	}
 	s.Key("k")
 	s.Key("Space") // partial → all
-	if got := s.Render(120, 40, true, ""); !strings.Contains(got, "[x] skills") || len(s.SyncExclude()) != 0 {
-		t.Fatalf("all:\n%s", got)
+	all := allBut(sampleSync())
+	if got := s.Render(120, 40, true, ""); !strings.Contains(got, "[x] skills") || !reflect.DeepEqual(s.SyncInclude(), all) || len(all) != 11 {
+		t.Fatalf("all %q:\n%s", s.SyncInclude(), got)
 	}
 	// the error item can't be checked
 	to(s, 5) // skills/linked
 	if r, _ := s.syncRow(); s.sync.data.Items[r.item].Name != "skills/linked" {
 		t.Fatalf("row %+v", r)
 	}
-	if s.Key("Space") != SettingsKeep || len(s.SyncExclude()) != 0 {
+	if s.Key("Space") != SettingsKeep || !reflect.DeepEqual(s.SyncInclude(), all) {
 		t.Fatal("space on an error item does nothing")
 	}
 	// the scope: checked items on the Mac or removed, no error
-	s.SetSync(sampleSync(), []string{"rules/a.md", "skills/old-skill"})
+	s.SetSync(sampleSync(), allBut(sampleSync(), "rules/a.md", "skills/old-skill"))
 	want = []string{"agents/reviewer.md", "agents/sub", "commands/c.md", "rules/b.md", "skills/brainstorm", "skills/plan", "skills/quick-build", "skills/rails-console", "skills/systematic-debugging"}
 	if got := s.SyncScope(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("scope = %q", got)
 	}
 	if s.SyncChanges() != 4 {
+		t.Fatalf("changes = %d", s.SyncChanges())
+	}
+}
+
+// A fresh list selects nothing: every box is clear, and only the include list checks items.
+func TestSettingsSyncOptIn(t *testing.T) {
+	s := sampleSettings()
+	s.SetSync(sampleSync(), nil)
+	if s.SyncChanges() != 0 || len(s.SyncScope()) != 0 {
+		t.Fatalf("changes %d, scope %q", s.SyncChanges(), s.SyncScope())
+	}
+	got := s.Render(120, 40, true, "")
+	for _, want := range []string{"▾ [ ] skills", "not synced (7)", "▸ [ ] agents", "not synced (2)", "▸ [ ] commands", "▸ [ ] rules"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("no %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "[x]") {
+		t.Fatalf("a box is checked:\n%s", got)
+	}
+	to(s, 3)
+	if s.Key("s") != SettingsNothingSelected || s.sync.confirm {
+		t.Fatal("s with nothing selected")
+	}
+	s.SetSync(sampleSync(), []string{"skills/plan", "skills/old-skill"})
+	got = s.Render(120, 40, true, "")
+	for _, want := range []string{"[-] skills", "~1 −1", "[x] old-skill", "− removed on the Mac"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("no %q:\n%s", want, got)
+		}
+	}
+	if s.SyncChanges() != 2 {
 		t.Fatalf("changes = %d", s.SyncChanges())
 	}
 }
@@ -191,9 +240,13 @@ func TestSettingsSyncKeys(t *testing.T) {
 		t.Fatal("y syncs")
 	}
 	// nothing to sync: s says so and opens nothing
-	s.SetSync(SyncData{Items: []SyncItem{{Name: "skills/a", Status: "same"}}}, nil)
+	s.SetSync(SyncData{Items: []SyncItem{{Name: "skills/a", Status: "same"}}}, []string{"skills/a"})
 	if s.Key("s") != SettingsUpToDate || s.sync.confirm {
 		t.Fatal("s with no changes")
+	}
+	s.SetSync(SyncData{Items: []SyncItem{{Name: "skills/a", Status: "new"}}}, nil)
+	if s.Key("s") != SettingsNothingSelected || s.sync.confirm {
+		t.Fatal("s with nothing selected")
 	}
 	// while loading or failed: s does nothing, r only once the scan is done
 	s.SyncScanning("/Users/me/.claude")
@@ -212,7 +265,7 @@ func TestSettingsSyncConfirmScrolls(t *testing.T) {
 	for _, n := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
 		items = append(items, SyncItem{Name: "skills/" + n, Status: "new"})
 	}
-	s.SetSync(SyncData{Items: items}, nil)
+	s.SetSync(SyncData{Items: items}, allBut(SyncData{Items: items}))
 	s.Key("s")
 	got := s.Render(120, 16, true, "")
 	if !strings.Contains(got, "Sync 8 changes") || !strings.Contains(got, "+ skills/a") || strings.Contains(got, "+ skills/h") {
@@ -254,7 +307,7 @@ func TestSettingsSyncWindow(t *testing.T) {
 		for i := range 30 {
 			items = append(items, SyncItem{Name: "skills/s" + string(rune('a'+i)), Status: "new"})
 		}
-		s.SetSync(SyncData{Items: items}, nil)
+		s.SetSync(SyncData{Items: items}, allBut(SyncData{Items: items}))
 		to(s, 3+1+20) // skills/su
 		got := s.Render(w, 24, true, "")
 		lines := strings.Split(got, "\n")
