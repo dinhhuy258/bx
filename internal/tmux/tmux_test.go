@@ -53,7 +53,7 @@ func TestNewSessionAndSessions(t *testing.T) {
 
 func TestNewShellAndShells(t *testing.T) {
 	f := &Fake{Replies: map[string]string{
-		"new-session -d -s bxsh-p-s1-1 -c /w -P -F #{session_id}": "$7\n",
+		"new-session -d -s bxsh-p-s1-1 -c /w -e PAGER=cat -e GIT_PAGER=cat -P -F #{session_id}": "$7\n",
 		"list-sessions -F " + ShellFormat: "$7\tbxsh-p-s1-1\tp\ts1\t1\tdev\tzsh\n" +
 			"$4\tbx-p-1\t\t\t\t\tclaude\n" +
 			"$8\tbxsh-p-x\tp\t\tx\t\tzsh\n",

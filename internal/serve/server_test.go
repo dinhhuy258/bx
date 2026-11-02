@@ -945,7 +945,7 @@ func TestShellRoutes(t *testing.T) {
 	s, f, ts := newServer(t)
 	repo := s.Cfg.ProjectDir("home-network")
 	wt := s.Cfg.WorktreeDir("home-network", "s1")
-	newSession := "new-session -d -s bxsh-home-network-s1-1 -c " + wt + " -P -F #{session_id}"
+	newSession := "new-session -d -s bxsh-home-network-s1-1 -c " + wt + " -e PAGER=cat -e GIT_PAGER=cat -P -F #{session_id}"
 	f.Replies[newSession] = "$9\n"
 	res, code := post(t, ts, "/api/projects/home-network/shells", api.Action{Story: "s1"})
 	if code != 200 || res.Story != "s1" || res.K != 1 {

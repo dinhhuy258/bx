@@ -114,9 +114,12 @@ type Shell struct {
 }
 
 // NewShell creates a detached session named name running the default shell in dir and
-// returns its id ($n).
+// returns its id ($n). Pagers are off (PAGER and GIT_PAGER are cat): on a phone a pager
+// like less hides the rest of the output and has no obvious way out, so output prints
+// straight to the terminal instead.
 func (t *Tmux) NewShell(name, dir string) (string, error) {
-	return t.run("new-session", "-d", "-s", name, "-c", dir, "-P", "-F", "#{session_id}")
+	return t.run("new-session", "-d", "-s", name, "-c", dir,
+		"-e", "PAGER=cat", "-e", "GIT_PAGER=cat", "-P", "-F", "#{session_id}")
 }
 
 // SetOption sets a session option (a user option starts with @) on target.

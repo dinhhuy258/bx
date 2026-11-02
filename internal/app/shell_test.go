@@ -28,14 +28,14 @@ func TestNewShellTakesTheLowestFreeNumber(t *testing.T) {
 		"$3\tbxsh-home-network-s1-3\thome-network\ts1\t3\t\tzsh\n" +
 		"$2\tbxsh-home-network-2\thome-network\t\t2\t\tzsh\n" +
 		"$4\tbxsh-other-s1-2\tother\ts1\t2\t\tzsh\n"
-	f.Replies["new-session -d -s bxsh-home-network-s1-2 -c "+wt+" -P -F #{session_id}"] = "$9\n"
-	f.Replies["new-session -d -s bxsh-home-network-1 -c "+p.Path+" -P -F #{session_id}"] = "$8\n"
+	f.Replies["new-session -d -s bxsh-home-network-s1-2 -c "+wt+" -e PAGER=cat -e GIT_PAGER=cat -P -F #{session_id}"] = "$9\n"
+	f.Replies["new-session -d -s bxsh-home-network-1 -c "+p.Path+" -e PAGER=cat -e GIT_PAGER=cat -P -F #{session_id}"] = "$8\n"
 	f.Calls = nil
 	k, err := a.NewShell(p, "s1")
 	if err != nil || k != 2 {
 		t.Fatalf("%d %v", k, err)
 	}
-	want := "new-session -d -s bxsh-home-network-s1-2 -c " + wt + " -P -F #{session_id}\n" +
+	want := "new-session -d -s bxsh-home-network-s1-2 -c " + wt + " -e PAGER=cat -e GIT_PAGER=cat -P -F #{session_id}\n" +
 		"set-option -t $9 @bx_project home-network\n" +
 		"set-option -t $9 @bx_story s1\n" +
 		"set-option -t $9 @bx_shell 2\n" +
@@ -47,7 +47,7 @@ func TestNewShellTakesTheLowestFreeNumber(t *testing.T) {
 	if k, err := a.NewShell(p, ""); err != nil || k != 1 {
 		t.Fatalf("root: %d %v", k, err)
 	}
-	want = "new-session -d -s bxsh-home-network-1 -c " + p.Path + " -P -F #{session_id}\n" +
+	want = "new-session -d -s bxsh-home-network-1 -c " + p.Path + " -e PAGER=cat -e GIT_PAGER=cat -P -F #{session_id}\n" +
 		"set-option -t $8 @bx_project home-network\n" +
 		"set-option -t $8 @bx_shell 1\n" +
 		"set-option -s exit-empty off"
