@@ -430,7 +430,7 @@ func TestSnapshotSessionStates(t *testing.T) {
 		{"tmux known", ptr("$5\tbx-home-network-1\n$6\tbx-home-network-4\n$7\tbx-home-network-5\n$8\tbx-home-network-6\n"),
 			map[int]api.SessionState{
 				1: {State: "waiting", Text: "asks: needs you"},
-				2: {State: "done", Text: "done"},
+				2: {State: "done", Text: "done · r to resume"},
 				3: gone,
 				4: {State: "running", Text: "running"},
 				5: {State: "idle", Text: "idle"},
@@ -440,7 +440,7 @@ func TestSnapshotSessionStates(t *testing.T) {
 		{"tmux failing", nil, // the agents alone decide, as in the TUI
 			map[int]api.SessionState{
 				1: {State: "waiting", Text: "asks: needs you"},
-				2: {State: "done", Text: "done"},
+				2: {State: "done", Text: "done · r to resume"},
 				3: gone,
 				4: {State: "running", Text: "running"},
 				5: {State: "idle", Text: "idle"},

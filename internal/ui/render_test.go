@@ -92,8 +92,32 @@ func TestKeyBar(t *testing.T) {
 	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "y yes") {
 		t.Error(kb)
 	}
+	for _, want := range []string{"s stop", "R rename", "X delete"} {
+		if !strings.Contains(kb, want) {
+			t.Errorf("session bar missing %q: %s", want, kb)
+		}
+	}
+	if strings.Contains(kb, "D close story") {
+		t.Error("close story only on story rows:", kb)
+	}
+	if i, j := strings.Index(kb, "s stop"), strings.Index(kb, "n new session"); i < 0 || j < 0 || i > j {
+		t.Error("lifecycle keys come before the global keys:", kb)
+	}
+	m.SelectStory("guest-vlan-fix")
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "D close story") || strings.Contains(kb, "X delete") {
+		t.Error(kb)
+	}
 	m.SelectStory("zigbee-map-docs")
 	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "⏎ expand") {
+		t.Error(kb)
+	}
+	m.SetFolded("zigbee-map-docs", false)
+	m.SelectSession(5) // done
+	if n, _ := m.SelectedSession(); n != 5 {
+		t.Fatal("selected", n)
+	}
+	kb = KeyBar(m, cfg, BarContext{})
+	if !strings.Contains(kb, "r resume") || strings.Contains(kb, "s stop") || strings.Contains(kb, "F focus") {
 		t.Error(kb)
 	}
 	kb = KeyBar(m, cfg, BarContext{ClaudeFocused: true})

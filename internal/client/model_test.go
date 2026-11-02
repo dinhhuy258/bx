@@ -262,7 +262,7 @@ func (h *harness) typeText(s string) {
 }
 
 func TestStartupOpensTheOnlyProject(t *testing.T) {
-	h := start(t, 160, 30, "waiting") // the full key bar is about 150 columns wide
+	h := start(t, 220, 30, "waiting") // the full key bar is about 210 columns wide
 	v := h.m.View().Content
 	lines := strings.Split(v, "\n")
 	if len(lines) != 30 || !strings.Contains(lines[0], "home-network") || !strings.Contains(v, "Add lease time") {
@@ -760,8 +760,8 @@ func TestToolKeysExplainThemselves(t *testing.T) {
 }
 
 func TestProjectStripAndSwitchKeys(t *testing.T) {
-	h := start(t, 200, 30, "waiting", "running")
-	h.press("o", "Enter", "[") // open lab, then back to home-network
+	h := start(t, 240, 30, "waiting", "running") // the key bar with the switch keys is about 230 columns
+	h.press("o", "Enter", "[")                   // open lab, then back to home-network
 	v := ansi.Strip(h.m.View().Content)
 	if !strings.Contains(v, "◉ home-network  ● lab") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "A activity") {
 		t.Fatalf("strip and key bar:\n%s", v)

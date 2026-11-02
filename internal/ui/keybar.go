@@ -70,20 +70,27 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 			parts = append(parts, "⏎ type in Claude")
 		}
 	}
-	parts = append(parts, lk("fold_all"))
 	if num != 0 {
-		parts = append(parts, lk("focus"))
-		if strings.HasPrefix(m.StateText(num), "asks:") {
-			parts = append(parts, lk("yes"))
-		}
-		if m.Gone(num) {
+		if sess := m.P.Sessions[num]; sess.Done {
 			parts = append(parts, lk("resume"))
+		} else {
+			parts = append(parts, lk("focus"))
+			if strings.HasPrefix(m.StateText(num), "asks:") {
+				parts = append(parts, lk("yes"))
+			}
+			if m.Gone(num) {
+				parts = append(parts, lk("resume"))
+			}
+			parts = append(parts, lk("stop"))
+		}
+		parts = append(parts, lk("rename"), lk("delete"))
+	} else if r.Kind == RowStory && r.Story != "" {
+		parts = append(parts, lk("close_story"))
+		if m.P.IsWorkspace() {
+			parts = append(parts, lk("add_repo"))
 		}
 	}
-	parts = append(parts, lk("new_chat"), lk("new_session"), lk("new_story"))
-	if r.Kind == RowStory && r.Story != "" && m.P.IsWorkspace() {
-		parts = append(parts, lk("add_repo"))
-	}
+	parts = append(parts, lk("fold_all"), lk("new_chat"), lk("new_session"), lk("new_story"))
 	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"), lk("activity"), lk("settings"))
 	if ctx.Projects > 1 {
 		parts = append(parts, switchKeys(cfg))

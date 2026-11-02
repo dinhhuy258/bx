@@ -90,7 +90,7 @@ func TestStateText(t *testing.T) {
 		1: "running",
 		2: "asks: permission prompt",
 		3: "idle",
-		5: "done",
+		5: "done · r to resume",
 		6: "idle",
 		7: "idle",
 	}
@@ -104,6 +104,20 @@ func TestStateText(t *testing.T) {
 	m.SetLive(live)
 	if got := m.StateText(1); got != "gone · r to resume" {
 		t.Errorf("gone = %q", got)
+	}
+}
+
+func TestStartingIsNotGone(t *testing.T) {
+	p, live := sampleHomeNetwork()
+	delete(live.Agents, "u3")
+	m := NewModel(p, Options{AutoExpandWaiting: true})
+	m.SetLive(live)
+	if !m.Gone(3) {
+		t.Fatal("without states a session without an agent is gone")
+	}
+	m.SetStates(map[int]string{3: "starting"})
+	if m.Gone(3) || m.StateText(3) != "starting" || m.Dot(3) != "◌" {
+		t.Fatalf("gone=%v text=%q dot=%q", m.Gone(3), m.StateText(3), m.Dot(3))
 	}
 }
 

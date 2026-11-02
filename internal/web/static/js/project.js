@@ -54,7 +54,7 @@ export function showProject(root, name) {
     return h('li', { class: s.done ? 'done' : '' },
       h('a', { class: 'row', href: `#/p/${enc(name)}/s/${n}` },
         h('span', { class: 'title' }, s.title || `#${n}`),
-        h('span', { class: `badge ${st.state}` }, st.state === 'gone' ? 'gone' : st.text)),
+        h('span', { class: `badge ${st.state}` }, st.state === 'gone' || st.state === 'done' ? st.state : st.text)),
       h('button', { class: 'icon', 'aria-label': 'Session actions', onclick: () => sessionMenu(n, s, st) }, '⋯'));
   }
 

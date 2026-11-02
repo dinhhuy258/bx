@@ -31,6 +31,9 @@ func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 		t.Fatal(r)
 	}
 	p.Open(PromptCloseStory, "s1", "close s1? y/n", "")
+	if p.Line() != "close s1? y/n: ▏  y close · any key cancels" {
+		t.Fatal(p.Line())
+	}
 	if r := p.Key("n", "n"); r != PromptCancel {
 		t.Fatal(r)
 	}

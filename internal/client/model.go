@@ -1339,6 +1339,8 @@ func (m *Model) paneTitle() string {
 	switch {
 	case s.Done:
 		state, color = "✓ done", "#9ece6a"
+	case m.m.Starting(num):
+		state = "◌ starting"
 	case m.m.Gone(num):
 		state = "gone"
 	case m.m.State(num) == claude.Waiting:

@@ -294,11 +294,18 @@ func (m *Model) State(num int) claude.State {
 // Gone reports a session whose process is not in the agents list and is not done.
 func (m *Model) Gone(num int) bool {
 	s := m.P.Sessions[num]
-	if s == nil || s.Done || m.Live.Agents == nil {
+	if s == nil || s.Done || m.Live.Agents == nil || m.Starting(num) {
 		return false
 	}
 	_, ok := m.Live.Agents[s.UUID]
 	return !ok
+}
+
+// Starting reports a session the server says has a tmux session but no Claude in the agents
+// list yet. It is never Gone.
+func (m *Model) Starting(num int) bool {
+	s := m.P.Sessions[num]
+	return s != nil && !s.Done && m.states[num] == "starting"
 }
 
 // SetStates stores the server's derived state names by session number (Snapshot.SessionStates),
@@ -329,7 +336,10 @@ func (m *Model) StateText(num int) string {
 		return ""
 	}
 	if s.Done {
-		return "done"
+		return "done · r to resume"
+	}
+	if m.Starting(num) {
+		return "starting"
 	}
 	if m.Gone(num) {
 		return "gone · r to resume"
@@ -414,6 +424,9 @@ func (m *Model) Dot(num int) string {
 	s := m.P.Sessions[num]
 	if s != nil && s.Done {
 		return "✓"
+	}
+	if m.Starting(num) {
+		return "◌"
 	}
 	switch m.State(num) {
 	case claude.Waiting:

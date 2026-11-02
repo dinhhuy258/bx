@@ -92,4 +92,26 @@ func (p *Prompt) Paste(text string) { p.Input += oneLine(text) }
 func oneLine(s string) string { return strings.NewReplacer("\r", "", "\n", "").Replace(s) }
 
 // Line is the key bar text while the prompt is open.
-func (p *Prompt) Line() string { return p.Label + ": " + p.Input + "▏  ⏎ ok · esc cancel" }
+func (p *Prompt) Line() string {
+	if p.YesNo() {
+		return p.Label + ": " + p.Input + "▏  y " + p.verb() + " · any key cancels"
+	}
+	return p.Label + ": " + p.Input + "▏  ⏎ ok · esc cancel"
+}
+
+// verb is what y does on a y/n prompt.
+func (p *Prompt) verb() string {
+	switch p.Kind {
+	case PromptCloseStory:
+		return "close"
+	case PromptCloseStoryForce, PromptDiscardSettings:
+		return "discard"
+	case PromptAddRepoForce:
+		return "add"
+	case PromptStop:
+		return "stop"
+	case PromptDelete, PromptDeleteForce:
+		return "delete"
+	}
+	return "yes"
+}
