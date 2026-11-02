@@ -90,7 +90,7 @@ func TestClaudeSyncPlanAndApply(t *testing.T) {
 	if code != 200 || plan.Dir != dir || !reflect.DeepEqual(statuses(plan), want) {
 		t.Fatalf("%d %+v", code, plan)
 	}
-	if a := item(plan, "skills/a"); !reflect.DeepEqual(a.Add, []string{"skills/a/SKILL.md"}) || a.Error != "" {
+	if a := item(plan, "skills/a"); !reflect.DeepEqual(a.Add, []string{"skills/a/SKILL.md"}) || a.Error != "" || a.Synced {
 		t.Fatalf("%+v", a)
 	}
 	req := api.SyncApplyRequest{Items: []string{"agents/b.md", "skills/a"}, Paths: []string{"skills/a/SKILL.md", "agents/b.md"}, Delete: []string{},
@@ -124,6 +124,9 @@ func TestClaudeSyncPlanAndApply(t *testing.T) {
 	want = map[string]string{"agents/b.md": "removed", "skills/a": "changed", "skills/c": "server-only"}
 	if !reflect.DeepEqual(statuses(plan), want) || strings.Join(item(plan, "agents/b.md").Delete, ",") != "agents/b.md" {
 		t.Fatalf("%+v", plan)
+	}
+	if !item(plan, "skills/a").Synced || !item(plan, "agents/b.md").Synced || item(plan, "skills/c").Synced {
+		t.Fatalf("synced flags: %+v", plan)
 	}
 
 	// b unchecked: only a syncs, b stays on the server and in the record

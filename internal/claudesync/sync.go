@@ -27,6 +27,7 @@ type Item struct {
 	Name, Status        string
 	Add, Update, Delete []string
 	Error               string
+	Synced              bool // bx synced it before: it is in the record
 }
 
 // MakePlan compares the Mac's files with the server's and the record, item by item, sorted by
@@ -57,7 +58,7 @@ func MakePlan(dir string, mac []File, server map[string]File, record []string) [
 	}
 	out := []Item{}
 	for name, sd := range by {
-		it := Item{Name: name}
+		it := Item{Name: name, Synced: len(sd.record) > 0}
 		for _, p := range sd.mac {
 			s, ok := server[p]
 			switch {

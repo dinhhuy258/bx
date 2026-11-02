@@ -101,6 +101,7 @@ type SyncPlan struct {
 // synced it, the Mac no longer has it, the server still does) or "server-only" (only on the
 // server, never synced by bx: always kept). Add, Update and Delete are its paths a sync would
 // touch. Error says why it can't sync (a symlink or a non-regular file on the server).
+// Synced says bx synced it before: it is in the server's record.
 type SyncItem struct {
 	Name   string   `json:"name"`
 	Status string   `json:"status"`
@@ -108,6 +109,7 @@ type SyncItem struct {
 	Update []string `json:"update,omitempty"`
 	Delete []string `json:"delete,omitempty"`
 	Error  string   `json:"error,omitempty"`
+	Synced bool     `json:"synced,omitempty"`
 }
 
 // SyncApplyRequest is the body of POST /api/claude/sync. Items is the scope of the sync;

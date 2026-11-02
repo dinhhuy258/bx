@@ -52,7 +52,7 @@ func (s *Server) claudeSyncPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	items := []api.SyncItem{}
 	for _, it := range claudesync.MakePlan(dir, mac, server, record) {
-		items = append(items, api.SyncItem{Name: it.Name, Status: it.Status, Add: it.Add, Update: it.Update, Delete: it.Delete, Error: it.Error})
+		items = append(items, api.SyncItem{Name: it.Name, Status: it.Status, Add: it.Add, Update: it.Update, Delete: it.Delete, Error: it.Error, Synced: it.Synced})
 	}
 	writeJSON(w, api.SyncPlan{Dir: dir, Items: items})
 }
