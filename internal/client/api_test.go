@@ -70,12 +70,13 @@ func TestSettingsAgainstServe(t *testing.T) {
 }
 
 func TestClaudeSyncAgainstServe(t *testing.T) {
-	s, _, ts := servetest.New(t)
-	s.ClaudeDir = t.TempDir()
+	_, _, ts := servetest.New(t)
+	dir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
 	c := NewAPI(ts.URL)
 	ctx := context.Background()
-	plan, err := c.SyncPlan(ctx, api.SyncPlanRequest{Files: []api.SyncFile{{Path: "skills/a/SKILL.md", SHA256: "x", Size: 1}}})
-	if err != nil || len(plan.Items) != 1 || plan.Items[0].Name != "skills/a" || plan.Items[0].Status != "new" || plan.Dir != s.ClaudeDir {
+	plan, err := c.SyncPlan(ctx, api.SyncPlanRequest{Files: []api.SyncFile{{Path: "skills/a/SKILL.md", SHA256: "x"}}})
+	if err != nil || len(plan.Items) != 1 || plan.Items[0].Name != "skills/a" || plan.Items[0].Status != "new" || plan.Dir != dir {
 		t.Fatalf("%+v %v", plan, err)
 	}
 	res, err := c.SyncApply(ctx, api.SyncApplyRequest{Items: []string{"skills/a"}, Paths: []string{"skills/a/SKILL.md"}, Files: []api.SyncFile{{Path: "skills/a/SKILL.md", Content: []byte("a")}}})

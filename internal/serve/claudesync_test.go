@@ -39,8 +39,9 @@ func postAs[T any](t *testing.T, ts *httptest.Server, path string, body any) (T,
 func syncServer(t *testing.T) (*Server, *httptest.Server, string) {
 	t.Helper()
 	s, _, ts := newServer(t)
-	s.ClaudeDir = filepath.Join(t.TempDir(), "claude") // missing: created by the first apply
-	return s, ts, s.ClaudeDir
+	dir := filepath.Join(t.TempDir(), "claude") // missing: created by the first apply
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	return s, ts, dir
 }
 
 func putFile(t *testing.T, dir, rel, content string) {
@@ -58,7 +59,7 @@ func manifest(files map[string]string) []api.SyncFile {
 	out := []api.SyncFile{}
 	for p, c := range files {
 		sum := sha256.Sum256([]byte(c))
-		out = append(out, api.SyncFile{Path: p, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(c))})
+		out = append(out, api.SyncFile{Path: p, SHA256: hex.EncodeToString(sum[:])})
 	}
 	return out
 }

@@ -29,9 +29,6 @@ type Server struct {
 	Cfg    *config.Config
 	Lister claude.Lister
 	Log    func(format string, args ...any)
-	// ClaudeDir is Claude's config dir, the target of a Claude sync; "" is claude.ConfigDir()
-	// at request time.
-	ClaudeDir string
 
 	write sync.Mutex
 

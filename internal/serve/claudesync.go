@@ -17,14 +17,6 @@ const (
 	maxApplyBody = 28 << 20 // 20 MB of files, base64, JSON
 )
 
-// claudeDir is the server's Claude config dir, the target of a sync.
-func (s *Server) claudeDir() string {
-	if s.ClaudeDir != "" {
-		return s.ClaudeDir
-	}
-	return claude.ConfigDir()
-}
-
 // syncRecord holds the paths bx synced.
 func (s *Server) syncRecord() string { return filepath.Join(s.Cfg.Root, "claude-sync.json") }
 
@@ -35,7 +27,7 @@ func (s *Server) claudeSyncPlan(w http.ResponseWriter, r *http.Request) {
 	if !decodeSync(w, r, &req, "plan request over 8 MB") {
 		return
 	}
-	dir := s.claudeDir()
+	dir := claude.ConfigDir()
 	if dir == "" {
 		httpError(w, 500, errors.New("no Claude config dir on the server"))
 		return
@@ -46,7 +38,7 @@ func (s *Server) claudeSyncPlan(w http.ResponseWriter, r *http.Request) {
 			httpError(w, 400, err)
 			return
 		}
-		mac = append(mac, claudesync.File{Path: f.Path, SHA256: f.SHA256, Size: f.Size, Exec: f.Exec})
+		mac = append(mac, claudesync.File{Path: f.Path, SHA256: f.SHA256, Exec: f.Exec})
 	}
 	server, err := claudesync.ScanServer(dir)
 	if err != nil {
@@ -72,7 +64,7 @@ func (s *Server) claudeSyncApply(w http.ResponseWriter, r *http.Request) {
 	if !decodeSync(w, r, &req, "sync request over 28 MB (about 20 MB of files once base64-encoded)") {
 		return
 	}
-	dir := s.claudeDir()
+	dir := claude.ConfigDir()
 	if dir == "" {
 		httpError(w, 500, errors.New("no Claude config dir on the server"))
 		return

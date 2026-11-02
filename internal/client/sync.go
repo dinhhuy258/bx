@@ -52,7 +52,7 @@ func (m *Model) scanSync() tea.Cmd {
 		}
 		files := make([]api.SyncFile, 0, len(mac.Files))
 		for _, f := range mac.Files {
-			files = append(files, api.SyncFile{Path: f.Path, SHA256: f.SHA256, Size: f.Size, Exec: f.Exec})
+			files = append(files, api.SyncFile{Path: f.Path, SHA256: f.SHA256, Exec: f.Exec})
 		}
 		plan, err := be.SyncPlan(ctx, api.SyncPlanRequest{Files: files})
 		return syncPlanMsg{seq: seq, dir: dir, mac: mac, plan: plan, err: err}

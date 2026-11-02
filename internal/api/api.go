@@ -73,13 +73,12 @@ type Control struct {
 	Lines int    `json:"lines,omitempty"` // scroll: <0 back into history, >0 toward live, 0 back to live
 }
 
-// SyncFile is one file of a Claude sync: in a plan request its hash, size and mode; in an apply
+// SyncFile is one file of a Claude sync: in a plan request its hash and mode; in an apply
 // request its mode and content (base64 on the wire). Path is relative to the Claude config dir,
 // slash-separated, e.g. "skills/brainstorm/SKILL.md".
 type SyncFile struct {
 	Path    string `json:"path"`
 	SHA256  string `json:"sha256,omitempty"`
-	Size    int64  `json:"size,omitempty"`
 	Exec    bool   `json:"exec,omitempty"`
 	Content []byte `json:"content,omitempty"`
 }
