@@ -142,11 +142,8 @@ func TestActionsGoThroughApp(t *testing.T) {
 	if !strings.Contains(calls(f), want) {
 		t.Fatalf("calls:\n%s", calls(f))
 	}
-	if _, code := post(t, ts, "/api/projects/home-network/yes", api.Action{Num: 1}); code != 200 || !strings.Contains(calls(f), "send-keys -t $5 Enter") {
-		t.Fatalf("yes: %d\n%s", code, calls(f))
-	}
-	if res, code := post(t, ts, "/api/projects/home-network/yes", api.Action{Num: 2}); code != 410 || res.Error == "" {
-		t.Fatalf("yes on a session that is not running: %d %+v", code, res) // the fake lists only $5
+	if _, code := post(t, ts, "/api/projects/home-network/yes", api.Action{Num: 1}); (code != 404 && code != 405) || strings.Contains(calls(f), "send-keys") {
+		t.Fatalf("the quick answer is gone: %d\n%s", code, calls(f))
 	}
 	if _, code := post(t, ts, "/api/projects/home-network/rename", api.Action{Num: 1, Title: "renamed"}); code != 200 {
 		t.Fatal(code)
@@ -158,7 +155,7 @@ func TestActionsGoThroughApp(t *testing.T) {
 	if res, code := post(t, ts, "/api/projects/home-network/stories", api.Action{Name: "!!!"}); code != 400 || res.Error == "" {
 		t.Fatalf("bad story name: %d %+v", code, res)
 	}
-	if _, code := post(t, ts, "/api/projects/nope/yes", api.Action{Num: 1}); code != 404 {
+	if _, code := post(t, ts, "/api/projects/nope/rename", api.Action{Num: 1, Title: "x"}); code != 404 {
 		t.Fatalf("unknown project: %d", code)
 	}
 }

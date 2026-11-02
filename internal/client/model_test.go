@@ -478,6 +478,29 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	}
 }
 
+func TestClaudePaneForwardsDigitsWhileAsking(t *testing.T) {
+	h := start(t, 120, 30, "waiting")
+	h.press("Enter") // type in Claude
+	if !h.m.claudeFocused {
+		t.Fatal("Enter should focus the Claude pane")
+	}
+	if bar := ansi.Strip(h.m.bar()); strings.Contains(bar, "1-3") || !strings.Contains(bar, "⏎ confirm") {
+		t.Fatalf("bar %q", bar)
+	}
+	h.press("1")
+	select {
+	case b := <-h.m.term.Input():
+		if string(b) != "1" {
+			t.Fatalf("forwarded %q", b)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("1 was not forwarded to Claude")
+	}
+	if len(h.be.actions) != 0 {
+		t.Fatalf("actions %q", h.be.actions)
+	}
+}
+
 func TestWheelAndPgUpScrollTheClaudePane(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	if h.m.View().MouseMode != tea.MouseModeNone {
@@ -625,11 +648,13 @@ func TestPromptsCallTheBackend(t *testing.T) {
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a new chat should open and focus: %q", h.opened)
 	}
-	h.press("C-h", "y")   // back to the list; y answers the waiting session 1
+	h.press("C-h", "y")                      // back to the list; y on the waiting session 1 does nothing
+	h.m.cfg.Keys.List["yes"] = []string{"y"} // an old bind in config.toml: an unknown action, ignored
+	h.press("y")
 	h.press("w", "Enter") // new branch
 	h.typeText("guest")
 	h.press("Enter", "Enter") // the name, then feat
-	if got := strings.Join(h.be.actions, "|"); got != "home-network sessions|home-network yes 1|home-network stories guest type=feat" {
+	if got := strings.Join(h.be.actions, "|"); got != "home-network sessions|home-network stories guest type=feat" {
 		t.Fatalf("actions = %q", got)
 	}
 }
@@ -1191,12 +1216,12 @@ func TestActivityListsEveryProject(t *testing.T) {
 	if !strings.Contains(v, "bx activity") || lab < 0 || home < 0 || lab > home {
 		t.Fatalf("activity:\n%s", v)
 	}
-	if !strings.Contains(v, "s1 · asks: needs you") || !strings.Contains(v, "s1 · running") || !strings.Contains(v, "A back") || !strings.Contains(v, "y yes") {
+	if !strings.Contains(v, "s1 · asks: needs you") || !strings.Contains(v, "s1 · running") || !strings.Contains(v, "A back") || strings.Contains(v, "y yes") {
 		t.Fatalf("rows and key bar:\n%s", v)
 	}
-	h.press("y") // the cursor starts on lab's waiting session
-	if got := strings.Join(h.be.actions, "|"); got != "lab yes 1" {
-		t.Fatalf("actions %q", got)
+	h.press("y") // the cursor starts on lab's waiting session: no quick answer
+	if len(h.be.actions) != 0 {
+		t.Fatalf("actions %q", h.be.actions)
 	}
 	h.press("Enter")
 	if h.m.project != "lab" || !h.m.claudeFocused || strings.Join(h.opened, "|") != "lab 1" || !h.m.activity {

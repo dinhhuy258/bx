@@ -166,3 +166,16 @@ func TestLegacyNotify(t *testing.T) {
 		t.Error(got)
 	}
 }
+
+func TestLeftoverYesBindLoads(t *testing.T) {
+	root := t.TempDir()
+	if _, ok := Default(root).Keys.List["yes"]; ok {
+		t.Fatal("yes is no longer an action")
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[keys.list]\nyes = \"y\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(root); err != nil {
+		t.Fatalf("an old yes bind must load: %v", err)
+	}
+}

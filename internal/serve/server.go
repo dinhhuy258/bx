@@ -97,9 +97,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/stories/close", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.CloseStory(p, r.Name, r.Force)
 	}))
-	mux.HandleFunc("POST /api/projects/{name}/yes", s.action(func(p *state.Project, r api.Action) (int, error) {
-		return 0, s.App.AnswerYes(p, r.Num)
-	}))
 	mux.HandleFunc("POST /api/projects/{name}/resume", s.action(func(p *state.Project, r api.Action) (int, error) {
 		err := s.App.Resume(p, r.Num)
 		if err == nil {

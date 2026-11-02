@@ -85,12 +85,12 @@ func TestKeyBar(t *testing.T) {
 			t.Errorf("list bar missing %q: %s", want, kb)
 		}
 	}
-	if strings.Contains(kb, "y yes") {
-		t.Error("y yes only on a waiting session")
+	m.SelectSession(2) // waiting: answered only in the Claude pane
+	if kb = KeyBar(m, cfg, BarContext{}); strings.Contains(kb, "y yes") {
+		t.Error("no quick answer on a waiting session:", kb)
 	}
-	m.SelectSession(2)
-	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "y yes") {
-		t.Error(kb)
+	if got := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Session: 2}); got != "CLAUDE  ↑↓ move  ⏎ confirm  esc no  ^h to list" || strings.Contains(got, "1-3") {
+		t.Errorf("Claude bar while asking: %q", got)
 	}
 	for _, want := range []string{"s stop", "R rename", "X delete"} {
 		if !strings.Contains(kb, want) {

@@ -688,10 +688,6 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.focusMode = true
 			return m, m.enterClaude()
 		}
-	case "yes":
-		if sess != nil && strings.HasPrefix(m.m.StateText(num), "asks:") {
-			_ = m.do("yes", api.Action{Num: num})
-		}
 	case "new_chat":
 		return m, m.newSession("")
 	case "new_session":
@@ -775,10 +771,6 @@ func (m *Model) activityKey(action string) tea.Cmd {
 		if r.Num != 0 {
 			m.focusMode = true
 			return m.openSession(r.Project, r.Num)
-		}
-	case "yes":
-		if um := m.models[r.Project]; r.Num != 0 && um != nil && strings.HasPrefix(um.StateText(r.Num), "asks:") {
-			_ = m.doIn(r.Project, "yes", api.Action{Num: r.Num})
 		}
 	case "waiting":
 		return m.jumpWaiting()
@@ -1581,8 +1573,7 @@ func (m *Model) bar() string {
 		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "waiting"), m.cfg.Client.PaneLeft, run, waiting)
 	case m.activity && !m.claudeFocused && m.seq == "":
 		r := m.act.Selected(ui.ActivityRows(m.activityModels()))
-		waiting := r.Num != 0 && strings.HasPrefix(m.models[r.Project].StateText(r.Num), "asks:")
-		text = ui.ActivityBar(m.cfg, r.Num == 0, waiting, ui.BarContext{Flash: m.flash, Narrow: m.narrow})
+		text = ui.ActivityBar(m.cfg, r.Num == 0, ui.BarContext{Flash: m.flash, Narrow: m.narrow})
 	default:
 		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.streamNum, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects)})
 	}

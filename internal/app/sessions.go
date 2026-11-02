@@ -237,15 +237,6 @@ func (a *App) MarkDone(p *state.Project, nums []int) (bool, error) {
 	return true, a.SaveProject(p)
 }
 
-// AnswerYes presses Enter in the session. Claude's permission prompt highlights "Yes" by default.
-func (a *App) AnswerYes(p *state.Project, num int) error {
-	id, err := a.Target(p, num)
-	if err != nil {
-		return err
-	}
-	return a.Tmux.SendKeys(id, "Enter")
-}
-
 // Rename sets the title shown in the list.
 func (a *App) Rename(p *state.Project, num int, title string) error {
 	s := p.Sessions[num]

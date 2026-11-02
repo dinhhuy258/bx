@@ -31,7 +31,6 @@ export async function withForce(project, action, body, what, { message, ok = 'Co
 export function sessionMenu({ project, num, session, state, act, refresh, ask, withForce, onDeleted }) {
   const title = session.title || `#${num}`;
   const items = [];
-  if (state === 'waiting') items.push({ label: 'Yes (press Enter)', run: () => act('yes', { num }) });
   if (['starting', 'running', 'waiting', 'idle'].includes(state)) {
     items.push({ label: 'Stop', run: async () => {
       if (await confirmBox(`Stop ${title}?`, 'Stop', { text: 'Claude exits; Resume picks it up again.' })) act('stop', { num });

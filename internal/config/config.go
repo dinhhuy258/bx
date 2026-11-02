@@ -59,7 +59,7 @@ func Default(root string) *Config {
 		Keys: Keys{
 			List: map[string][]string{
 				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
-				"yes": {"y"}, "new_chat": {"c"}, "new_session": {"n"}, "new_story": {"w"},
+				"new_chat": {"c"}, "new_session": {"n"}, "new_story": {"w"},
 				"lazygit": {"d"}, "nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
 				"waiting": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},

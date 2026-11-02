@@ -21,7 +21,7 @@ type BarContext struct {
 var labels = map[string]string{
 	"focus": "focus mode", "waiting": "jump to waiting", "projects": "projects",
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
-	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "yes": "yes", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
+	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
 	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
 	"settings": "settings", "add_repo": "add repo", "stop": "stop", "delete": "delete",
 	"cleanup": "cleanup",
@@ -49,7 +49,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 			back = k(cfg.Client.PaneLeft, "exit focus, to list")
 		}
 		if n := ctx.Session; n != 0 && strings.HasPrefix(m.StateText(n), "asks:") {
-			parts = []string{"CLAUDE", "1-3 choose", "↑↓ move", "⏎ confirm", "esc no", back}
+			parts = []string{"CLAUDE", "↑↓ move", "⏎ confirm", "esc no", back}
 		} else {
 			parts = []string{"CLAUDE", "type to write · Claude queues it while it works", "⏎ send", "esc interrupt", back}
 		}
@@ -76,9 +76,6 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 			parts = append(parts, lk("resume"))
 		} else {
 			parts = append(parts, lk("focus"))
-			if strings.HasPrefix(m.StateText(num), "asks:") {
-				parts = append(parts, lk("yes"))
-			}
 			if m.Gone(num) {
 				parts = append(parts, lk("resume"))
 			}
@@ -116,9 +113,9 @@ func switchKeys(cfg *config.Config) string {
 	return config.Pretty(prev) + " " + config.Pretty(next) + " switch project"
 }
 
-// ActivityBar is the key bar of the activity list. waiting tells whether the selected session
-// asks something; header that the cursor is on a project's header.
-func ActivityBar(cfg *config.Config, header, waiting bool, ctx BarContext) string {
+// ActivityBar is the key bar of the activity list. header tells that the cursor is on a
+// project's header.
+func ActivityBar(cfg *config.Config, header bool, ctx BarContext) string {
 	if ctx.Flash != "" {
 		return ctx.Flash
 	}
@@ -138,9 +135,6 @@ func ActivityBar(cfg *config.Config, header, waiting bool, ctx BarContext) strin
 		parts = append(parts, lk("open", "type in Claude"))
 	}
 	if !header {
-		if waiting {
-			parts = append(parts, lk("yes", "yes"))
-		}
 		parts = append(parts, lk("focus", "focus"))
 	}
 	parts = append(parts, lk("activity", "back"), switchKeys(cfg))

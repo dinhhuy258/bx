@@ -37,6 +37,13 @@ func TestHandlerServesApp(t *testing.T) {
 			t.Errorf("%s: X-Frame-Options %q", c.path, xfo)
 		}
 	}
+	if r, err := http.Get(ts.URL + "/js/sessionmenu.js"); err == nil {
+		b, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		if strings.Contains(string(b), "Yes (press Enter)") {
+			t.Error("the session menu still has the quick Yes")
+		}
+	}
 	if r, _ := http.Get(ts.URL + "/nope.js"); r.StatusCode != 404 {
 		t.Errorf("missing file: %d", r.StatusCode)
 	}

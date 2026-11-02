@@ -114,7 +114,7 @@ func TestStartFailureLeavesNoRecord(t *testing.T) {
 	}
 }
 
-func TestTargetAnswerYesResume(t *testing.T) {
+func TestTargetResume(t *testing.T) {
 	a, f, p := newApp(t)
 	p.AddSession(&state.Session{UUID: "u1", Title: "a"})
 	p.AddSession(&state.Session{UUID: "u2", Title: "b", Done: true})
@@ -124,9 +124,6 @@ func TestTargetAnswerYesResume(t *testing.T) {
 	}
 	if _, err := a.Target(p, 2); !errors.Is(err, ErrNotRunning) {
 		t.Fatalf("want ErrNotRunning, got %v", err)
-	}
-	if err := a.AnswerYes(p, 1); err != nil || calls(f) != "send-keys -t $5 Enter" {
-		t.Fatalf("%v\n%s", err, calls(f))
 	}
 	if err := a.Resume(p, 1); err == nil {
 		t.Fatal("resumed a running session")
