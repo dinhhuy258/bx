@@ -400,3 +400,55 @@ func TestTitlesFromTheFirstPrompt(t *testing.T) {
 		t.Fatal("the rename was overwritten")
 	}
 }
+
+func TestCleanupScanBuildsNamesForward(t *testing.T) {
+	a, f, hn := newApp(t)
+	home := state.New("home", t.TempDir())
+	home.AddSession(&state.Session{UUID: "h1"})
+	hn.NextNum = 12
+	hn.AddSession(&state.Session{UUID: "u12"})
+	done := hn.AddSession(&state.Session{UUID: "u13", Title: "old", Done: true})
+	for _, p := range []*state.Project{home, hn} {
+		if err := a.SaveProject(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// home and home-network share a prefix, so a name can't be split back into a project and
+	// a number: only the names built from the records decide
+	f.Replies[listSessions] = "$1\tbx-home-1\n$2\tbx-home-network-12\n$3\tbx-home-network-3\n$4\tbx-dotfiles-3\n$5\tscratch\n"
+	ps := []*state.Project{hn, home}
+	items, err := a.CleanupScan(ps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var orphans, dones []string
+	for _, it := range items {
+		switch it.Kind {
+		case "orphan":
+			orphans = append(orphans, it.ID)
+		case "done":
+			dones = append(dones, it.ID+" "+it.Label)
+		}
+	}
+	if got := strings.Join(orphans, " "); got != "tmux:bx-dotfiles-3 tmux:bx-home-network-3" {
+		t.Fatalf("orphans = %q", got)
+	}
+	if got := strings.Join(dones, "|"); got != "session:home-network:13 home-network · chats · [13] old · done" {
+		t.Fatalf("done = %q", got)
+	}
+	n, err := a.CleanupApply(ps, []string{"tmux:bx-home-network-3", "tmux:bx-dotfiles-3", "session:home-network:13", "session:home:99"})
+	if err != nil || n != 3 {
+		t.Fatalf("removed %d, %v", n, err)
+	}
+	got := calls(f)
+	if !strings.Contains(got, "kill-session -t $3") || !strings.Contains(got, "kill-session -t $4") || strings.Count(got, "kill-session") != 2 {
+		t.Fatalf("calls:\n%s", got)
+	}
+	disk, err := a.LoadProject("home-network")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disk.Sessions[done] != nil || disk.Sessions[12] == nil {
+		t.Fatalf("%+v", disk.Sessions)
+	}
+}

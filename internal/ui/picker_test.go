@@ -59,3 +59,16 @@ func TestChecklistTicks(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+func TestTick(t *testing.T) {
+	p := NewChecklist("cleanup", []string{"a", "b", "c"})
+	p.Tick("b")
+	if got := strings.Join(p.Checked(), " "); got != "b" {
+		t.Fatal(got)
+	}
+	single := NewPicker("projects", []string{"a", "b"})
+	single.Tick("b") // no checklist: nothing ticked, Checked is still the highlighted item
+	if got := strings.Join(single.Checked(), " "); got != "a" {
+		t.Fatal(got)
+	}
+}

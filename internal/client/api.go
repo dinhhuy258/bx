@@ -102,6 +102,18 @@ func (c *API) SyncApply(ctx context.Context, r api.SyncApplyRequest) (api.SyncRe
 	return out, c.call(ctx, syncTimeout, http.MethodPost, "/api/claude/sync", r, &out)
 }
 
+// Cleanup is GET /api/cleanup: the orphan tmux sessions and the done sessions of every project.
+func (c *API) Cleanup(ctx context.Context) (api.Cleanup, error) {
+	var out api.Cleanup
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/cleanup", nil, &out)
+}
+
+// CleanupApply is POST /api/cleanup: remove the items with these ids.
+func (c *API) CleanupApply(ctx context.Context, ids []string) (api.CleanupResult, error) {
+	var out api.CleanupResult
+	return out, c.call(ctx, pollTimeout, http.MethodPost, "/api/cleanup", api.CleanupRequest{IDs: ids}, &out)
+}
+
 // StreamURL is the WebSocket address of one session's terminal at a given size.
 func (c *API) StreamURL(project string, num, cols, rows int) string {
 	ws := "ws" + strings.TrimPrefix(c.Base, "http")

@@ -96,6 +96,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/delete", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.DeleteSession(p, r.Num, r.Force)
 	}))
+	mux.HandleFunc("GET /api/cleanup", s.cleanupScan)
+	mux.HandleFunc("POST /api/cleanup", s.cleanupApply)
 	mux.HandleFunc("POST /api/claude/sync/plan", s.claudeSyncPlan)
 	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
@@ -267,6 +269,60 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		out = append(out, sum)
 	}
 	writeJSON(w, out)
+}
+
+// loadAll loads every project; one that fails to load is logged and skipped.
+func (s *Server) loadAll() []*state.Project {
+	names, err := state.ListProjects(s.stateDir())
+	if err != nil {
+		s.Log("projects: %v", err)
+	}
+	var ps []*state.Project
+	for _, name := range names {
+		p, err := s.App.LoadProject(name)
+		if err != nil {
+			s.Log("projects: %s: %v", name, err)
+			continue
+		}
+		ps = append(ps, p)
+	}
+	return ps
+}
+
+// cleanupScan lists what cleanup can remove. Cleanup is a top-level route, not a project
+// action, because it covers every project; it holds write for the whole scan.
+func (s *Server) cleanupScan(w http.ResponseWriter, r *http.Request) {
+	s.write.Lock()
+	defer s.write.Unlock()
+	items, err := s.App.CleanupScan(s.loadAll())
+	if err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	out := api.Cleanup{Items: make([]api.CleanupItem, 0, len(items))}
+	for _, it := range items {
+		out.Items = append(out.Items, api.CleanupItem{Kind: it.Kind, ID: it.ID, Label: it.Label, Detail: it.Detail})
+	}
+	writeJSON(w, out)
+}
+
+// cleanupApply removes the ticked items still found by a fresh scan, holding write
+// throughout, across every project.
+func (s *Server) cleanupApply(w http.ResponseWriter, r *http.Request) {
+	var req api.CleanupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, 400, fmt.Errorf("decode body: %w", err))
+		return
+	}
+	s.write.Lock()
+	defer s.write.Unlock()
+	n, err := s.App.CleanupApply(s.loadAll(), req.IDs)
+	s.Log("cleanup: removed %d", n)
+	if err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	writeJSON(w, api.CleanupResult{Removed: n})
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {

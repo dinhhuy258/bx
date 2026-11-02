@@ -50,6 +50,13 @@ func (p *Picker) Checked() []string {
 	return out
 }
 
+// Tick ticks an item of a checklist. It does nothing on a single-choice picker.
+func (p *Picker) Tick(item string) {
+	if p.checked != nil {
+		p.checked[item] = true
+	}
+}
+
 func (p *Picker) visible() []string {
 	if p.filter == "" {
 		return p.items

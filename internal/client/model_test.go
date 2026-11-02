@@ -39,6 +39,15 @@ type fakeBackend struct {
 	applyErr  error
 	applies   []api.SyncApplyRequest
 	running   map[int]bool // delete without force on these sessions is refused as still running
+	cleanup   api.Cleanup  // the reply of every cleanup scan
+	cleaned   [][]string   // the ids of every cleanup apply
+}
+
+func (f *fakeBackend) Cleanup(context.Context) (api.Cleanup, error) { return f.cleanup, nil }
+
+func (f *fakeBackend) CleanupApply(_ context.Context, ids []string) (api.CleanupResult, error) {
+	f.cleaned = append(f.cleaned, ids)
+	return api.CleanupResult{Removed: len(ids)}, nil
 }
 
 func (f *fakeBackend) SyncPlan(_ context.Context, r api.SyncPlanRequest) (api.SyncPlan, error) {
@@ -939,5 +948,44 @@ func TestKeymapWithNoProjectOpen(t *testing.T) {
 	h.press("x")
 	if v := h.m.View().Content; !strings.Contains(v, "No project open.") {
 		t.Fatal(v)
+	}
+}
+
+func TestCleanupNothingToDo(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("C")
+	if !strings.Contains(h.m.View().Content, "nothing to clean up") {
+		t.Fatal(h.m.View().Content)
+	}
+}
+
+func TestCleanupChecklistAndConfirm(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.be.cleanup = api.Cleanup{Items: []api.CleanupItem{
+		{Kind: "orphan", ID: "tmux:bx-home-network-7", Label: "bx-home-network-7 · no record", Detail: "no record"},
+		{Kind: "done", ID: "session:home-network:2", Label: "home-network · chats · [2] old · done", Detail: "done"},
+	}}
+	h.press("C")
+	v := h.m.View().Content
+	for _, want := range []string{"cleanup · tick what to remove", "[x] bx-home-network-7", "[ ] home-network · chats"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("no %q in\n%s", want, v)
+		}
+	}
+	h.press("Enter")
+	v = h.m.View().Content
+	if !strings.Contains(v, "Remove 1 item?") || !strings.Contains(v, "y remove") {
+		t.Fatal(v)
+	}
+	h.press("Esc")
+	if len(h.be.cleaned) != 0 {
+		t.Fatalf("cleaned = %v", h.be.cleaned)
+	}
+	h.press("C", "Enter", "y")
+	if got := fmt.Sprint(h.be.cleaned); got != "[[tmux:bx-home-network-7]]" {
+		t.Fatalf("cleaned = %s", got)
+	}
+	if !strings.Contains(h.m.View().Content, "removed 1 item") {
+		t.Fatal(h.m.View().Content)
 	}
 }

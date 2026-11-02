@@ -145,3 +145,28 @@ type UploadRequest struct {
 type UploadResult struct {
 	Path string `json:"path"`
 }
+
+// CleanupItem is one thing cleanup can remove: Kind "orphan" (a bx-* tmux session with no
+// record) or "done" (a done session's record). ID names it in a CleanupRequest.
+type CleanupItem struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Detail string `json:"detail"`
+}
+
+// Cleanup is the reply of GET /api/cleanup: the orphans, then the done sessions of every
+// project.
+type Cleanup struct {
+	Items []CleanupItem `json:"items"`
+}
+
+// CleanupRequest is the body of POST /api/cleanup: the ids to remove.
+type CleanupRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// CleanupResult is its reply: how many items were removed.
+type CleanupResult struct {
+	Removed int `json:"removed"`
+}

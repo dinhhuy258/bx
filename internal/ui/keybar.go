@@ -24,6 +24,7 @@ var labels = map[string]string{
 	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "yes": "yes", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
 	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
 	"settings": "settings", "add_repo": "add repo", "stop": "stop", "delete": "delete",
+	"cleanup": "cleanup",
 }
 
 // KeyBar builds the bottom line of the client.
@@ -84,9 +85,12 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 			parts = append(parts, lk("stop"))
 		}
 		parts = append(parts, lk("rename"), lk("delete"))
-	} else if r.Kind == RowStory && r.Story != "" {
-		parts = append(parts, lk("close_story"))
-		if m.P.IsWorkspace() {
+	} else if r.Kind == RowStory {
+		if r.Story != "" {
+			parts = append(parts, lk("close_story"))
+		}
+		parts = append(parts, lk("cleanup"))
+		if r.Story != "" && m.P.IsWorkspace() {
 			parts = append(parts, lk("add_repo"))
 		}
 	}

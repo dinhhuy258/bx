@@ -37,6 +37,8 @@ type Backend interface {
 	SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error)
 	SyncPlan(ctx context.Context, r api.SyncPlanRequest) (api.SyncPlan, error)
 	SyncApply(ctx context.Context, r api.SyncApplyRequest) (api.SyncResult, error)
+	Cleanup(ctx context.Context) (api.Cleanup, error)
+	CleanupApply(ctx context.Context, ids []string) (api.CleanupResult, error)
 }
 
 // Conn is one open session stream.
@@ -87,6 +89,14 @@ type (
 		err   error
 		saved bool // the reply of a save, not of the GET on open
 	}
+	cleanupMsg struct {
+		c   api.Cleanup
+		err error
+	}
+	cleanedMsg struct {
+		removed int
+		err     error
+	}
 )
 
 // Picker entries after the project names.
@@ -103,6 +113,7 @@ const (
 	pickRepos
 	pickStoryRepos // the repositories of a new workspace story
 	pickAddRepos   // repositories to add to a workspace story
+	pickCleanup    // what cleanup removes
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -134,6 +145,10 @@ type Model struct {
 	pickKind  pickKind
 	pickStory string   // the story of a repository checklist
 	addRepos  []string // the repositories of an add waiting for its y/n
+
+	cleanItems  []api.CleanupItem // the scan behind the cleanup checklist
+	cleanIDs    []string          // the ticked ids; non-nil while the confirm box is open
+	cleanLabels []string          // their labels, shown in the box
 
 	settings     *ui.Settings // the settings screen, full screen while open
 	settingsNote string       // shown in its place until the server's sections arrive
@@ -334,6 +349,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case syncAppliedMsg:
 		return m, m.gotSyncApplied(msg)
+	case cleanupMsg:
+		m.gotCleanup(msg)
+		return m, nil
+	case cleanedMsg:
+		if msg.err != nil {
+			m.setFlash("error: " + msg.err.Error())
+		} else {
+			m.setFlash("removed " + plural(msg.removed, "item", "items"))
+		}
+		return m, m.poll()
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	case copyEndMsg:
@@ -512,6 +537,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.picker != nil {
 		return m, m.pickerKey(key, k.Text)
 	}
+	if m.cleanIDs != nil {
+		return m, m.cleanupKey(key)
+	}
 	// before the m == nil check: adding the first project prompts with no project open
 	if m.prompt.Active() {
 		kind := m.prompt.Kind
@@ -650,6 +678,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if row.Kind == ui.RowStory && row.Story != "" && m.m.P.IsWorkspace() {
 			return m, m.loadStoryRepos(row.Story, true)
 		}
+	case "cleanup":
+		return m, m.loadCleanup()
 	case "close_story":
 		if row.Kind == ui.RowStory && row.Story != "" {
 			m.openPrompt(ui.PromptCloseStory, row.Story, fmt.Sprintf("close story %s, stop its sessions and remove its worktree? y/n", row.Story), "")
@@ -881,6 +911,9 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			return m.newStory(m.pickStory, checked)
 		case pickAddRepos:
 			return m.addStoryRepos(m.pickStory, checked, false)
+		case pickCleanup:
+			m.pickCleanup(checked)
+			return nil
 		}
 		switch choice {
 		case addFolder:
@@ -1151,6 +1184,72 @@ func (m *Model) gotStoryRepos(msg storyReposMsg) {
 	m.picker, m.pickKind, m.pickStory = ui.NewChecklist(title, repos), kind, msg.story
 }
 
+// loadCleanup asks the server what cleanup can remove.
+func (m *Model) loadCleanup() tea.Cmd {
+	be, ctx := m.be, m.ctx
+	return func() tea.Msg {
+		c, err := be.Cleanup(ctx)
+		return cleanupMsg{c, err}
+	}
+}
+
+// gotCleanup opens the cleanup checklist with the orphans ticked: nothing has a record of
+// them. Done sessions start unticked.
+func (m *Model) gotCleanup(msg cleanupMsg) {
+	if msg.err != nil {
+		m.setFlash("error: " + msg.err.Error())
+		return
+	}
+	if len(msg.c.Items) == 0 {
+		m.setFlash("nothing to clean up")
+		return
+	}
+	labels := make([]string, len(msg.c.Items))
+	for i, it := range msg.c.Items {
+		labels[i] = it.Label
+	}
+	m.picker = ui.NewChecklist("cleanup · tick what to remove", labels)
+	for _, it := range msg.c.Items {
+		if it.Kind == "orphan" {
+			m.picker.Tick(it.Label)
+		}
+	}
+	m.pickKind, m.cleanItems = pickCleanup, msg.c.Items
+}
+
+// pickCleanup opens the confirm box over the checked labels of the cleanup checklist.
+func (m *Model) pickCleanup(checked []string) {
+	items := m.cleanItems
+	m.cleanItems = nil
+	var ids, labels []string
+	for _, it := range items {
+		if slices.Contains(checked, it.Label) {
+			ids, labels = append(ids, it.ID), append(labels, it.Label)
+		}
+	}
+	if len(ids) == 0 {
+		m.setFlash("nothing selected")
+		return
+	}
+	m.cleanIDs, m.cleanLabels = ids, labels
+}
+
+// cleanupKey answers the cleanup confirm box: y removes, n or Esc cancels, other keys wait.
+func (m *Model) cleanupKey(key string) tea.Cmd {
+	switch key {
+	case "y":
+		be, ctx, ids := m.be, m.ctx, m.cleanIDs
+		m.cleanIDs, m.cleanLabels = nil, nil
+		return func() tea.Msg {
+			res, err := be.CleanupApply(ctx, ids)
+			return cleanedMsg{res.Removed, err}
+		}
+	case "n", "Esc":
+		m.cleanIDs, m.cleanLabels = nil, nil
+	}
+	return nil
+}
+
 // addStoryRepos adds repositories to a workspace story. When an original has uncommitted
 // files, which the story will not have, it asks first.
 func (m *Model) addStoryRepos(story string, repos []string, force bool) tea.Cmd {
@@ -1217,6 +1316,9 @@ func (m *Model) body() string {
 	switch {
 	case m.picker != nil:
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
+	case m.cleanIDs != nil:
+		title := fmt.Sprintf("Remove %s?", plural(len(m.cleanIDs), "item", "items"))
+		return ui.ConfirmBox(title, m.cleanLabels, "remove", m.width, m.height-1) + "\n" + m.flash
 	case m.settings != nil:
 		return m.settings.Render(m.width, m.height-1, false, m.settingsNote) + "\n" + m.bar()
 	case m.showKeys:

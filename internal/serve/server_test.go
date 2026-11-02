@@ -522,3 +522,46 @@ func TestWebAppAndAPIShareTheMux(t *testing.T) {
 		t.Fatalf("GET /api/projects: %d %+v", code, list)
 	}
 }
+
+func TestCleanupScanAndApply(t *testing.T) {
+	s, f, ts := newServer(t)
+	p, err := s.App.LoadProject("home-network")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.AddSession(&state.Session{UUID: "u2", Title: "old", Done: true})
+	if err := s.App.SaveProject(p); err != nil {
+		t.Fatal(err)
+	}
+	f.Replies[listSessions] = "$5\tbx-home-network-1\n$9\tbx-home-network-7\n"
+	c, code := get[api.Cleanup](t, ts, "/api/cleanup")
+	if code != 200 || len(c.Items) != 2 || c.Items[0].ID != "tmux:bx-home-network-7" || c.Items[1].ID != "session:home-network:2" {
+		t.Fatalf("%d %+v", code, c)
+	}
+	b, _ := json.Marshal(api.CleanupRequest{IDs: []string{c.Items[0].ID, c.Items[1].ID}})
+	r, err := http.Post(ts.URL+"/api/cleanup", "application/json", bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res api.CleanupResult
+	_ = json.NewDecoder(r.Body).Decode(&res)
+	_ = r.Body.Close()
+	if r.StatusCode != 200 || res.Removed != 2 {
+		t.Fatalf("%d %+v", r.StatusCode, res)
+	}
+	if !strings.Contains(calls(f), "kill-session -t $9") || strings.Contains(calls(f), "kill-session -t $5") {
+		t.Fatalf("calls:\n%s", calls(f))
+	}
+	snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if snap.Project.Sessions[2] != nil || snap.Project.Sessions[1] == nil {
+		t.Fatalf("%+v", snap.Project.Sessions)
+	}
+	r, err = http.Post(ts.URL+"/api/cleanup", "application/json", strings.NewReader("{"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = r.Body.Close()
+	if r.StatusCode != 400 {
+		t.Fatalf("bad JSON: %d", r.StatusCode)
+	}
+}
