@@ -1246,6 +1246,53 @@ func TestSettingsScreenEditsAndSaves(t *testing.T) {
 	}
 }
 
+func TestSettingsEditsATextField(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.be.values = map[string]string{"notifications.ntfy_url": "https://ntfy.sh/a"}
+	h.press("S", "l", "Tab", "Tab") // an unsaved model change, then git, then the notifications section
+	if !strings.Contains(h.m.bar(), "⏎ edit") {
+		t.Fatalf("bar on a text field: %q", h.m.bar())
+	}
+	h.press("Enter")
+	if h.m.prompt.Kind != ui.PromptSettingText || h.m.prompt.Input != "https://ntfy.sh/a" || h.m.prompt.Target != "notifications.ntfy_url" {
+		t.Fatalf("prompt = %+v", h.m.prompt)
+	}
+	h.press("Esc")
+	if h.m.settings == nil || h.m.prompt.Active() || len(h.be.saves) != 0 {
+		t.Fatal("Esc cancels the edit and keeps the screen")
+	}
+	h.press("Enter")
+	for range "https://ntfy.sh/a" {
+		h.press("BSpace")
+	}
+	h.typeText("nope")
+	h.press("Enter")
+	if v := ansi.Strip(h.m.View().Content); len(h.be.saves) != 0 || h.m.settings == nil || !strings.Contains(v, "want an http:// or https:// URL") {
+		t.Fatalf("a bad URL is refused: saves=%v\n%s", h.be.saves, v)
+	}
+	h.press("Enter")
+	h.m.prompt.Input = ""
+	h.typeText("https://ntfy.sh/b")
+	h.press("Enter")
+	if len(h.be.saves) != 1 || len(h.be.saves[0]) != 1 || h.be.saves[0]["notifications.ntfy_url"] != "https://ntfy.sh/b" {
+		t.Fatalf("saves = %v", h.be.saves)
+	}
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "settings saved") || !strings.Contains(v, "https://ntfy.sh/b") {
+		t.Fatalf("after the save:\n%s", v)
+	}
+	if got := h.m.settings.Changes(); len(got) != 1 || got["claude.model"] != "opus" {
+		t.Fatalf("the unsaved choice must stay unsaved: %v", got)
+	}
+	h.press("Enter")
+	for range "https://ntfy.sh/b" {
+		h.press("BSpace")
+	}
+	h.press("Enter") // empty: notifications off
+	if len(h.be.saves) != 2 || h.be.saves[1]["notifications.ntfy_url"] != "" || len(h.be.saves[1]) != 1 {
+		t.Fatalf("saves = %v", h.be.saves)
+	}
+}
+
 func TestSettingsEscAsksBeforeDiscarding(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("S", "l", "Esc")

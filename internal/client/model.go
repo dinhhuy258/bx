@@ -22,6 +22,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/claudesync"
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
 
@@ -1059,10 +1060,10 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 			m.setFlash("no changes to save")
 			return nil
 		}
-		be, ctx := m.be, m.ctx
-		return func() tea.Msg {
-			s, err := be.SaveSettings(ctx, changes)
-			return settingsMsg{s: s, err: err, saved: true}
+		return m.saveSettings(changes)
+	case ui.SettingsEdit:
+		if f, ok := m.settings.TextField(); ok {
+			m.openPrompt(ui.PromptSettingText, f.Key, f.Label, m.settings.Value(f.Key))
 		}
 	case ui.SettingsSelect:
 		m.saveSyncInclude()
@@ -1085,6 +1086,15 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 		m.openPrompt(ui.PromptRemoveOverride, project, fmt.Sprintf("remove base override of %s (%s)? y/n", project, m.baseOverride(project)), "")
 	}
 	return nil
+}
+
+// saveSettings sends changes; the reply fills the screen again.
+func (m *Model) saveSettings(changes map[string]string) tea.Cmd {
+	be, ctx := m.be, m.ctx
+	return func() tea.Msg {
+		s, err := be.SaveSettings(ctx, changes)
+		return settingsMsg{s: s, err: err, saved: true}
+	}
 }
 
 func plural(n int, one, many string) string {
@@ -1167,6 +1177,16 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		m.settings = nil
 	case ui.PromptRemoveOverride:
 		return m.removeOverride(target)
+	case ui.PromptSettingText:
+		// saved on its own right away: other unsaved edits stay pending
+		if m.settings == nil {
+			return nil
+		}
+		if err := settings.Validate(target, text); err != nil {
+			m.setFlash("settings: " + err.Error())
+			return nil
+		}
+		return m.saveSettings(map[string]string{target: text})
 	case ui.PromptAddFolder:
 		if text == "" {
 			return nil
@@ -1543,7 +1563,8 @@ func (m *Model) bar() string {
 	case m.settings != nil && m.settings.GitShown():
 		text = ui.SettingsGitBar(m.narrow)
 	case m.settings != nil:
-		text = ui.SettingsBar(len(m.settings.Changes()), m.settings.SyncChanges(), m.narrow)
+		_, onText := m.settings.TextField()
+		text = ui.SettingsBar(len(m.settings.Changes()), m.settings.SyncChanges(), m.narrow, onText)
 	case m.busy != "" && !m.claudeFocused: // Esc on the list cancels it
 		text = m.busy
 	case m.focusMode:

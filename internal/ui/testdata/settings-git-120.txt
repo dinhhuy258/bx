@@ -2,7 +2,7 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Claude            │ git · base branch overrides
  › Git               │
-                     │    api-server  develop
+   Notifications     │    api-server  develop
                      │  › infra       release/1.4
                      │    + add override
 

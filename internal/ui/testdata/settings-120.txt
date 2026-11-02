@@ -2,7 +2,7 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
    Git               │ For new sessions. Running and resumed ones keep what they started with.
-                     │
+   Notifications     │
                      │  › Model            ◂ opus              ▸ •
                      │    Effort           ◂ default           ▸
                      │    Permission mode  ◂ acceptEdits       ▸

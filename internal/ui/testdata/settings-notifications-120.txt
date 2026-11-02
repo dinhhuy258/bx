@@ -1,0 +1,13 @@
+bx settings                                                                                                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Claude            │ Notifications
+   Git               │ Push messages through ntfy when a session needs you. Not shown on the phone.
+ › Notifications     │
+                     │  › ntfy URL  https://ntfy.sh/bx-topic
+                     │    Open URL  not set
+                     │
+                     │ ntfy URL: the topic bx posts to when a session needs you. Empty = notifications off
+
+
+
+

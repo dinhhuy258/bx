@@ -202,6 +202,23 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 	if _, err := os.Stat(s.Cfg.SettingsFile()); err != nil {
 		t.Fatal(err)
 	}
+	// notifications are for the TUI only: the phone never gets the section or the ntfy secret
+	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"notifications.ntfy_url": "nope"}}); code != 400 || res.Error == "" {
+		t.Fatalf("bad URL: %d %+v", code, res)
+	}
+	secret := "https://ntfy.sh/bx-secret"
+	web, _, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"notifications.ntfy_url": secret}})
+	if code != 200 || len(web.Sections) != 1 || web.Values["notifications.ntfy_url"] != "" || web.Values["claude.model"] != "opus" {
+		t.Fatalf("web PUT reply: %d %+v", code, web)
+	}
+	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 1 || len(web.Values) != 2 {
+		t.Fatalf("web GET: %+v", web)
+	}
+	tui, _ := get[api.Settings](t, ts, "/api/settings?tui=1")
+	if len(tui.Sections) != 2 || tui.Sections[1].ID != "notifications" || tui.Values["notifications.ntfy_url"] != secret {
+		t.Fatalf("tui GET: %+v", tui)
+	}
+	put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.ntfy_url": ""}})
 	// the next session starts with the saved values, and keeps them
 	if _, code := post(t, ts, "/api/projects/home-network/sessions", api.Action{Title: "chat"}); code != 200 {
 		t.Fatal(code)

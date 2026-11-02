@@ -7,6 +7,7 @@ package notify
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -60,7 +61,7 @@ func ClickBase(openURL, listen string, resolve func(string) (string, error)) (st
 	if o := strings.TrimSpace(openURL); o != "" {
 		u, err := url.Parse(o)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return "", fmt.Errorf("notify.open_url %q: want an http:// or https:// URL", o)
+			return "", errors.New("notifications.open_url: want an http:// or https:// URL")
 		}
 		return strings.TrimRight(o, "/"), nil
 	}

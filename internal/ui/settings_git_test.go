@@ -22,14 +22,16 @@ func TestSettingsGitSectionIsTheClients(t *testing.T) {
 	for _, sec := range s.sections {
 		ids = append(ids, sec.ID+" "+sec.Title)
 	}
-	if got := strings.Join(ids, ", "); got != "claude Claude, git Git" {
+	if got := strings.Join(ids, ", "); got != "claude Claude, git Git, notifications Notifications" {
 		t.Fatalf("sections = %s", got)
 	}
-	if len(settings.Sections) != 1 || settings.Sections[0].ID != "claude" {
-		t.Fatalf("the server's registry must stay claude-only: %v", settings.Sections)
+	for _, sec := range settings.Sections {
+		if sec.ID == gitSection {
+			t.Fatalf("the server's registry must not hold the git section: %v", settings.Sections)
+		}
 	}
 	s.Load(settings.Sections, nil) // a second load adds it once
-	if len(s.sections) != 2 {
+	if len(s.sections) != 3 {
 		t.Fatalf("%d sections after a reload", len(s.sections))
 	}
 	if s.GitShown() {

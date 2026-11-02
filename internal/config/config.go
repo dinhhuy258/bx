@@ -16,7 +16,6 @@ type Config struct {
 	Root   string `toml:"-"`
 	Keys   Keys   `toml:"keys"`
 	List   List   `toml:"list"`
-	Notify Notify `toml:"notify"`
 	Serve  Serve  `toml:"serve"`
 	Client Client `toml:"client"`
 }
@@ -47,14 +46,6 @@ type List struct {
 	AutoExpandWaiting bool `toml:"auto_expand_waiting"`
 }
 
-// Notify holds push settings. Empty NtfyURL means off.
-type Notify struct {
-	NtfyURL string `toml:"ntfy_url"`
-	// OpenURL is the base URL of the web client for a notification's tap, e.g. http://100.x.y.z:7357
-	// or an https ts.net name. Empty: the serve.listen address.
-	OpenURL string `toml:"open_url"`
-}
-
 // DefaultRoot is $BX_ROOT or ~/.bx.
 func DefaultRoot() string {
 	if r := os.Getenv("BX_ROOT"); r != "" {
@@ -83,7 +74,6 @@ func Default(root string) *Config {
 			},
 		},
 		List:   List{AutoExpandWaiting: true},
-		Notify: Notify{},
 		Serve:  Serve{Listen: "auto"},
 		Client: Client{PaneLeft: "C-h", PaneRight: "C-l", CopyMode: "M-c"},
 	}
@@ -116,10 +106,6 @@ type rawConfig struct {
 	List struct {
 		AutoExpandWaiting *bool `toml:"auto_expand_waiting"`
 	} `toml:"list"`
-	Notify struct {
-		NtfyURL *string `toml:"ntfy_url"`
-		OpenURL *string `toml:"open_url"`
-	} `toml:"notify"`
 	Serve struct {
 		Listen *string `toml:"listen"`
 	} `toml:"serve"`
@@ -136,12 +122,6 @@ func (r rawConfig) applyTo(c *Config) {
 	if r.List.AutoExpandWaiting != nil {
 		c.List.AutoExpandWaiting = *r.List.AutoExpandWaiting
 	}
-	if r.Notify.NtfyURL != nil {
-		c.Notify.NtfyURL = *r.Notify.NtfyURL
-	}
-	if r.Notify.OpenURL != nil {
-		c.Notify.OpenURL = *r.Notify.OpenURL
-	}
 	if r.Serve.Listen != nil {
 		c.Serve.Listen = *r.Serve.Listen
 	}
@@ -157,6 +137,37 @@ func (r rawConfig) applyTo(c *Config) {
 	if r.Client.CopyMode != nil {
 		c.Client.CopyMode = *r.Client.CopyMode
 	}
+}
+
+// LegacyNotify reads the [notify] keys (ntfy_url, open_url) still in <root>/config.toml. They
+// moved to the settings; bx serve imports them once and warns while they stay in the file. A
+// missing file or section gives an empty map.
+func LegacyNotify(root string) (map[string]string, error) {
+	out := map[string]string{}
+	path := filepath.Join(root, "config.toml")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	var raw struct {
+		Notify struct {
+			NtfyURL *string `toml:"ntfy_url"`
+			OpenURL *string `toml:"open_url"`
+		} `toml:"notify"`
+	}
+	if _, err := toml.Decode(string(data), &raw); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if v := raw.Notify.NtfyURL; v != nil {
+		out["ntfy_url"] = *v
+	}
+	if v := raw.Notify.OpenURL; v != nil {
+		out["open_url"] = *v
+	}
+	return out, nil
 }
 
 func applyBinds(dst map[string][]string, src map[string]bind) {
@@ -187,6 +198,10 @@ func (c *Config) StateFile(project string) string {
 // SettingsFile is <root>/settings.json: what the settings screen saves. It is outside state/,
 // where every .json file is a project.
 func (c *Config) SettingsFile() string { return filepath.Join(c.Root, "settings.json") }
+
+// NotifyImportedFile is <root>/notify-imported: written once the [notify] keys of config.toml
+// were copied to the settings, so a URL cleared in the settings is not imported again.
+func (c *Config) NotifyImportedFile() string { return filepath.Join(c.Root, "notify-imported") }
 
 // TmuxSocket is the private tmux server bx runs every Claude on: <root>/run/tmux.sock.
 func (c *Config) TmuxSocket() string { return filepath.Join(c.Root, "run", "tmux.sock") }

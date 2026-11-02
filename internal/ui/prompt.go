@@ -20,6 +20,7 @@ const (
 	PromptDeleteForce    // y/n: the session is still open; kill it and delete
 	PromptUseBranch      // y/n: the branch of a new story exists; use it
 	PromptRemoveOverride // y/n: remove a project's base override (Target is the project)
+	PromptSettingText    // a text setting's new value (Target is its key)
 )
 
 // PromptResult is what a key did to the prompt.

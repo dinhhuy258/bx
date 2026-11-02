@@ -24,6 +24,7 @@ const (
 	SettingsSyncApply                             // y in the confirmation: sync SyncScope
 	SettingsGitChoose                             // Enter in the git section: read GitChoice
 	SettingsGitRemove                             // Backspace on an override: remove GitChoice's
+	SettingsEdit                                  // Enter on a text field: edit TextField in a prompt
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
@@ -49,10 +50,14 @@ func NewSettings(server string) *Settings {
 func (s *Settings) Loaded() bool { return len(s.sections) > 0 }
 
 // Load takes what the server holds, after a GET or a save, and adds the git section after the
-// server's sections. Edits that now match it are dropped.
+// claude section (else after the server's sections). Edits that now match it are dropped.
 func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 	if len(sections) > 0 {
-		s.sections = append(slices.Clone(sections), settings.Section{ID: gitSection, Title: "Git"})
+		at := len(sections)
+		if i := slices.IndexFunc(sections, func(sec settings.Section) bool { return sec.ID == syncSection }); i >= 0 {
+			at = i + 1
+		}
+		s.sections = slices.Insert(slices.Clone(sections), at, settings.Section{ID: gitSection, Title: "Git"})
 	}
 	s.saved = maps.Clone(values)
 	if s.saved == nil {
@@ -81,6 +86,9 @@ func (s *Settings) fields() []settings.Field {
 	return s.sections[s.sec].Fields
 }
 
+// Value is the edited value of key, else the saved one.
+func (s *Settings) Value(key string) string { return s.value(key) }
+
 func (s *Settings) value(key string) string {
 	if v, ok := s.edits[key]; ok {
 		return v
@@ -97,9 +105,19 @@ func (s *Settings) field() (settings.Field, bool) {
 	return fs[s.fld], true
 }
 
+// TextField is the field under the cursor if it is a text field.
+func (s *Settings) TextField() (settings.Field, bool) {
+	f, ok := s.field()
+	if !ok || f.Kind != settings.Text {
+		return settings.Field{}, false
+	}
+	return f, true
+}
+
 // Key feeds one key: Tab next section, j/k field or sync row, h/l the value or a folder's
-// fold, Space a sync checkbox, s the sync confirmation, r a rescan, Enter save, Esc close.
-// While the confirmation is open only y, n and Esc act. The git section has its own keys (gitKey).
+// fold, Space a sync checkbox, s the sync confirmation, r a rescan, Enter save (on a text
+// field: edit it), Esc close. While the confirmation is open only y, n and Esc act. The git
+// section has its own keys (gitKey).
 func (s *Settings) Key(key string) SettingsResult {
 	if s.sync.confirm {
 		return s.confirmKey(key)
@@ -111,6 +129,9 @@ func (s *Settings) Key(key string) SettingsResult {
 	case "Esc", "C-c":
 		return SettingsClose
 	case "Enter":
+		if _, ok := s.TextField(); ok {
+			return SettingsEdit
+		}
 		return SettingsSave
 	}
 	if !s.Loaded() {
@@ -269,7 +290,8 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 }
 
 // fieldLines are the rows "› Model  ◂ opus  ▸ •" of the open section, fitted to w. The label
-// column gives way first, so the value always shows.
+// column gives way first, so the value always shows. A text field shows its value as is, or
+// "not set", truncated to w.
 func (s *Settings) fieldLines(w int, pal palette) []string {
 	fs := s.fields()
 	labelW, valueW := 0, 0
@@ -284,12 +306,26 @@ func (s *Settings) fieldLines(w int, pal palette) []string {
 	for i, f := range fs {
 		cursor, label := " ", truncate(f.Label, labelW)
 		label += strings.Repeat(" ", max(labelW-runeWidth(label), 0))
-		v := shown(s.value(f.Key))
-		v += strings.Repeat(" ", max(valueW-runeWidth(v), 0))
-		value := pal.dim.Render("◂ ") + v + pal.dim.Render(" ▸")
-		if i == s.fld {
-			cursor, label = "›", pal.bold.Render(label)
-			value = pal.blue.Render("◂ " + v + " ▸")
+		var value string
+		if f.Kind == settings.Text {
+			v := s.value(f.Key)
+			if v == "" {
+				v = "not set"
+			}
+			v = truncate(v, max(w-labelW-5, 1))
+			value = v
+			if i == s.fld {
+				cursor, label = "›", pal.bold.Render(label)
+				value = pal.blue.Render(v)
+			}
+		} else {
+			v := shown(s.value(f.Key))
+			v += strings.Repeat(" ", max(valueW-runeWidth(v), 0))
+			value = pal.dim.Render("◂ ") + v + pal.dim.Render(" ▸")
+			if i == s.fld {
+				cursor, label = "›", pal.bold.Render(label)
+				value = pal.blue.Render("◂ " + v + " ▸")
+			}
 		}
 		line := " " + cursor + " " + label + "  " + value
 		if _, ok := s.edits[f.Key]; ok {
@@ -347,11 +383,15 @@ func wrap(text string, w int, style lipgloss.Style) []string {
 }
 
 // SettingsBar is the key bar of the settings screen, with the count of unsaved changes and of
-// the items a sync would change.
-func SettingsBar(changes, toSync int, narrow bool) string {
-	parts := []string{"tab section", "j/k move", "h/l change", "space select", "s sync…", "r refresh", "⏎ save", "esc close"}
+// the items a sync would change. onText (the cursor is on a text field) reads ⏎ edit.
+func SettingsBar(changes, toSync int, narrow, onText bool) string {
+	enter := "⏎ save"
+	if onText {
+		enter = "⏎ edit"
+	}
+	parts := []string{"tab section", "j/k move", "h/l change", "space select", "s sync…", "r refresh", enter, "esc close"}
 	if narrow {
-		parts = []string{"⏎ save", "s sync", "esc"}
+		parts = []string{enter, "s sync", "esc"}
 	}
 	text := strings.Join(parts, " · ")
 	if changes > 0 {

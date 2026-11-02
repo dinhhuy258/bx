@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,10 +17,14 @@ import (
 	"time"
 )
 
-// Kind is how a field is edited. Only choice exists; toggle and text come when a setting needs them.
+// Kind is how a field is edited: a choice from a list, or a line of text. Toggle comes when a
+// setting needs it.
 type Kind string
 
-const Choice Kind = "choice"
+const (
+	Choice Kind = "choice"
+	Text   Kind = "text" // an http:// or https:// URL; "" is off
+)
 
 // Field is one setting. Key is the section id, a dot, then the field id. For a choice, ""
 // first means no value: the program's own default.
@@ -31,12 +36,14 @@ type Field struct {
 	Choices []string `json:"choices,omitempty"`
 }
 
-// Section is a group of fields, one entry on the left of the screen.
+// Section is a group of fields, one entry on the left of the screen. A TUIOnly section and its
+// values are left out of what the web client gets (see Visible).
 type Section struct {
-	ID     string  `json:"id"`
-	Title  string  `json:"title"`
-	Help   string  `json:"help,omitempty"`
-	Fields []Field `json:"fields"`
+	ID      string  `json:"id"`
+	Title   string  `json:"title"`
+	Help    string  `json:"help,omitempty"`
+	Fields  []Field `json:"fields"`
+	TUIOnly bool    `json:"-"`
 }
 
 // Sections is every setting, in screen order.
@@ -50,7 +57,36 @@ var Sections = []Section{{
 		{Key: "claude.permission_mode", Label: "Permission mode", Kind: Choice, Help: "Permission mode: --permission-mode. default = Claude's own",
 			Choices: []string{"", "acceptEdits", "auto", "plan", "manual", "dontAsk", "bypassPermissions"}},
 	},
+}, {
+	ID: "notifications", Title: "Notifications", TUIOnly: true,
+	Help: "Push messages through ntfy when a session needs you. Not shown on the phone.",
+	Fields: []Field{
+		{Key: "notifications.ntfy_url", Label: "ntfy URL", Kind: Text, Help: "ntfy URL: the topic bx posts to when a session needs you. Empty = notifications off"},
+		{Key: "notifications.open_url", Label: "Open URL", Kind: Text, Help: "Open URL: the web client a notification's tap opens, e.g. https://bx.example.ts.net. Empty = the serve.listen address"},
+	},
 }}
+
+// Visible returns the sections and values a client may see. The TUI (tui) gets everything; the
+// web client does not get the TUIOnly sections or their values: the ntfy URL holds a secret topic.
+func Visible(tui bool, values map[string]string) ([]Section, map[string]string) {
+	if tui {
+		return Sections, values
+	}
+	var secs []Section
+	out := map[string]string{}
+	for _, s := range Sections {
+		if s.TUIOnly {
+			continue
+		}
+		secs = append(secs, s)
+		for _, f := range s.Fields {
+			if v, ok := values[f.Key]; ok {
+				out[f.Key] = v
+			}
+		}
+	}
+	return secs, out
+}
 
 func field(key string) (Field, bool) {
 	for _, s := range Sections {
@@ -63,13 +99,24 @@ func field(key string) (Field, bool) {
 	return Field{}, false
 }
 
-// Validate checks value for key. "" (the default) is always valid.
+// Validate checks value for key. "" (the default) is always valid. A text value must be an
+// absolute http:// or https:// URL; its error does not repeat the value, which may be a secret.
 func Validate(key, value string) error {
 	f, ok := field(key)
 	if !ok {
 		return fmt.Errorf("unknown setting %q", key)
 	}
-	if value == "" || f.Kind != Choice || slices.Contains(f.Choices, value) {
+	if value == "" {
+		return nil
+	}
+	if f.Kind == Text {
+		u, err := url.Parse(value)
+		if err != nil || strings.ContainsAny(value, " \t\r\n") || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("%s: want an http:// or https:// URL", key)
+		}
+		return nil
+	}
+	if f.Kind != Choice || slices.Contains(f.Choices, value) {
 		return nil
 	}
 	return fmt.Errorf("%s %q: want one of %s", key, value, strings.Join(slices.DeleteFunc(slices.Clone(f.Choices), func(c string) bool { return c == "" }), ", "))

@@ -58,7 +58,7 @@ func TestSettingsAgainstServe(t *testing.T) {
 	c := NewAPI(ts.URL)
 	ctx := context.Background()
 	got, err := c.Settings(ctx)
-	if err != nil || len(got.Sections) != 1 || got.Sections[0].Fields[0].Key != "claude.model" {
+	if err != nil || len(got.Sections) != 2 || got.Sections[0].Fields[0].Key != "claude.model" || got.Sections[1].ID != "notifications" {
 		t.Fatalf("%+v %v", got, err)
 	}
 	saved, err := c.SaveSettings(ctx, map[string]string{"claude.model": "sonnet"})

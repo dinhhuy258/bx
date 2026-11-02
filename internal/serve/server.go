@@ -442,8 +442,31 @@ func (s *Server) githubRepos(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, repos)
 }
 
+// getSettings sends the sections and values. Only the TUI asks with ?tui=1; the web client
+// never gets the TUI-only sections (notifications: the ntfy URL holds a secret topic).
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, api.Settings{Sections: settings.Sections, Values: s.App.Settings.Values()})
+	secs, values := settings.Visible(r.URL.Query().Get("tui") == "1", s.App.Settings.Values())
+	writeJSON(w, api.Settings{Sections: secs, Values: values})
+}
+
+// loggable is values with every text value written as <set> or <cleared>: a URL may hold a secret.
+func loggable(values map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, sec := range settings.Sections {
+		for _, f := range sec.Fields {
+			v, ok := values[f.Key]
+			switch {
+			case !ok:
+			case f.Kind == settings.Text && v == "":
+				out[f.Key] = "<cleared>"
+			case f.Kind == settings.Text:
+				out[f.Key] = "<set>"
+			default:
+				out[f.Key] = v
+			}
+		}
+	}
+	return out
 }
 
 // putSettings saves the changed values, all or none. The next new session uses them.
@@ -461,7 +484,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 400, err)
 		return
 	}
-	s.Log("settings: saved %v", req.Values)
+	s.Log("settings: saved %v", loggable(req.Values))
 	s.getSettings(w, r)
 }
 

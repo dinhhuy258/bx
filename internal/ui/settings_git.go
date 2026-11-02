@@ -7,7 +7,7 @@ import (
 )
 
 // gitSection is the ID of the settings section of the base branch overrides. The server does
-// not send it: Load adds it after the server's sections, so the phone never shows it.
+// not send it: Load adds it after the claude section, so the phone never shows it.
 const gitSection = "git"
 
 // gitAdd is the last row of the git section.

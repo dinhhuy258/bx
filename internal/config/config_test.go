@@ -33,9 +33,6 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if !c.List.AutoExpandWaiting {
 		t.Error("AutoExpandWaiting should default to true")
 	}
-	if c.Notify.NtfyURL != "" {
-		t.Error("NtfyURL should default to empty")
-	}
 }
 
 func TestFileOverridesAndUnbind(t *testing.T) {
@@ -76,9 +73,6 @@ ntfy_url = "https://ntfy.example/bx-secret"
 	}
 	if c.List.AutoExpandWaiting {
 		t.Error("AutoExpandWaiting should be false")
-	}
-	if c.Notify.NtfyURL != "https://ntfy.example/bx-secret" {
-		t.Errorf("ntfy = %q", c.Notify.NtfyURL)
 	}
 }
 
@@ -151,20 +145,30 @@ func TestServeAndClientSections(t *testing.T) {
 	}
 }
 
-func TestNotifyOpenURL(t *testing.T) {
+func TestLegacyNotify(t *testing.T) {
 	root := t.TempDir()
-	if got := Default(root).Notify.OpenURL; got != "" {
-		t.Errorf("default open_url = %q", got)
+	if got, err := LegacyNotify(root); err != nil || len(got) != 0 {
+		t.Fatalf("no file: %v %v", got, err)
+	}
+	path := filepath.Join(root, "config.toml")
+	if err := os.WriteFile(path, []byte("[serve]\nlisten = \"auto\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := LegacyNotify(root); err != nil || len(got) != 0 {
+		t.Fatalf("no [notify]: %v %v", got, err)
 	}
 	toml := "[notify]\nntfy_url = \"https://ntfy.example/x\"\nopen_url = \"https://bx.tail1234.ts.net\"\n"
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	c, err := Load(root)
-	if err != nil {
-		t.Fatal(err)
+	got, err := LegacyNotify(root)
+	if err != nil || len(got) != 2 || got["ntfy_url"] != "https://ntfy.example/x" || got["open_url"] != "https://bx.tail1234.ts.net" {
+		t.Fatalf("notify = %v %v", got, err)
 	}
-	if c.Notify.NtfyURL != "https://ntfy.example/x" || c.Notify.OpenURL != "https://bx.tail1234.ts.net" {
-		t.Fatalf("notify = %+v", c.Notify)
+	if _, err := Load(root); err != nil {
+		t.Fatalf("an old [notify] must still load: %v", err)
+	}
+	if got := Default(root).NotifyImportedFile(); got != filepath.Join(root, "notify-imported") {
+		t.Error(got)
 	}
 }

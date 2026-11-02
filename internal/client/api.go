@@ -116,16 +116,17 @@ func (c *API) ProjectRepos(ctx context.Context, project string) ([]string, error
 	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/repos", nil, &out)
 }
 
-// Settings is GET /api/settings: the sections and fields the server offers, and their values.
+// Settings is GET /api/settings?tui=1: the sections and fields the server offers, and their
+// values, the TUI-only ones included.
 func (c *API) Settings(ctx context.Context) (api.Settings, error) {
 	var out api.Settings
-	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/settings", nil, &out)
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/settings?tui=1", nil, &out)
 }
 
-// SaveSettings is PUT /api/settings with the changed values. It returns what the server saved.
+// SaveSettings is PUT /api/settings?tui=1 with the changed values. It returns what the server saved.
 func (c *API) SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error) {
 	var out api.Settings
-	return out, c.call(ctx, pollTimeout, http.MethodPut, "/api/settings", api.Settings{Values: values}, &out)
+	return out, c.call(ctx, pollTimeout, http.MethodPut, "/api/settings?tui=1", api.Settings{Values: values}, &out)
 }
 
 // SyncPlan is POST /api/claude/sync/plan: what a Claude sync would change on the server.

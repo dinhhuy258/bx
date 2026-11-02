@@ -10,6 +10,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/notify"
 	"github.com/dinhhuy258/bx/internal/serve"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
@@ -19,10 +20,14 @@ func init() {
 
 // runNotify is a Claude Code hook. It must exit 0 fast and never block Claude.
 // The notification links to the session's page in the web client when a base URL is known
-// (notify.open_url, else the serve.listen address).
+// (the Open URL of the settings, else the serve.listen address).
 func runNotify(args []string, out, errOut io.Writer) int {
 	cfg, err := config.Load(config.DefaultRoot())
-	if err != nil || cfg.Notify.NtfyURL == "" {
+	if err != nil {
+		return 0
+	}
+	ntfyURL, openURL := notifyTargets(cfg)
+	if ntfyURL == "" {
 		return 0
 	}
 	h, err := notify.ParseHook(os.Stdin)
@@ -34,7 +39,7 @@ func runNotify(args []string, out, errOut io.Writer) int {
 		return 0 // a Claude started outside bx; not ours to announce
 	}
 	t, b := notify.Message(h, project, num, title)
-	base, err := notify.ClickBase(cfg.Notify.OpenURL, cfg.Serve.Listen, serve.ResolveListen)
+	base, err := notify.ClickBase(openURL, cfg.Serve.Listen, serve.ResolveListen)
 	if err != nil {
 		fmt.Fprintln(errOut, "bx notify:", err)
 	}
@@ -42,10 +47,19 @@ func runNotify(args []string, out, errOut io.Writer) int {
 	if base != "" {
 		click = notify.SessionURL(base, project, num)
 	}
-	if err := notify.Post(cfg.Notify.NtfyURL, t, b, click); err != nil {
+	if err := notify.Post(ntfyURL, t, b, click); err != nil {
 		fmt.Fprintln(errOut, "bx notify:", err)
 	}
 	return 0
+}
+
+// notifyTargets are the ntfy URL ("" = off) and the Open URL from the settings bx serve saves.
+func notifyTargets(cfg *config.Config) (ntfyURL, openURL string) {
+	st, err := settings.Open(cfg.SettingsFile(), func(string, ...any) {})
+	if err != nil {
+		return "", ""
+	}
+	return st.Get("notifications.ntfy_url"), st.Get("notifications.open_url")
 }
 
 // findSession scans every state file for the session uuid.

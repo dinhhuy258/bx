@@ -1,6 +1,6 @@
 bx settings                          dev
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Claude · Git
+ Claude · Git · Notifications
 
    Model         ◂ default           ▸
    Effort        ◂ default           ▸

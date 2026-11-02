@@ -334,13 +334,19 @@ func TestSettingsSyncWindow(t *testing.T) {
 }
 
 func TestSettingsBar(t *testing.T) {
-	if got := SettingsBar(1, 4, false); got != "tab section · j/k move · h/l change · space select · s sync… · r refresh · ⏎ save · esc close    • 1 unsaved  • 4 to sync" {
+	if got := SettingsBar(1, 4, false, false); got != "tab section · j/k move · h/l change · space select · s sync… · r refresh · ⏎ save · esc close    • 1 unsaved  • 4 to sync" {
 		t.Fatal(got)
 	}
-	if got := SettingsBar(0, 2, true); got != "⏎ save · s sync · esc  • 2 to sync" {
+	if got := SettingsBar(0, 2, true, false); got != "⏎ save · s sync · esc  • 2 to sync" {
 		t.Fatal(got)
 	}
-	if got := SettingsBar(0, 0, true); got != "⏎ save · s sync · esc" {
+	if got := SettingsBar(0, 0, true, false); got != "⏎ save · s sync · esc" {
+		t.Fatal(got)
+	}
+	if got := SettingsBar(0, 0, false, true); !strings.Contains(got, "⏎ edit") || strings.Contains(got, "⏎ save") {
+		t.Fatal(got)
+	}
+	if got := SettingsBar(0, 0, true, true); got != "⏎ edit · s sync · esc" {
 		t.Fatal(got)
 	}
 }
