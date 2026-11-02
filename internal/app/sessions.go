@@ -83,7 +83,7 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 	s := &state.Session{Story: story, UUID: id, Title: title, Created: time.Now(),
 		Model: a.Settings.Get("claude.model"), Effort: a.Settings.Get("claude.effort"), PermissionMode: a.Settings.Get("claude.permission_mode")}
 	num := p.AddSession(s)
-	if err := a.launch(p, num, claude.StartArgs(id, false, a.options(p, s))); err != nil {
+	if err := a.launch(p, num, claude.StartArgs(id, false, a.options(p, num, s))); err != nil {
 		delete(p.Sessions, num)
 		p.NextNum--
 		return 0, err
@@ -93,17 +93,36 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 
 // options are the settings a session started with, for its command line. A session of a
 // workspace story also gets the guard hook, which keeps edits out of the original repositories.
-func (a *App) options(p *state.Project, s *state.Session) claude.Options {
+// With PluginDir set, every session also gets its artifacts folder (see artifacts.go).
+func (a *App) options(p *state.Project, num int, s *state.Session) claude.Options {
 	o := claude.Options{Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
+	var hooks, perms map[string]any
 	if p.IsWorkspace() && s.Story != "" && a.Self != "" {
-		o.Settings = GuardSettings(a.Self, a.Dir(p, s.Story))
+		hooks = guardHooks(a.Self, a.Dir(p, s.Story))
 	}
+	if a.PluginDir != "" {
+		dir := a.ArtifactsDir(p.Name, num)
+		o.DisallowedTools = artifactTools
+		o.PluginDirs = []string{a.PluginDir}
+		o.AddDirs = []string{dir}
+		o.AppendSystemPrompt = artifactsPrompt(dir, a.ArtifactsLink(p.Name, num))
+		perms = artifactPermissions(dir)
+	}
+	o.Settings = settingsJSON(hooks, perms)
 	return o
 }
 
 // launch runs args in a new tmux session for session num, in its story's folder, and keeps
 // the tmux server up after its last session ends, so bx serve can tell that Claude exited.
+// With PluginDir set it first makes the session's artifacts folder and sets $BX_ARTIFACTS.
 func (a *App) launch(p *state.Project, num int, args []string) error {
+	if a.PluginDir != "" {
+		dir, err := uploads.MakeDir(a.Cfg.ArtifactsDir(), p.Name, num)
+		if err != nil {
+			return fmt.Errorf("artifacts folder: %w", err)
+		}
+		args = append([]string{"env", "BX_ARTIFACTS=" + dir}, args...)
+	}
 	if _, err := a.Tmux.NewSession(TmuxName(p.Name, num), a.Dir(p, p.Sessions[num].Story), shellJoin(args)); err != nil {
 		return err
 	}
@@ -128,7 +147,7 @@ func (a *App) Resume(p *state.Project, num int) error {
 	if _, ok := live[num]; ok {
 		return fmt.Errorf("session [%d] is still running", num)
 	}
-	if err := a.launch(p, num, claude.StartArgs(s.UUID, true, a.options(p, s))); err != nil {
+	if err := a.launch(p, num, claude.StartArgs(s.UUID, true, a.options(p, num, s))); err != nil {
 		return err
 	}
 	s.Done = false
@@ -157,7 +176,7 @@ func (a *App) ResumeAll(p *state.Project, agents map[string]claude.Agent) ([]int
 		if _, elsewhere := agents[s.UUID]; elsewhere {
 			continue
 		}
-		if err := a.launch(p, n, claude.StartArgs(s.UUID, true, a.options(p, s))); err != nil {
+		if err := a.launch(p, n, claude.StartArgs(s.UUID, true, a.options(p, n, s))); err != nil {
 			return resumed, err
 		}
 		resumed = append(resumed, n)

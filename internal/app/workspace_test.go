@@ -258,9 +258,14 @@ func TestWorkspaceSessionGetsGuard(t *testing.T) {
 	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
 		t.Fatal(err)
 	}
-	story := a.options(p, &state.Session{Story: "login"})
-	chat := a.options(p, &state.Session{})
+	story := a.options(p, 1, &state.Session{Story: "login"})
+	chat := a.options(p, 2, &state.Session{})
 	if !strings.Contains(story.Settings, `"PreToolUse"`) || !strings.Contains(story.Settings, "/usr/local/bin/bx guard "+a.Dir(p, "login")) || chat.Settings != "" {
 		t.Fatalf("story %q chat %q", story.Settings, chat.Settings)
+	}
+	a.PluginDir = "/opt/bx-plugin"
+	both := a.options(p, 1, &state.Session{Story: "login"})
+	if !strings.Contains(both.Settings, `"PreToolUse"`) || !strings.Contains(both.Settings, `"permissions"`) {
+		t.Fatalf("guard and artifacts not merged: %q", both.Settings)
 	}
 }

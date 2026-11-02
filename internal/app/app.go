@@ -26,6 +26,12 @@ type App struct {
 	Git  *git.Git
 	UUID func() string
 	Self string // the bx binary, for the hooks it gives Claude; "" gives none
+	// PluginDir is the bx Claude plugin (bx:artifact). When set, every session gets an
+	// artifacts folder, the plugin, and no claude.ai Artifact tools; "" gives none of that.
+	PluginDir string
+	// ArtifactsURL is the file server's base, e.g. http://100.64.0.1:7358; "" when it is off,
+	// and Claude then gives the file path instead of a link.
+	ArtifactsURL string
 	// Transcripts is Claude's projects folder (~/.claude/projects), where Titles reads the
 	// first prompt of unnamed sessions; "" leaves them unnamed.
 	Transcripts string

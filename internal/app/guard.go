@@ -12,13 +12,27 @@ import (
 // what a command writes.
 const guardTools = "Edit|MultiEdit|Write|NotebookEdit"
 
-// GuardSettings is the --settings JSON that runs `bx guard <dir>` before each edit of a session
+// guardHooks are the --settings hooks that run `bx guard <dir>` before each edit of a session
 // in the workspace story folder dir.
-func GuardSettings(self, dir string) string {
+func guardHooks(self, dir string) map[string]any {
 	hook := map[string]any{"type": "command", "command": shellJoin([]string{self, "guard", dir}), "timeout": 10}
-	b, _ := json.Marshal(map[string]any{"hooks": map[string]any{
-		"PreToolUse": []any{map[string]any{"matcher": guardTools, "hooks": []any{hook}}},
-	}})
+	return map[string]any{"PreToolUse": []any{map[string]any{"matcher": guardTools, "hooks": []any{hook}}}}
+}
+
+// settingsJSON is a session's --settings: the guard hooks and the artifacts permissions, each
+// left out when nil; "" when both are.
+func settingsJSON(hooks, permissions map[string]any) string {
+	m := map[string]any{}
+	if hooks != nil {
+		m["hooks"] = hooks
+	}
+	if permissions != nil {
+		m["permissions"] = permissions
+	}
+	if len(m) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(m)
 	return string(b)
 }
 
