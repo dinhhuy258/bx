@@ -54,8 +54,8 @@ type Conn interface {
 	Close()
 }
 
-// Streamer opens the stream of one session into term; `bx` passes the WebSocket dialer.
-type Streamer func(ctx context.Context, project string, num, cols, rows int, term *Term, send func(tea.Msg)) (Conn, error)
+// Streamer opens the stream of one session or shell into term; `bx` passes the WebSocket dialer.
+type Streamer func(ctx context.Context, project string, t Target, cols, rows int, term *Term, send func(tea.Msg)) (Conn, error)
 
 type (
 	tickMsg     time.Time
@@ -147,13 +147,19 @@ type Model struct {
 
 	term       *Term
 	conn       Conn
-	streamNum  int // the session shown in the Claude pane; 0 = none
-	gen        int // bumped on every stream switch; older connects are dropped
+	target     Target // the session or shell shown in the pane; zero = none
+	gen        int    // bumped on every stream switch; older connects are dropped
 	connecting bool
 	pendingSel int // select this session when the project's first snapshot arrives
 	// pendingStory is the story row to select on the next snapshot (a new story whose session
 	// did not start)
 	pendingStory string
+	paneClosed   bool    // the pane shows the last output of a shell that ended; no reconnect
+	pendingShell *Target // select this new shell's row on the next snapshot
+	// afterShell is a shell that went away: on the next snapshot the cursor leaves its row
+	// (ui.Model.SelectAfterShell); with afterShellNote the key bar also says it closed
+	afterShell     *Target
+	afterShellNote bool
 
 	picker    *ui.Picker
 	pickKind  pickKind
@@ -281,16 +287,16 @@ func (m *Model) activityModels() []*ui.Model {
 	return out
 }
 
-// connect opens the stream of streamNum when it is not open yet.
+// connect opens the stream of the target when it is not open yet.
 func (m *Model) connect() tea.Cmd {
-	if m.open == nil || m.streamNum == 0 || m.conn != nil || m.connecting {
+	if m.open == nil || m.target.Zero() || m.conn != nil || m.connecting || m.paneClosed {
 		return nil
 	}
 	m.connecting = true
-	open, ctx, project, num, gen := m.open, m.ctx, m.project, m.streamNum, m.gen
+	open, ctx, project, t, gen := m.open, m.ctx, m.project, m.target, m.gen
 	cols, rows, term, send := m.term.Cols(), m.term.Rows(), m.term, m.send
 	return func() tea.Msg {
-		c, err := open(ctx, project, num, cols, rows, term, send)
+		c, err := open(ctx, project, t, cols, rows, term, send)
 		return connectMsg{gen, c, err}
 	}
 }
@@ -335,9 +341,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.conn = nil
-		if websocket.CloseStatus(msg.err) == websocket.StatusNormalClosure && strings.Contains(msg.err.Error(), "session ended") {
-			m.setFlash(fmt.Sprintf("session [%d] ended", m.streamNum))
-			m.streamNum, m.claudeFocused, m.focusMode = 0, false, false
+		ended := websocket.CloseStatus(msg.err) == websocket.StatusNormalClosure && strings.Contains(msg.err.Error(), "session ended")
+		if ended && m.target.Shell() {
+			// keep its last output, dimmed, until another target is shown
+			t := m.target
+			m.paneClosed, m.scrolled, m.copying = true, false, false
+			m.claudeFocused, m.focusMode = false, false
+			m.resizeTerm()
+			m.afterShell, m.afterShellNote = &t, true
+			m.setFlash(fmt.Sprintf("shell $%d closed", t.K))
+			return m, m.poll()
+		}
+		if ended {
+			m.setFlash(fmt.Sprintf("session [%d] ended", m.target.Num))
+			m.target, m.claudeFocused, m.focusMode = Target{}, false, false
 			m.resizeTerm()
 			return m, nil
 		}
@@ -491,6 +508,12 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 	} else {
 		um.SetProject(msg.snap.Project)
 	}
+	// the cursor leaves a shell that went away only when it was on that shell's row
+	var after *Target
+	if t := m.afterShell; t != nil && msg.project == m.project && um == m.m && um.Selected() == (ui.Row{Kind: ui.RowShell, Story: t.Story, K: t.K}) {
+		after = t
+	}
+	um.SetShells(msg.snap.Shells, msg.snap.Dirs)
 	um.SetLive(msg.snap.Live)
 	var states map[int]string
 	if msg.snap.SessionStates != nil {
@@ -510,6 +533,23 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 			um.SelectStory(m.pendingStory)
 			m.pendingStory = ""
 		}
+		if t := m.pendingShell; t != nil {
+			um.SelectShell(t.Story, t.K)
+			m.pendingShell = nil
+		}
+		if t := m.afterShell; t != nil {
+			if after != nil {
+				um.SelectAfterShell(t.Story, t.K)
+			}
+			if m.afterShellNote {
+				note := fmt.Sprintf("shell $%d closed", t.K)
+				if t.Story != "" && um.P.Stories[t.Story] == nil {
+					note += " · story " + t.Story + " was closed"
+				}
+				m.setFlash(note)
+			}
+			m.afterShell, m.afterShellNote = nil, false
+		}
 	}
 }
 
@@ -528,13 +568,14 @@ func (m *Model) switchProject(name string) tea.Cmd {
 	return m.poll()
 }
 
-// showSession puts a session in the Claude pane. A session already shown keeps its stream.
-func (m *Model) showSession(num int) tea.Cmd {
-	if num == m.streamNum && (m.conn != nil || m.connecting) {
+// show puts a session or shell in the pane. A target already shown keeps its stream; a shell
+// that ended is opened again.
+func (m *Model) show(t Target) tea.Cmd {
+	if t == m.target && !m.paneClosed && (m.conn != nil || m.connecting) {
 		return nil
 	}
 	m.closeStream()
-	m.streamNum = num
+	m.target = t
 	return m.connect()
 }
 
@@ -548,7 +589,7 @@ func (m *Model) closeStream() {
 		}
 		m.conn.Close()
 	}
-	m.conn, m.connecting, m.streamNum, m.scrolled, m.copying = nil, false, 0, false, false
+	m.conn, m.connecting, m.target, m.scrolled, m.copying, m.paneClosed = nil, false, Target{}, false, false, false
 	cols, rows := m.term.Cols(), m.term.Rows()
 	m.term.Close()
 	m.term = NewTerm(cols, rows)
@@ -645,7 +686,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case m.cfg.Client.PaneLeft:
 		return m, m.tmux("L")
 	case m.cfg.Client.PaneRight:
-		if m.streamNum == 0 { // nothing in the Claude pane: on to the tmux pane
+		if m.target.Zero() || m.paneClosed { // nothing live in the pane: on to the tmux pane
 			return m, m.tmux("R")
 		}
 		return m, m.backToClaude()
@@ -667,6 +708,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.activityKey(action)
 	}
 	num, sess := m.m.SelectedSession()
+	sh, onShell := m.m.SelectedShell()
 	row := m.m.Selected()
 	switch action {
 	case "down":
@@ -676,6 +718,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "open":
 		if row.Kind == ui.RowStory {
 			m.m.ToggleFold()
+		} else if onShell {
+			return m, m.enterShell(sh)
 		} else if sess != nil {
 			return m, m.enterClaude()
 		}
@@ -697,7 +741,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.openStorySource()
 		}
 	case "rename":
-		if sess != nil {
+		if onShell {
+			m.openPrompt(ui.PromptRenameShell, shellKey(sh.Story, sh.K), "shell name (empty = command)", sh.Title)
+		} else if sess != nil {
 			m.openPrompt(ui.PromptRename, "", "new title", sess.Title)
 		}
 	case "resume":
@@ -712,7 +758,13 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.openPrompt(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("stop [%d] %s? y/n", num, sess.Title), "")
 		}
 	case "delete":
-		if sess != nil {
+		if onShell {
+			label := fmt.Sprintf("Close shell $%d %s?", sh.K, sh.Label())
+			if sh.Command != "" && !ui.PlainShell(sh.Command) {
+				label += " " + sh.Command + " is still running and will be killed."
+			}
+			m.openPrompt(ui.PromptCloseShell, shellKey(sh.Story, sh.K), label, "")
+		} else if sess != nil {
 			m.openPrompt(ui.PromptDelete, strconv.Itoa(num), fmt.Sprintf("delete [%d] %s? y/n", num, sess.Title), "")
 		}
 	case "add_repo":
@@ -723,7 +775,11 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.loadCleanup()
 	case "close_story":
 		if row.Kind == ui.RowStory && row.Story != "" {
-			m.openPrompt(ui.PromptCloseStory, row.Story, fmt.Sprintf("close story %s, stop its sessions and remove its worktree? y/n", row.Story), "")
+			text := fmt.Sprintf("close story %s, stop its sessions and remove its worktree? y/n", row.Story)
+			if n := len(m.m.ShellsOf(row.Story)); n > 0 {
+				text = fmt.Sprintf("close story %s, stop its sessions and %s and remove its worktree? y/n", row.Story, plural(n, "shell", "shells"))
+			}
+			m.openPrompt(ui.PromptCloseStory, row.Story, text, "")
 		}
 	case "waiting":
 		return m, m.jumpWaiting()
@@ -734,7 +790,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.pollActivity()
 	case "settings":
 		return m, m.openSettings()
-	case "lazygit", "nvim", "shell", "prs":
+	case "shell":
+		m.askNewShell(row.Story)
+	case "lazygit", "nvim", "prs":
 		m.setFlash(action + " is not available yet")
 	case "keymap":
 		m.showKeys = true
@@ -814,7 +872,7 @@ func (m *Model) openSession(project string, num int) tea.Cmd {
 	}
 	m.claudeFocused = true
 	m.resizeTerm()
-	return tea.Batch(cmd, m.showSession(num))
+	return tea.Batch(cmd, m.show(sessionTarget(num)))
 }
 
 // copyMode puts the open session in tmux copy-mode and gives the Claude pane the keys, which
@@ -892,7 +950,73 @@ func (m *Model) enterClaude() tea.Cmd {
 	}
 	m.claudeFocused = true
 	m.resizeTerm()
-	return m.showSession(num)
+	return m.show(sessionTarget(num))
+}
+
+// enterShell shows a shell in the pane and gives it the keys.
+func (m *Model) enterShell(sh ui.Shell) tea.Cmd {
+	m.claudeFocused = true
+	m.resizeTerm()
+	return m.show(shellTarget(sh.Story, sh.K))
+}
+
+// askNewShell asks before opening a new shell in a story ("" = chats), naming its number and folder.
+func (m *Model) askNewShell(story string) {
+	k := m.m.NextShell(story)
+	label := fmt.Sprintf("New shell $%d in %s  %s", k, groupName(story), ui.ShortPath(m.m.Dir(story)))
+	m.openPrompt(ui.PromptNewShell, shellKey(story, k), label, "")
+}
+
+// newShell opens a shell in a story ("" = chats) and shows it focused.
+func (m *Model) newShell(story string) tea.Cmd {
+	res, err := m.be.Do(m.ctx, m.project, "shells", api.Action{Story: story})
+	if err != nil {
+		m.setFlash("error: " + err.Error())
+		return nil
+	}
+	t := shellTarget(story, res.K)
+	m.pendingShell = &t
+	m.claudeFocused = true
+	m.resizeTerm()
+	return tea.Batch(m.show(t), m.poll())
+}
+
+// closeShell kills a shell and empties the pane when it shows that shell. Closing the stream
+// first makes its later "session ended" close stale.
+func (m *Model) closeShell(story string, k int) tea.Cmd {
+	if m.do("shells/close", api.Action{Story: story, K: k}) != nil {
+		return nil
+	}
+	t := shellTarget(story, k)
+	if m.target == t {
+		m.closeStream()
+		m.claudeFocused, m.focusMode = false, false
+		m.resizeTerm()
+	}
+	m.afterShell = &t
+	m.setFlash(fmt.Sprintf("closed shell $%d", k))
+	return m.poll()
+}
+
+// shellKey is the prompt target of shell k of story: "story/k" (root is "/k").
+func shellKey(story string, k int) string { return story + "/" + strconv.Itoa(k) }
+
+// parseShellKey reads a shellKey back. Story names never contain "/".
+func parseShellKey(s string) (story string, k int) {
+	i := strings.LastIndex(s, "/")
+	if i < 0 {
+		return "", 0
+	}
+	k, _ = strconv.Atoi(s[i+1:])
+	return s[:i], k
+}
+
+// groupName is how the list names a story: its name, or "chats" for "".
+func groupName(story string) string {
+	if story == "" {
+		return "chats"
+	}
+	return story
 }
 
 // backToClaude gives the keys back to the session already in the Claude pane. PaneRight never
@@ -1121,7 +1245,7 @@ func (m *Model) newSession(story string) tea.Cmd {
 		m.claudeFocused = true
 		m.resizeTerm()
 	}
-	return tea.Batch(m.showSession(res.Num), m.poll())
+	return tea.Batch(m.show(sessionTarget(res.Num)), m.poll())
 }
 
 func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
@@ -1155,6 +1279,17 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	case ui.PromptStop:
 		num, _ := strconv.Atoi(target)
 		return m.stop(num)
+	case ui.PromptNewShell:
+		story, _ := parseShellKey(target)
+		return m.newShell(story)
+	case ui.PromptCloseShell:
+		return m.closeShell(parseShellKey(target))
+	case ui.PromptRenameShell:
+		story, k := parseShellKey(target)
+		if m.do("shells/rename", api.Action{Story: story, K: k, Title: text}) != nil { // empty clears it
+			return nil
+		}
+		return m.poll()
 	case ui.PromptDelete, ui.PromptDeleteForce:
 		num, _ := strconv.Atoi(target)
 		force := kind == ui.PromptDeleteForce
@@ -1211,7 +1346,7 @@ func (m *Model) stop(num int) tea.Cmd {
 // leaveSession empties the Claude pane when it shows num, which was just stopped or deleted.
 // Closing the stream first makes its later "session ended" close stale, so the flash stays.
 func (m *Model) leaveSession(num int) {
-	if num != m.streamNum {
+	if m.target != sessionTarget(num) {
 		return
 	}
 	m.closeStream()
@@ -1382,7 +1517,7 @@ func (m *Model) quit() tea.Cmd {
 func (m *Model) View() tea.View {
 	v := tea.NewView(m.body())
 	v.AltScreen = true
-	if m.streamNum != 0 {
+	if !m.target.Zero() {
 		v.MouseMode = tea.MouseModeCellMotion // the wheel scrolls the Claude pane
 	}
 	if m.claudeFocused && m.picker == nil && m.settings == nil && m.m != nil && !m.showKeys {
@@ -1502,8 +1637,12 @@ func (m *Model) pane() string {
 		ch, color = "━", focusColor
 	}
 	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(strings.Repeat(ch, m.term.Cols()))
-	if m.streamNum != 0 {
-		return m.paneTitle() + "\n" + rule + "\n" + m.term.View()
+	if !m.target.Zero() {
+		screen := m.term.View()
+		if m.paneClosed { // a shell that ended: its last output, faint
+			screen = restyle(screen, "\x1b[2m")
+		}
+		return m.paneTitle() + "\n" + rule + "\n" + screen
 	}
 	hint := "\n  No session open.\n  Enter on a session shows it here; c starts a chat."
 	return strings.Repeat(" ", m.term.Cols()) + "\n" + rule + "\n" + lipgloss.NewStyle().Width(m.term.Cols()).Height(m.term.Rows()).Foreground(lipgloss.Color("#565f89")).Render(hint)
@@ -1513,15 +1652,15 @@ func (m *Model) pane() string {
 // the session the pane shows, since the list cursor may be elsewhere. It keeps the terminal's
 // background, like Claude; the rule under it (see pane) sets it apart.
 func (m *Model) paneTitle() string {
-	cols, num := m.term.Cols(), m.streamNum
+	if m.target.Shell() {
+		return m.shellTitle()
+	}
+	cols, num := m.term.Cols(), m.target.Num
 	s := m.m.P.Sessions[num]
 	if s == nil {
 		return strings.Repeat(" ", cols)
 	}
-	group := s.Story
-	if group == "" {
-		group = "chats"
-	}
+	group := groupName(s.Story)
 	state, color := "○ idle", "#565f89"
 	switch {
 	case s.Done:
@@ -1540,10 +1679,36 @@ func (m *Model) paneTitle() string {
 	left := " " + path.Render(m.project) + dim.Render(" › ") + path.Render(group) + dim.Render(" › ") +
 		lipgloss.NewStyle().Foreground(lipgloss.Color("#c0caf5")).Bold(true).Render(fmt.Sprintf("[%d] %s", num, s.Title))
 	right := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(state) + " "
+	return m.titleLine(left, right)
+}
+
+// shellTitle is the line above a shell in the pane: " project › group › $1 zsh ··· SHELL ",
+// or CLOSED once the shell ended.
+func (m *Model) shellTitle() string {
+	story, k := m.target.Story, m.target.K
+	label := "shell"
+	if sh, ok := m.m.Shell(story, k); ok {
+		label = sh.Label()
+	}
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
+	path := lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6"))
+	left := " " + path.Render(m.project) + dim.Render(" › ") + path.Render(groupName(story)) + dim.Render(" › ") +
+		lipgloss.NewStyle().Foreground(lipgloss.Color("#c0caf5")).Bold(true).Render(fmt.Sprintf("$%d %s", k, label))
+	tag, bg := " SHELL ", "#7dcfff"
+	if m.paneClosed {
+		tag, bg = " CLOSED ", "#f7768e"
+	}
+	right := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(lipgloss.Color(bg)).Render(tag) + " "
+	return m.titleLine(left, right)
+}
+
+// titleLine lays out the pane's title: left, then right at the end of the line, with the COPY
+// tag in front of right while in copy-mode. A narrow pane cuts the left side and keeps the right.
+func (m *Model) titleLine(left, right string) string {
+	cols := m.term.Cols()
 	if m.copying {
 		right = lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(lipgloss.Color("#e0af68")).Render(" COPY ") + " " + right
 	}
-	// a narrow pane cuts the left side and keeps the state
 	left = ansi.Truncate(left, max(cols-ansi.StringWidth(right)-1, 0), "…")
 	return left + strings.Repeat(" ", max(cols-ansi.StringWidth(left)-ansi.StringWidth(right), 0)) + right
 }
@@ -1579,7 +1744,7 @@ func (m *Model) bar() string {
 		r := m.act.Selected(ui.ActivityRows(m.activityModels()))
 		text = ui.ActivityBar(m.cfg, r.Num == 0, ui.BarContext{Flash: m.flash, Narrow: m.narrow})
 	default:
-		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.streamNum, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects)})
+		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.target.Num, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects), Shell: m.target.Shell() && !m.paneClosed})
 	}
 	// cut the text to one line: Width would wrap it and push the bar off the screen
 	text = ansi.Truncate(" "+text, max(m.width, 1), "…")

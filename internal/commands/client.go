@@ -44,8 +44,12 @@ func runClient(args []string, out, errOut io.Writer) int {
 	m := client.NewModel(cfg, a, project)
 	prog := tea.NewProgram(m)
 	m.SetSender(prog.Send)
-	m.SetStreamer(func(ctx context.Context, project string, num, cols, rows int, term *client.Term, send func(tea.Msg)) (client.Conn, error) {
-		return client.Connect(ctx, a.StreamURL(project, num, cols, rows), term, send)
+	m.SetStreamer(func(ctx context.Context, project string, t client.Target, cols, rows int, term *client.Term, send func(tea.Msg)) (client.Conn, error) {
+		url := a.StreamURL(project, t.Num, cols, rows)
+		if t.Shell() {
+			url = a.ShellStreamURL(project, t.Story, t.K, cols, rows)
+		}
+		return client.Connect(ctx, url, term, send)
 	})
 	if _, err := prog.Run(); err != nil {
 		fmt.Fprintln(errOut, "bx:", err)

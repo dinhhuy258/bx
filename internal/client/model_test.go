@@ -154,8 +154,9 @@ func (f *fakeBackend) Snapshot(_ context.Context, p string) (api.Snapshot, error
 	return s, nil
 }
 
-// Do records "<project> <action> [num] [story] [title] [name] [base] [repos] force" (the set
-// parts); base also sets the project's override in the project list.
+// Do records "<project> <action> [num] [story] [title] [name] [base] [repos] [$k] force" (the
+// set parts); base also sets the project's override in the project list, shells adds a zsh
+// shell to the snapshot (the next number after the highest) and shells/close drops it.
 func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action) (api.Result, error) {
 	parts := []string{project, action}
 	if a.Num != 0 {
@@ -169,6 +170,9 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 	if len(a.Repos) > 0 {
 		parts = append(parts, "["+strings.Join(a.Repos, ",")+"]")
 	}
+	if a.K != 0 {
+		parts = append(parts, fmt.Sprintf("$%d", a.K))
+	}
 	if a.Force {
 		parts = append(parts, "force")
 	}
@@ -176,6 +180,28 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 	switch {
 	case action == "sessions":
 		return api.Result{Num: 9}, nil
+	case action == "shells":
+		snap := f.snaps[project]
+		k := 1
+		for _, sh := range snap.Shells {
+			if sh.Story == a.Story && sh.K >= k {
+				k = sh.K + 1
+			}
+		}
+		snap.Shells = append(snap.Shells, api.Shell{Story: a.Story, K: k, Command: "zsh"})
+		f.snaps[project] = snap
+		return api.Result{Story: a.Story, K: k}, nil
+	case action == "shells/close":
+		snap := f.snaps[project]
+		var kept []api.Shell
+		for _, sh := range snap.Shells {
+			if sh.Story != a.Story || sh.K != a.K {
+				kept = append(kept, sh)
+			}
+		}
+		snap.Shells = kept
+		f.snaps[project] = snap
+		return api.Result{}, nil
 	case action == "base":
 		for i := range f.projects {
 			if f.projects[i].Name == project {
@@ -291,8 +317,12 @@ func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *
 	hs.m = NewModel(config.Default(root), be, project)
 	hs.m.tick = func() tea.Cmd { return nil }
 	hs.m.tmux = func(dir string) tea.Cmd { hs.tmux = append(hs.tmux, dir); return nil }
-	hs.m.SetStreamer(func(_ context.Context, project string, num, cols, rows int, term *Term, _ func(tea.Msg)) (Conn, error) {
-		hs.opened = append(hs.opened, fmt.Sprintf("%s %d", project, num))
+	hs.m.SetStreamer(func(_ context.Context, project string, t Target, cols, rows int, term *Term, _ func(tea.Msg)) (Conn, error) {
+		if t.Shell() {
+			hs.opened = append(hs.opened, fmt.Sprintf("%s sh %s %d", project, t.Story, t.K))
+		} else {
+			hs.opened = append(hs.opened, fmt.Sprintf("%s %d", project, t.Num))
+		}
 		term.Feed([]byte("CLAUDE SAYS HI"))
 		c := &fakeConn{}
 		hs.conns = append(hs.conns, c)
@@ -623,8 +653,8 @@ func TestPaneRightReturnsToTheOpenSessionOnly(t *testing.T) {
 	h.press("Enter", "C-h") // open session 1, back to the list
 	h.press("k")            // cursor to the chats row, away from session 1
 	h.press("C-l")
-	if !h.m.claudeFocused || h.m.streamNum != 1 || len(h.opened) != 1 {
-		t.Fatalf("C-l should go back to session 1 without opening another: focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.streamNum, h.opened)
+	if !h.m.claudeFocused || h.m.target.Num != 1 || len(h.opened) != 1 {
+		t.Fatalf("C-l should go back to session 1 without opening another: focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.target.Num, h.opened)
 	}
 }
 
@@ -766,8 +796,8 @@ func TestNewStoryStreamsItsSessionAndFocusesClaude(t *testing.T) {
 	h.newBranch()
 	h.typeText("login")
 	h.press("Enter", "Enter")
-	if !h.m.claudeFocused || h.m.streamNum != 9 || strings.Join(h.opened, "|") != "home-network 9" {
-		t.Fatalf("focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.streamNum, h.opened)
+	if !h.m.claudeFocused || h.m.target.Num != 9 || strings.Join(h.opened, "|") != "home-network 9" {
+		t.Fatalf("focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.target.Num, h.opened)
 	}
 	if h.m.flash != "Created login on feat/login" || h.m.busy != "" {
 		t.Fatalf("flash=%q busy=%q", h.m.flash, h.m.busy)
@@ -1058,8 +1088,8 @@ func TestStopAsksThenStops(t *testing.T) {
 func TestStopTheOpenSessionClosesItsStream(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("Enter", "C-h", "s", "y")
-	if h.m.streamNum != 0 || !h.conns[0].closed || h.m.claudeFocused {
-		t.Fatalf("num=%d closed=%v focused=%v", h.m.streamNum, h.conns[0].closed, h.m.claudeFocused)
+	if h.m.target.Num != 0 || !h.conns[0].closed || h.m.claudeFocused {
+		t.Fatalf("num=%d closed=%v focused=%v", h.m.target.Num, h.conns[0].closed, h.m.claudeFocused)
 	}
 	h.update(streamClosedMsg{conn: h.conns[0], err: websocket.CloseError{Code: websocket.StatusNormalClosure, Reason: "session ended"}})
 	if h.m.flash != "stopped [1]" {
@@ -1123,8 +1153,8 @@ func TestSessionEndedClosesThePane(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
 	h.press("Enter")
 	h.update(streamClosedMsg{conn: h.conns[0], err: websocket.CloseError{Code: websocket.StatusNormalClosure, Reason: "session ended"}})
-	if h.m.claudeFocused || h.m.streamNum != 0 || !strings.Contains(h.m.View().Content, "ended") {
-		t.Fatalf("focused=%v num=%d\n%s", h.m.claudeFocused, h.m.streamNum, h.m.View().Content)
+	if h.m.claudeFocused || h.m.target.Num != 0 || !strings.Contains(h.m.View().Content, "ended") {
+		t.Fatalf("focused=%v num=%d\n%s", h.m.claudeFocused, h.m.target.Num, h.m.View().Content)
 	}
 	h.update(tickMsg(time.Now()))
 	if len(h.opened) != 1 {
@@ -1235,6 +1265,154 @@ func TestToolKeysExplainThemselves(t *testing.T) {
 	h.press("d")
 	if len(h.be.actions) != 0 || !strings.Contains(h.m.View().Content, "not available yet") {
 		t.Fatalf("actions=%q\n%s", h.be.actions, h.m.View().Content)
+	}
+}
+
+// setShells puts shells (and group folders) in home-network's snapshot and polls it.
+func (h *harness) setShells(shells []api.Shell, dirs map[string]string) {
+	snap := h.be.snaps["home-network"]
+	snap.Shells, snap.Dirs = shells, dirs
+	h.be.snaps["home-network"] = snap
+	h.update(tickMsg(time.Now()))
+}
+
+// dropShells takes every shell out of home-network's snapshot without polling it, as when they
+// exit just before their streams close.
+func (h *harness) dropShells() {
+	snap := h.be.snaps["home-network"]
+	snap.Shells = nil
+	h.be.snaps["home-network"] = snap
+}
+
+// shellEnded is the server closing the newest stream because its shell exited.
+func (h *harness) shellEnded() {
+	h.update(streamClosedMsg{conn: h.conns[len(h.conns)-1], err: websocket.CloseError{Code: websocket.StatusNormalClosure, Reason: "session ended"}})
+}
+
+func TestNewShellAsksThenOpens(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.setShells(nil, map[string]string{"": "/p/home-network", "s1": "/w/s1"})
+	h.press("t") // on session 1 of s1
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "New shell $1 in s1  /w/s1   y open  n cancel") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.press("n")
+	if len(h.be.actions) != 0 || h.m.prompt.Active() {
+		t.Fatalf("n must do nothing: %q", h.be.actions)
+	}
+	h.press("t", "y")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network shells s1" {
+		t.Fatalf("actions = %q", got)
+	}
+	if got := strings.Join(h.opened, "|"); got != "home-network sh s1 1" || !h.m.claudeFocused {
+		t.Fatalf("opened=%q focused=%v", got, h.m.claudeFocused)
+	}
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "s1 › $1 zsh") || !strings.Contains(v, "SHELL") {
+		t.Fatalf("pane title:\n%s", v)
+	}
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "SHELL  type to run · exit closes it  ^h to list  M-c copy") {
+		t.Fatalf("bar = %q", bar)
+	}
+	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 1 {
+		t.Fatalf("the cursor should be on the new shell: %+v", h.m.m.Selected())
+	}
+	h.press("C-h", "k", "k", "k") // $1 → session 1 → s1 → the chats row
+	h.press("t")
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "New shell $1 in chats  /p/home-network") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.press("Enter") // Enter opens too
+	if got := strings.Join(h.opened, "|"); got != "home-network sh s1 1|home-network sh  1" {
+		t.Fatalf("opened = %q", got)
+	}
+}
+
+func TestShellRowRenameAndClose(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.setShells([]api.Shell{{Story: "s1", K: 1, Command: "zsh"}, {Story: "s1", K: 2, Command: "npm"}}, nil)
+	h.press("j", "j") // session 1 → $1 → $2
+	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 2 {
+		t.Fatalf("selected %+v", h.m.m.Selected())
+	}
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "⏎ open shell") || !strings.Contains(bar, "X close shell") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.press("R")
+	h.typeText("api")
+	h.press("Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network shells/rename s1 api $2" {
+		t.Fatalf("actions = %q", got)
+	}
+	h.press("X")
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "Close shell $2 npm? npm is still running and will be killed.   y close  n cancel") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.press("y")
+	if got := h.be.actions[len(h.be.actions)-1]; got != "home-network shells/close s1 $2" {
+		t.Fatalf("action = %q", got)
+	}
+	if !strings.Contains(h.m.flash, "closed shell $2") {
+		t.Fatalf("flash = %q", h.m.flash)
+	}
+	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 1 {
+		t.Fatalf("the cursor should move to the shell left: %+v", h.m.m.Selected())
+	}
+	h.press("X")
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "Close shell $1 zsh?") || strings.Contains(bar, "still running") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.press("n")
+	if n := len(h.be.actions); n != 2 {
+		t.Fatalf("n must not close: %q", h.be.actions)
+	}
+}
+
+func TestShellEndedKeepsTheOutputDimmed(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.press("t", "y")
+	h.dropShells() // the shell exited
+	h.shellEnded()
+	if h.m.claudeFocused || !h.m.paneClosed {
+		t.Fatalf("focused=%v closed=%v", h.m.claudeFocused, h.m.paneClosed)
+	}
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "CLOSED") || !strings.Contains(v, "CLAUDE SAYS HI") {
+		t.Fatalf("the pane keeps the last output:\n%s", v)
+	}
+	if !strings.Contains(h.m.View().Content, "\x1b[2mCLAUDE SAYS HI") {
+		t.Fatal("the closed output is dim")
+	}
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "shell $1 closed") {
+		t.Fatalf("bar = %q", bar)
+	}
+	if r := h.m.m.Selected(); r.Kind != ui.RowStory || r.Story != "s1" {
+		t.Fatalf("the cursor goes to the story: %+v", r)
+	}
+	h.update(tickMsg(time.Now()))
+	if len(h.opened) != 1 {
+		t.Fatalf("a closed shell must not reconnect: %q", h.opened)
+	}
+
+	h.press("j", "Enter") // session 1
+	if h.m.paneClosed || strings.Join(h.opened, "|") != "home-network sh s1 1|home-network 1" {
+		t.Fatalf("closed=%v opened=%q", h.m.paneClosed, h.opened)
+	}
+
+	h.press("C-h", "t", "y")
+	delete(h.be.snaps["home-network"].Project.Stories, "s1") // D closed the story, and its shells
+	h.dropShells()
+	h.shellEnded()
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "shell $1 closed · story s1 was closed") {
+		t.Fatalf("bar = %q", bar)
+	}
+}
+
+func TestCloseStoryCountsShells(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.setShells([]api.Shell{{Story: "s1", K: 1, Command: "zsh"}, {Story: "s1", K: 2, Command: "npm"}}, nil)
+	h.m.m.SelectStory("s1")
+	h.press("D")
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "close story s1, stop its sessions and 2 shells and remove its worktree? y/n") {
+		t.Fatalf("bar = %q", bar)
 	}
 }
 

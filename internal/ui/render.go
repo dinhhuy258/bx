@@ -21,15 +21,16 @@ type RenderOptions struct {
 }
 
 type palette struct {
-	dim, blue, amber, green, red, bold, sel, brand lipgloss.Style
+	dim, blue, amber, green, red, bold, sel, brand, cyan lipgloss.Style
 }
 
 func newPalette(plain bool) palette {
 	if plain {
 		s := lipgloss.NewStyle()
-		return palette{s, s, s, s, s, s, s, s}
+		return palette{s, s, s, s, s, s, s, s, s}
 	}
 	return palette{
+		cyan:  lipgloss.NewStyle().Foreground(lipgloss.Color("#7dcfff")),
 		dim:   lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89")),
 		blue:  lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
 		amber: lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")),
@@ -80,6 +81,10 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 				}
 				lines = append(lines, truncate("      "+pal.dim.Render(what+" · "+key+" to start one"), width))
 			}
+			continue
+		}
+		if r.Kind == RowShell {
+			lines = append(lines, m.shellLine(r, cursor, width, pal, i == selIdx))
 			continue
 		}
 		s := m.P.Sessions[r.Num]
@@ -160,6 +165,21 @@ func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected
 	return fit(left, right, width)
 }
 
+// shellLine is the one line of a shell row: "$1  zsh", or "$2  dev server … npm" when the
+// shell has a title, with the command dim on the right.
+func (m *Model) shellLine(r Row, cursor string, width int, pal palette, selected bool) string {
+	sh, _ := m.Shell(r.Story, r.K)
+	label := sh.Label()
+	if selected {
+		label = pal.bold.Render(label)
+	}
+	right := ""
+	if sh.Title != "" {
+		right = pal.dim.Render(sh.Command)
+	}
+	return fit(cursor+"  "+pal.cyan.Render(fmt.Sprintf("$%d", r.K))+"  "+label, right, width)
+}
+
 // changed is the amber "N changed" for uncommitted files in a folder, empty when clean.
 func changed(n int, pal palette, sep string) string {
 	if n == 0 {
@@ -167,6 +187,9 @@ func changed(n int, pal palette, sep string) string {
 	}
 	return pal.amber.Render(fmt.Sprintf("%d changed", n)) + pal.dim.Render(sep)
 }
+
+// ShortPath replaces the home directory with ~, as the list shows folders.
+func ShortPath(p string) string { return shortPath(p) }
 
 // shortPath replaces the home directory with ~.
 func shortPath(p string) string {

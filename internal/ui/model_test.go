@@ -189,3 +189,70 @@ func TestSetProjectKeepsTheCursorRowAndFolds(t *testing.T) {
 		t.Fatal("folds must survive a new snapshot")
 	}
 }
+
+func TestShellRows(t *testing.T) {
+	m, _ := sampleModel()
+	m.SetShells([]Shell{{Story: "ups-nut-alerts", K: 3}, {Story: "ups-nut-alerts", K: 1, Command: "zsh"}, {Story: "", K: 1}}, nil)
+	var got []string
+	for _, r := range m.Rows() {
+		switch r.Kind {
+		case RowStory:
+			got = append(got, "story:"+r.Story)
+		case RowSession:
+			got = append(got, "sess:"+itoa(r.Num))
+		case RowShell:
+			got = append(got, "sh:"+r.Story+"$"+itoa(r.K))
+		}
+	}
+	want := "story:,sess:6,sess:7,sh:$1,story:fstrim-cron,story:guest-vlan-fix,sess:1,sess:2,sess:3,story:ups-nut-alerts,sess:4,sh:ups-nut-alerts$1,sh:ups-nut-alerts$3,story:zigbee-map-docs"
+	if strings.Join(got, ",") != want {
+		t.Fatalf("rows:\n got %s\nwant %s", strings.Join(got, ","), want)
+	}
+
+	m.SelectShell("ups-nut-alerts", 3)
+	m.SetShells([]Shell{{Story: "ups-nut-alerts", K: 1}, {Story: "ups-nut-alerts", K: 3}}, nil) // the chats shell went away: indexes shift
+	if sh, ok := m.SelectedShell(); !ok || sh.Story != "ups-nut-alerts" || sh.K != 3 {
+		t.Fatalf("cursor moved to %+v", m.Selected())
+	}
+	if k := m.NextShell("ups-nut-alerts"); k != 2 {
+		t.Fatalf("next shell = %d, want 2", k)
+	}
+	if k := m.NextShell(""); k != 1 {
+		t.Fatalf("next chats shell = %d, want 1", k)
+	}
+
+	m.SetFolded("ups-nut-alerts", true)
+	for _, r := range m.Rows() {
+		if r.Kind == RowShell {
+			t.Fatalf("a folded story hides its shells: %+v", r)
+		}
+	}
+	m.SelectShell("ups-nut-alerts", 1)
+	if m.Folded("ups-nut-alerts") {
+		t.Fatal("SelectShell unfolds the story")
+	}
+
+	m.SetShells([]Shell{{Story: "ups-nut-alerts", K: 1}, {Story: "ups-nut-alerts", K: 3}, {Story: "ups-nut-alerts", K: 4}}, nil)
+	m.SelectAfterShell("ups-nut-alerts", 2)
+	if r := m.Selected(); r.Kind != RowShell || r.K != 3 {
+		t.Fatalf("after $2: %+v, want the next shell $3", r)
+	}
+	m.SetShells([]Shell{{Story: "ups-nut-alerts", K: 1}, {Story: "ups-nut-alerts", K: 3}}, nil)
+	m.SelectAfterShell("ups-nut-alerts", 4)
+	if r := m.Selected(); r.Kind != RowShell || r.K != 3 {
+		t.Fatalf("after $4: %+v, want the previous shell $3", r)
+	}
+	m.SetShells(nil, nil)
+	m.SelectAfterShell("ups-nut-alerts", 3)
+	if r := m.Selected(); r.Kind != RowStory || r.Story != "ups-nut-alerts" {
+		t.Fatalf("after the last shell: %+v, want the story header", r)
+	}
+
+	m.SetShells(nil, map[string]string{"ups-nut-alerts": "/w/ups"})
+	if d := m.Dir("ups-nut-alerts"); d != "/w/ups" {
+		t.Fatalf("dir = %q", d)
+	}
+	if d := m.Dir(""); d != "/root/.bx/projects/home-network" {
+		t.Fatalf("chats dir falls back to the project path, got %q", d)
+	}
+}

@@ -71,3 +71,38 @@ func TestLifecyclePromptsAreYesNo(t *testing.T) {
 		t.Fatal(p.Line())
 	}
 }
+
+func TestShellPrompts(t *testing.T) {
+	var p Prompt
+	p.Open(PromptNewShell, "s1/1", "New shell $1 in s1  /w", "")
+	if got, want := p.Line(), "New shell $1 in s1  /w   y open  n cancel"; got != want {
+		t.Fatalf("\n got %q\nwant %q", got, want)
+	}
+	for _, key := range []string{"Enter", "y"} {
+		p.Open(PromptNewShell, "s1/1", "New shell $1 in s1  /w", "")
+		if r := p.Key(key, key); r != PromptSubmit || p.Target != "s1/1" || p.Active() {
+			t.Fatalf("%s gave %v, want submit", key, r)
+		}
+	}
+	for _, key := range []string{"n", "Esc"} {
+		p.Open(PromptNewShell, "s1/1", "New shell $1 in s1  /w", "")
+		if r := p.Key(key, key); r != PromptCancel || p.Active() {
+			t.Fatalf("%s gave %v, want cancel", key, r)
+		}
+	}
+	p.Open(PromptCloseShell, "s1/1", "Close shell $1 zsh?", "")
+	if got, want := p.Line(), "Close shell $1 zsh?   y close  n cancel"; got != want {
+		t.Fatalf("\n got %q\nwant %q", got, want)
+	}
+	if r := p.Key("Enter", ""); r != PromptCancel {
+		t.Fatalf("Enter on close shell gave %v, want cancel", r)
+	}
+	p.Open(PromptCloseShell, "s1/1", "Close shell $1 zsh?", "")
+	if r := p.Key("y", "y"); r != PromptSubmit {
+		t.Fatalf("y gave %v", r)
+	}
+	p.Open(PromptRenameShell, "s1/1", "shell name (empty = command)", "dev")
+	if p.YesNo() || p.Input != "dev" {
+		t.Fatal("rename shell is a text prompt with the old title")
+	}
+}

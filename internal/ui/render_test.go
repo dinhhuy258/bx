@@ -128,6 +128,53 @@ func TestKeyBar(t *testing.T) {
 	if !strings.Contains(kb, "waiting for the next key") {
 		t.Error(kb)
 	}
+
+	m.SelectStory("guest-vlan-fix")
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "t new shell") {
+		t.Error("a story row offers a new shell:", kb)
+	}
+	m.SetShells([]Shell{{Story: "guest-vlan-fix", K: 1, Command: "zsh"}}, nil)
+	m.SelectShell("guest-vlan-fix", 1)
+	kb = KeyBar(m, cfg, BarContext{})
+	for _, want := range []string{"⏎ open shell", "R rename", "X close shell", "t new shell"} {
+		if !strings.Contains(kb, want) {
+			t.Errorf("shell bar missing %q: %s", want, kb)
+		}
+	}
+	if strings.Contains(kb, "X delete") {
+		t.Error("X closes a shell, it deletes nothing:", kb)
+	}
+	if got, want := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Shell: true}), "SHELL  type to run · exit closes it  ^h to list  M-c copy"; got != want {
+		t.Errorf("shell pane bar:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestRenderShellRows(t *testing.T) {
+	m, _ := sampleModel()
+	m.SetShells([]Shell{{Story: "guest-vlan-fix", K: 1, Command: "zsh"}, {Story: "guest-vlan-fix", K: 2, Title: "dev server", Command: "npm"}}, nil)
+	out := Render(m, 46, 40, RenderOptions{Plain: true})
+	lines := strings.Split(out, "\n")
+	var one, two string
+	for i, line := range lines {
+		if w := runeWidth(line); w > 46 {
+			t.Errorf("line %d is %d cells wide: %q", i, w, line)
+		}
+		switch {
+		case strings.Contains(line, "$1  zsh"):
+			one = line
+		case strings.Contains(line, "$2  dev server"):
+			two = line
+		}
+	}
+	if one == "" || strings.TrimRight(one, " ") != "   $1  zsh" {
+		t.Errorf("no $1 row with only its command:\n%s", out)
+	}
+	if !strings.HasSuffix(two, "npm") {
+		t.Errorf("the $2 row shows its title and the command on the right, got %q:\n%s", two, out)
+	}
+	if i, j := strings.Index(out, "Shorter lease for the IoT VLAN"), strings.Index(out, "$1  zsh"); i < 0 || j < i {
+		t.Errorf("shells come after the story's sessions:\n%s", out)
+	}
 }
 
 func TestFocusLine(t *testing.T) {

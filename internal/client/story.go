@@ -383,7 +383,7 @@ func (m *Model) gotStory(msg storyMsg) tea.Cmd {
 	m.pendingSel = res.Num
 	m.claudeFocused = true
 	m.resizeTerm()
-	return tea.Batch(m.showSession(res.Num), m.poll())
+	return tea.Batch(m.show(sessionTarget(res.Num)), m.poll())
 }
 
 // useBranch sends the draft again, using the branch that exists.

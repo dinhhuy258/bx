@@ -39,6 +39,7 @@ type RowKind int
 const (
 	RowStory RowKind = iota // includes the chats group (Story == "")
 	RowSession
+	RowShell
 )
 
 // Row is one selectable item.
@@ -46,6 +47,7 @@ type Row struct {
 	Kind  RowKind
 	Story string // story name, "" = chats
 	Num   int    // session number, when Kind == RowSession
+	K     int    // shell number, when Kind == RowShell
 }
 
 // Shell is a running shell: shell K of Story ("" = chats, the project folder).
@@ -86,6 +88,9 @@ type Model struct {
 
 	folded map[string]bool // story → folded; client memory only
 	states map[int]string  // session number → the server's derived state name; nil = unknown
+
+	shells []Shell           // sorted by Story, then K
+	dirs   map[string]string // group ("" = chats) → its folder
 }
 
 // NewModel builds a model and selects the first session of the first story.
@@ -202,9 +207,122 @@ func (m *Model) Rows() []Row {
 			for _, n := range m.P.SessionsOf(name) {
 				rows = append(rows, Row{Kind: RowSession, Story: name, Num: n})
 			}
+			for _, sh := range m.ShellsOf(name) {
+				rows = append(rows, Row{Kind: RowShell, Story: name, K: sh.K})
+			}
 		}
 	}
 	return rows
+}
+
+// SetShells stores the project's shells and group folders and keeps the cursor on the same
+// row when it still exists.
+func (m *Model) SetShells(sh []Shell, dirs map[string]string) {
+	cp := append([]Shell(nil), sh...)
+	sort.Slice(cp, func(i, j int) bool {
+		if cp[i].Story != cp[j].Story {
+			return cp[i].Story < cp[j].Story
+		}
+		return cp[i].K < cp[j].K
+	})
+	if m.sel < 0 {
+		m.shells, m.dirs = cp, dirs
+		return
+	}
+	cur := m.Selected()
+	m.shells, m.dirs = cp, dirs
+	for i, r := range m.Rows() {
+		if r == cur {
+			m.sel = i
+			return
+		}
+	}
+	m.clamp()
+}
+
+// ShellsOf returns the shells of a group ("" = chats), by K.
+func (m *Model) ShellsOf(story string) []Shell {
+	var out []Shell
+	for _, sh := range m.shells {
+		if sh.Story == story {
+			out = append(out, sh)
+		}
+	}
+	return out
+}
+
+// Shell returns shell k of a group.
+func (m *Model) Shell(story string, k int) (Shell, bool) {
+	for _, sh := range m.shells {
+		if sh.Story == story && sh.K == k {
+			return sh, true
+		}
+	}
+	return Shell{}, false
+}
+
+// NextShell is the lowest shell number not in use in a group, the one a new shell gets.
+func (m *Model) NextShell(story string) int {
+	k := 1
+	for {
+		if _, ok := m.Shell(story, k); !ok {
+			return k
+		}
+		k++
+	}
+}
+
+// SelectedShell returns the selected shell, or false when the cursor is not on a shell row.
+func (m *Model) SelectedShell() (Shell, bool) {
+	r := m.Selected()
+	if r.Kind != RowShell {
+		return Shell{}, false
+	}
+	return m.Shell(r.Story, r.K)
+}
+
+// SelectShell unfolds the story and puts the selection on the shell row.
+func (m *Model) SelectShell(story string, k int) {
+	delete(m.folded, story)
+	for i, r := range m.Rows() {
+		if r.Kind == RowShell && r.Story == story && r.K == k {
+			m.sel = i
+			return
+		}
+	}
+}
+
+// SelectAfterShell moves the selection off shell k of a group that went away: to the next
+// shell with a higher number, else the highest one left, else the group header.
+func (m *Model) SelectAfterShell(story string, k int) {
+	var next, last int
+	for _, sh := range m.ShellsOf(story) {
+		if sh.K > k && next == 0 {
+			next = sh.K
+		}
+		if sh.K != k {
+			last = sh.K
+		}
+	}
+	switch {
+	case next != 0:
+		m.SelectShell(story, next)
+	case last != 0:
+		m.SelectShell(story, last)
+	default:
+		m.SelectStory(story)
+	}
+}
+
+// Dir is the folder of a group's shells: the story worktree, or the project folder for chats.
+func (m *Model) Dir(story string) string {
+	if d, ok := m.dirs[story]; ok {
+		return d
+	}
+	if story == "" && m.P != nil {
+		return m.P.Path
+	}
+	return ""
 }
 
 func (m *Model) clamp() {

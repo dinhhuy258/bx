@@ -21,6 +21,9 @@ const (
 	PromptUseBranch      // y/n: the branch of a new story exists; use it
 	PromptRemoveOverride // y/n: remove a project's base override (Target is the project)
 	PromptSettingText    // a text setting's new value (Target is its key)
+	PromptNewShell       // y/n, Enter also opens: open a shell (Target is "story/k")
+	PromptCloseShell     // y/n: close a shell, killing what runs in it (Target is "story/k")
+	PromptRenameShell    // a shell's new title, empty = its command (Target is "story/k")
 )
 
 // PromptResult is what a key did to the prompt.
@@ -53,7 +56,8 @@ func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 func (p *Prompt) YesNo() bool {
 	switch p.Kind {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
-		PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride:
+		PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride,
+		PromptNewShell, PromptCloseShell:
 		return true
 	}
 	return false
@@ -68,8 +72,9 @@ func (p *Prompt) Key(key, text string) PromptResult {
 		p.Kind = PromptNone
 		return PromptCancel
 	case p.YesNo():
+		enter := p.Kind == PromptNewShell && key == "Enter"
 		p.Kind = PromptNone
-		if key == "y" {
+		if key == "y" || enter {
 			return PromptSubmit
 		}
 		return PromptCancel
@@ -96,6 +101,10 @@ func oneLine(s string) string { return strings.NewReplacer("\r", "", "\n", "").R
 
 // Line is the key bar text while the prompt is open.
 func (p *Prompt) Line() string {
+	switch p.Kind {
+	case PromptNewShell, PromptCloseShell:
+		return p.Label + "   y " + p.verb() + "  n cancel"
+	}
 	if p.YesNo() {
 		return p.Label + ": " + p.Input + "▏  y " + p.verb() + " · any key cancels"
 	}
@@ -119,6 +128,10 @@ func (p *Prompt) verb() string {
 		return "use"
 	case PromptRemoveOverride:
 		return "remove"
+	case PromptNewShell:
+		return "open"
+	case PromptCloseShell:
+		return "close"
 	}
 	return "yes"
 }

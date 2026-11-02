@@ -16,12 +16,13 @@ type BarContext struct {
 	Flash         string // message shown instead of the keys
 	Narrow        bool   // window too small for two panes: one pane at a time
 	Projects      int    // how many projects the client has open; the switch keys show from two
+	Shell         bool   // the pane shows a live shell rather than Claude
 }
 
 var labels = map[string]string{
 	"focus": "focus mode", "waiting": "jump to waiting", "projects": "projects",
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
-	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "lazygit": "lazygit", "nvim": "nvim", "shell": "shell", "prs": "PRs",
+	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "lazygit": "lazygit", "nvim": "nvim", "shell": "new shell", "prs": "PRs",
 	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
 	"settings": "settings", "add_repo": "add repo", "stop": "stop", "delete": "delete",
 	"cleanup": "cleanup",
@@ -43,6 +44,13 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		return ""
 	}
 	var parts []string
+	if ctx.ClaudeFocused && ctx.Shell {
+		parts = []string{"SHELL", "type to run · exit closes it", k(cfg.Client.PaneLeft, "to list")}
+		if cfg.Client.CopyMode != "" {
+			parts = append(parts, k(cfg.Client.CopyMode, "copy"))
+		}
+		return join(parts)
+	}
 	if ctx.ClaudeFocused {
 		back := k(cfg.Client.PaneLeft, "to list")
 		if ctx.FocusMode {
@@ -64,6 +72,8 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		} else {
 			parts = append(parts, "⏎ expand")
 		}
+	} else if r.Kind == RowShell {
+		parts = append(parts, "⏎ open shell")
 	} else if num != 0 {
 		if ctx.Narrow {
 			parts = append(parts, "⏎ Claude")
@@ -82,6 +92,11 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 			parts = append(parts, lk("stop"))
 		}
 		parts = append(parts, lk("rename"), lk("delete"))
+	} else if r.Kind == RowShell {
+		parts = append(parts, lk("rename"))
+		if key := cfg.Keys.First(cfg.Keys.List, "delete"); key != "" {
+			parts = append(parts, k(key, "close shell"))
+		}
 	} else if r.Kind == RowStory {
 		if r.Story != "" {
 			parts = append(parts, lk("close_story"))
@@ -91,7 +106,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 			parts = append(parts, lk("add_repo"))
 		}
 	}
-	parts = append(parts, lk("fold_all"), lk("new_chat"), lk("new_session"), lk("new_story"))
+	parts = append(parts, lk("shell"), lk("fold_all"), lk("new_chat"), lk("new_session"), lk("new_story"))
 	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"), lk("activity"), lk("settings"))
 	if ctx.Projects > 1 {
 		parts = append(parts, switchKeys(cfg))
