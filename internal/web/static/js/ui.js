@@ -74,15 +74,20 @@ export function poll(fn, ms = 2000) {
 }
 
 // ask shows a form and resolves to {name: value} (checks: an array), or null on Cancel.
-// Field: {name, label, type?: 'text'|'select'|'checks', value?, placeholder?, options?, list?}
+// Field: {name, label, type?: 'text'|'select'|'checks', value?, placeholder?, options?, list?, hint?}
+// Select options are strings or {value, label}. hint(values) returns a help line shown under the
+// field, redrawn as the form changes.
 // opts: {danger?: a red OK button, text?: a help line under the title}
 export function ask(title, fields, ok = 'OK', opts = {}) {
   return new Promise((resolve) => {
-    const inputs = [];
+    const inputs = [], hints = [];
     const body = fields.map((f) => {
       let input;
       if (f.type === 'select') {
-        input = h('select', {}, f.options.map((o) => h('option', { value: o, selected: o === f.value }, o || '(default)')));
+        input = h('select', {}, f.options.map((o) => {
+          const [value, label] = typeof o === 'string' ? [o, o || '(default)'] : [o.value, o.label];
+          return h('option', { value, selected: value === f.value }, label);
+        }));
       } else if (f.type === 'checks') {
         input = h('div', { class: 'checks' }, f.options.length
           ? f.options.map((o) => h('label', {}, h('input', { type: 'checkbox', value: o, checked: (f.value || []).includes(o) }), o))
@@ -94,17 +99,24 @@ export function ask(title, fields, ok = 'OK', opts = {}) {
         if (listId) input = [input, h('datalist', { id: listId }, f.list.map((o) => h('option', { value: o })))];
       }
       inputs.push([f, Array.isArray(input) ? input[0] : input]);
-      return h('div', { class: 'field' }, h('span', {}, f.label), input);
+      const hint = f.hint ? h('small', { class: 'help' }) : null;
+      if (hint) hints.push([f, hint]);
+      return h('div', { class: 'field' }, h('span', {}, f.label), input, hint);
     });
     const read = () => Object.fromEntries(inputs.map(([f, el]) => [f.name, f.type === 'checks'
       ? [...el.querySelectorAll('input:checked')].map((c) => c.value)
       : el.value.trim()]));
+    const redraw = () => {
+      const v = read();
+      for (const [f, el] of hints) el.textContent = f.hint(v) || '';
+    };
     // Cancel is type=button: Enter / the keyboard's Go key submits with the first submit button,
     // which must be OK.
-    const dlg = h('dialog', {}, h('form', { method: 'dialog' }, h('h2', {}, title),
+    const dlg = h('dialog', {}, h('form', { method: 'dialog', oninput: redraw, onchange: redraw }, h('h2', {}, title),
       opts.text ? h('p', { class: 'help' }, opts.text) : null, body,
       h('menu', {}, h('button', { type: 'button', onclick: () => dlg.close('cancel') }, 'Cancel'),
         h('button', { value: 'ok', class: opts.danger ? 'danger' : 'primary' }, ok))));
+    redraw();
     dlg.addEventListener('close', () => {
       const v = dlg.returnValue === 'ok' ? read() : null;
       dlg.remove();
@@ -126,4 +138,60 @@ export function sheet(title, items) {
   dlg.addEventListener('close', () => dlg.remove());
   document.body.append(dlg);
   dlg.showModal();
+}
+
+// pickFrom lists items [{label, ...}] under a search box that filters them by label, and
+// resolves to the tapped item, or null on Cancel. Enter picks the first match. With
+// opts.search(q), a search that matches nothing offers a "Search GitHub" button (Enter does
+// the same); search resolves to the items to list instead, or {pick: item} to pick at once.
+export function pickFrom(title, items, opts = {}) {
+  return new Promise((resolve) => {
+    let picked = null, shown = [], seq = 0;
+    const head = h('h2', {}, title);
+    const q = h('input', { type: 'search', placeholder: 'Filter', enterkeyhint: 'go',
+      autocapitalize: 'off', autocomplete: 'off', autocorrect: 'off', spellcheck: 'false' });
+    const list = h('div', { class: 'pick-list' });
+    const empty = h('p', { class: 'help', hidden: true }, 'Nothing matches');
+    const more = h('button', { type: 'button', hidden: true, onclick: () => search() }, 'Search GitHub');
+    const pick = (it) => { picked = it; dlg.close(); };
+    const draw = () => {
+      const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+      shown = items.filter((it) => words.every((w) => it.label.toLowerCase().includes(w)));
+      list.replaceChildren(...shown.map((it) => h('button', { type: 'button', onclick: () => pick(it) }, it.label)));
+      empty.hidden = shown.length > 0;
+      more.hidden = shown.length > 0 || !opts.search || !q.value.trim();
+    };
+    async function search() {
+      const text = q.value.trim();
+      if (!opts.search || !text) return;
+      const n = ++seq;
+      more.disabled = true;
+      more.textContent = 'Searching…';
+      let r = null;
+      try { r = await opts.search(text); } finally {
+        more.disabled = false;
+        more.textContent = 'Search GitHub';
+      }
+      if (n !== seq || !dlg.open || !r) return;
+      if (!Array.isArray(r)) { pick(r.pick); return; }
+      if (!r.length) return;
+      items = r;
+      head.textContent = `Search: ${text}`;
+      q.value = '';
+      draw();
+    }
+    q.addEventListener('input', draw);
+    q.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (shown.length) pick(shown[0]);
+      else search();
+    });
+    const dlg = h('dialog', { class: 'pick' }, head, q, list, empty, more,
+      h('menu', {}, h('button', { type: 'button', onclick: () => dlg.close() }, 'Cancel')));
+    dlg.addEventListener('close', () => { dlg.remove(); resolve(picked); });
+    draw();
+    document.body.append(dlg);
+    dlg.showModal();
+  });
 }

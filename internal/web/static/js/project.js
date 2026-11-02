@@ -1,6 +1,7 @@
 import { api } from './api.js';
 import { h, bar, poll, toast, ask, confirmBox, sheet } from './ui.js';
 import { sessionMenu, withForce } from './sessionmenu.js';
+import { newStoryMenu } from './newstory.js';
 
 const enc = encodeURIComponent;
 
@@ -74,7 +75,7 @@ export function showProject(root, name) {
   function addMenu() {
     sheet(name, [
       { label: 'New chat', run: () => newSession('') },
-      { label: 'New story', run: newStory },
+      { label: 'New story', run: () => newStoryMenu({ project: name, snap, refresh }) },
     ]);
   }
 
@@ -84,16 +85,6 @@ export function showProject(root, name) {
     if (v === null) return;
     const r = await act('sessions', { story, title: v.title });
     if (r) location.hash = `#/p/${enc(name)}/s/${r.num}`;
-  }
-
-  async function newStory() {
-    const fields = [{ name: 'name', label: 'Story name (the branch)' }];
-    if (snap.project.kind === 'workspace') {
-      try { fields.push({ name: 'repos', label: 'Repositories', type: 'checks', options: await api.projectRepos(name) }); }
-      catch (e) { toast(e.message); return; }
-    }
-    const v = await ask('New story', fields, 'Create');
-    if (v && v.name) act('stories', { name: v.name, repos: v.repos });
   }
 
   async function addRepos(story) {

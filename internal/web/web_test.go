@@ -15,6 +15,8 @@ func TestHandlerServesApp(t *testing.T) {
 		{"/", "<title>bx</title>"},
 		{"/vendor/xterm.js", "Terminal"},
 		{"/js/sessionmenu.js", "export function sessionMenu"},
+		{"/js/newstory.js", "export function newStoryMenu"},
+		{"/js/ui.js", "export function pickFrom"},
 	} {
 		r, err := http.Get(ts.URL + c.path)
 		if err != nil {

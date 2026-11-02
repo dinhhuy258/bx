@@ -26,6 +26,13 @@ export const api = {
   createProject: (body) => call('POST', '/api/projects', body),
   githubRepos: () => call('GET', '/api/github/repos'),
   projectRepos: (p) => call('GET', `/api/projects/${enc(p)}/repos`),
+  // body is an api.Action; a 409 whose .result.exists is set means the branch exists
+  newStory: (p, body) => call('POST', `/api/projects/${enc(p)}/stories`, body),
+  storyInfo: (p) => call('GET', `/api/projects/${enc(p)}/storyinfo`),
+  // fetch: run git fetch first (slow on a big repo)
+  branches: (p, fetch) => call('GET', `/api/projects/${enc(p)}/branches${fetch ? '?fetch=1' : ''}`),
+  // q: '' for the open pull requests, else a search, #123 or a pull request URL
+  prs: (p, q) => call('GET', `/api/projects/${enc(p)}/prs?q=${enc(q || '')}`),
   action: (p, action, body) => call('POST', `/api/projects/${enc(p)}/${action}`, body),
   settings: () => call('GET', '/api/settings'),
   saveSettings: (values) => call('PUT', '/api/settings', { values }),

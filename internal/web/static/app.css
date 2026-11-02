@@ -39,6 +39,12 @@ dialog menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; ma
 dialog.sheet[open] { display: flex; flex-direction: column; gap: 8px; }
 .field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
 .field small { color: var(--dim); }
+.field .help { padding: 0; font-size: 13px; overflow-wrap: anywhere; }
+dialog.pick[open] { display: flex; flex-direction: column; gap: 8px; max-height: 85dvh; }
+.pick-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; }
+.pick-list button { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; flex: none; }
+dialog.pick .help { padding: 4px 0; }
+dialog.pick menu { margin-top: 4px; }
 .checks label { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
 .toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #333; padding: 10px 16px; border-radius: 8px; z-index: 10; max-width: 90vw; }
 
