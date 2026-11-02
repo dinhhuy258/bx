@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -46,6 +47,7 @@ type Backend interface {
 	SyncApply(ctx context.Context, r api.SyncApplyRequest) (api.SyncResult, error)
 	Cleanup(ctx context.Context) (api.Cleanup, error)
 	CleanupApply(ctx context.Context, ids []string) (api.CleanupResult, error)
+	Artifacts(ctx context.Context, project string, num int) (api.ArtifactList, error)
 }
 
 // Conn is one open session stream.
@@ -104,6 +106,11 @@ type (
 		removed int
 		err     error
 	}
+	artifactsMsg struct {
+		num  int
+		list api.ArtifactList
+		err  error
+	}
 )
 
 // Picker entries after the project names.
@@ -127,6 +134,7 @@ const (
 	pickStoryPR         // the pull request of a new story
 	pickOverrideProject // settings › git: the project of a new base override
 	pickOverrideBranch  // settings › git: the base branch of a project
+	pickArtifact        // a page of the selected session, opened in the browser
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -164,10 +172,12 @@ type Model struct {
 	afterShell     *Target
 	afterShellNote bool
 
-	picker    *ui.Picker
-	pickKind  pickKind
-	pickStory string   // the story of a repository checklist
-	addRepos  []string // the repositories of an add waiting for its y/n
+	picker       *ui.Picker
+	pickKind     pickKind
+	artifactURLs map[string]string        // the artifact picker's links, by file name
+	browse       func(url string) tea.Cmd // opens a link in the local browser; tests replace it
+	pickStory    string                   // the story of a repository checklist
+	addRepos     []string                 // the repositories of an add waiting for its y/n
 
 	draft      *storyDraft        // the new story being picked; see story.go
 	busy       string             // the key bar while a story is fetched or created
@@ -207,7 +217,7 @@ type Model struct {
 // it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, browse: openBrowser, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -228,6 +238,19 @@ func tmuxSelect(dir string) tea.Cmd {
 	edge := map[string]string{"L": "#{pane_at_left}", "R": "#{pane_at_right}"}[dir]
 	return func() tea.Msg {
 		_ = exec.Command("tmux", "if-shell", "-F", "-t", pane, edge, "", "select-pane -t "+pane+" -"+dir).Run()
+		return nil
+	}
+}
+
+// openBrowser opens u in this machine's browser: `open` on macOS, `xdg-open` elsewhere. A
+// failure is quiet, because the key bar shows the link anyway.
+func openBrowser(u string) tea.Cmd {
+	return func() tea.Msg {
+		name := "xdg-open"
+		if runtime.GOOS == "darwin" {
+			name = "open"
+		}
+		_ = exec.Command(name, u).Run()
 		return nil
 	}
 }
@@ -402,6 +425,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.gotSyncApplied(msg)
 	case cleanupMsg:
 		m.gotCleanup(msg)
+		return m, nil
+	case artifactsMsg:
+		m.gotArtifacts(msg)
 		return m, nil
 	case cleanedMsg:
 		if msg.err != nil {
@@ -789,6 +815,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "cleanup":
 		return m, m.loadCleanup()
+	case "artifacts":
+		if sess != nil {
+			return m, m.loadArtifacts(num)
+		}
 	case "close_story":
 		if row.Kind == ui.RowStory && row.Story != "" {
 			text := fmt.Sprintf("close story %s, stop its sessions and remove its worktree? y/n", row.Story)
@@ -1143,6 +1173,14 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 		case pickCleanup:
 			m.pickCleanup(checked)
 			return nil
+		case pickArtifact:
+			u := m.artifactURLs[choice]
+			if u == "" {
+				m.setFlash(`no link: the artifacts file server is off (serve.files_listen = "off")`)
+				return nil
+			}
+			m.setFlash(u)
+			return m.browse(u)
 		}
 		switch choice {
 		case addFolder:
@@ -1476,6 +1514,34 @@ func (m *Model) gotCleanup(msg cleanupMsg) {
 		}
 	}
 	m.pickKind, m.cleanItems = pickCleanup, msg.c.Items
+}
+
+// loadArtifacts asks the server for session num's pages.
+func (m *Model) loadArtifacts(num int) tea.Cmd {
+	be, ctx, project := m.be, m.ctx, m.project
+	return func() tea.Msg {
+		list, err := be.Artifacts(ctx, project, num)
+		return artifactsMsg{num, list, err}
+	}
+}
+
+// gotArtifacts opens the picker of a session's pages, newest first.
+func (m *Model) gotArtifacts(msg artifactsMsg) {
+	if msg.err != nil {
+		m.setFlash("error: " + msg.err.Error())
+		return
+	}
+	if len(msg.list.Files) == 0 {
+		m.setFlash("no artifacts yet · ask Claude for an HTML page")
+		return
+	}
+	names := make([]string, 0, len(msg.list.Files))
+	m.artifactURLs = map[string]string{}
+	for _, f := range msg.list.Files {
+		names = append(names, f.Name)
+		m.artifactURLs[f.Name] = f.URL
+	}
+	m.picker, m.pickKind = ui.NewPicker(fmt.Sprintf("artifacts · [%d]", msg.num), names), pickArtifact
 }
 
 // pickCleanup opens the confirm box over the checked labels of the cleanup checklist.

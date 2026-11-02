@@ -25,7 +25,7 @@ var labels = map[string]string{
 	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "lazygit": "lazygit", "nvim": "nvim", "shell": "new shell", "prs": "PRs",
 	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
 	"settings": "settings", "add_repo": "add repo", "stop": "stop", "delete": "delete",
-	"cleanup": "cleanup",
+	"cleanup": "cleanup", "artifacts": "artifacts",
 }
 
 // KeyBar builds the bottom line of the client.
@@ -91,7 +91,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 			}
 			parts = append(parts, lk("stop"))
 		}
-		parts = append(parts, lk("rename"), lk("delete"))
+		parts = append(parts, lk("rename"), lk("delete"), lk("artifacts"))
 	} else if r.Kind == RowShell {
 		parts = append(parts, lk("rename"))
 		if key := cfg.Keys.First(cfg.Keys.List, "delete"); key != "" {

@@ -44,6 +44,7 @@ type fakeBackend struct {
 	cleanup   api.Cleanup  // the reply of every cleanup scan
 	cleaned   [][]string   // the ids of every cleanup apply
 	// new stories
+	artifacts   api.ArtifactList      // the reply of every artifacts list
 	reads       []string              // "storyinfo", "branches fetch", "prs <q>"
 	info        api.StoryInfo         // the reply of storyinfo
 	branchList  api.BranchList        // the reply of branches
@@ -125,6 +126,11 @@ func (f *fakeBackend) NewStory(ctx context.Context, project string, a api.Action
 }
 
 func (f *fakeBackend) Cleanup(context.Context) (api.Cleanup, error) { return f.cleanup, nil }
+
+func (f *fakeBackend) Artifacts(_ context.Context, project string, num int) (api.ArtifactList, error) {
+	f.reads = append(f.reads, fmt.Sprintf("artifacts %s %d", project, num))
+	return f.artifacts, nil
+}
 
 func (f *fakeBackend) CleanupApply(_ context.Context, ids []string) (api.CleanupResult, error) {
 	f.cleaned = append(f.cleaned, ids)
@@ -1894,5 +1900,50 @@ func TestSettingsGitWorkspaceBranchesNameTheMissingRepos(t *testing.T) {
 	h.press("Enter")
 	if got := h.be.actions[len(h.be.actions)-1]; got != "lab base develop" {
 		t.Fatalf("the label's note must not reach the server: %q", h.be.actions)
+	}
+}
+
+func TestArtifactsPickerOpensThePage(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	var browsed []string
+	h.m.browse = func(u string) tea.Cmd { browsed = append(browsed, u); return nil }
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "v artifacts") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.press("v")
+	if !strings.Contains(h.m.View().Content, "no artifacts yet") {
+		t.Fatal(h.m.View().Content)
+	}
+	const report = "http://100.64.0.1:7358/home-network/1/report.html"
+	h.be.artifacts = api.ArtifactList{Files: []api.Artifact{
+		{Name: "report.html", URL: report},
+		{Name: "old.html", URL: "http://100.64.0.1:7358/home-network/1/old.html"},
+	}}
+	h.press("v")
+	v := h.m.View().Content
+	for _, want := range []string{"artifacts · [1]", "report.html", "old.html"} {
+		if !strings.Contains(v, want) {
+			t.Fatalf("no %q in\n%s", want, v)
+		}
+	}
+	h.press("Enter")
+	if fmt.Sprint(browsed) != "["+report+"]" {
+		t.Fatalf("browsed = %v", browsed)
+	}
+	if !strings.Contains(h.m.View().Content, report) {
+		t.Fatal(h.m.View().Content)
+	}
+	if got := fmt.Sprint(h.be.reads); got != "[artifacts home-network 1 artifacts home-network 1]" {
+		t.Fatalf("reads = %s", got)
+	}
+}
+
+func TestArtifactsWithFileServerOff(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.m.browse = func(string) tea.Cmd { t.Fatal("browsed with no link"); return nil }
+	h.be.artifacts = api.ArtifactList{Files: []api.Artifact{{Name: "report.html"}}}
+	h.press("v", "Enter")
+	if !strings.Contains(h.m.View().Content, "files_listen") {
+		t.Fatal(h.m.View().Content)
 	}
 }

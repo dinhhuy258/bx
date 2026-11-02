@@ -153,6 +153,14 @@ func (c *API) CleanupApply(ctx context.Context, ids []string) (api.CleanupResult
 	return out, c.call(ctx, pollTimeout, http.MethodPost, "/api/cleanup", api.CleanupRequest{IDs: ids}, &out)
 }
 
+// Artifacts is GET /api/projects/{name}/sessions/{num}/artifacts: the session's HTML pages,
+// newest first, with their file server links.
+func (c *API) Artifacts(ctx context.Context, project string, num int) (api.ArtifactList, error) {
+	var out api.ArtifactList
+	path := fmt.Sprintf("/api/projects/%s/sessions/%d/artifacts", url.PathEscape(project), num)
+	return out, c.call(ctx, pollTimeout, http.MethodGet, path, nil, &out)
+}
+
 // StreamURL is the WebSocket address of one session's terminal at a given size.
 func (c *API) StreamURL(project string, num, cols, rows int) string {
 	ws := "ws" + strings.TrimPrefix(c.Base, "http")
