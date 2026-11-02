@@ -154,12 +154,14 @@ func (f *fakeBackend) Snapshot(_ context.Context, p string) (api.Snapshot, error
 	return s, nil
 }
 
+// Do records "<project> <action> [num] [story] [title] [name] [base] [repos] force" (the set
+// parts); base also sets the project's override in the project list.
 func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action) (api.Result, error) {
 	parts := []string{project, action}
 	if a.Num != 0 {
 		parts = append(parts, fmt.Sprint(a.Num))
 	}
-	for _, s := range []string{a.Story, a.Title, a.Name} {
+	for _, s := range []string{a.Story, a.Title, a.Name, a.Base} {
 		if s != "" {
 			parts = append(parts, s)
 		}
@@ -174,6 +176,12 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 	switch {
 	case action == "sessions":
 		return api.Result{Num: 9}, nil
+	case action == "base":
+		for i := range f.projects {
+			if f.projects[i].Name == project {
+				f.projects[i].BaseOverride = a.Base
+			}
+		}
 	case action == "stories/close" && !a.Force && f.dirty > 0:
 		return api.Result{Error: "dirty", Dirty: f.dirty}, errors.New("dirty")
 	case action == "delete" && !a.Force && f.running[a.Num]:
@@ -327,6 +335,10 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 		case "Down":
 			msg = tea.KeyPressMsg{Code: tea.KeyDown}
+		case "BSpace":
+			msg = tea.KeyPressMsg{Code: tea.KeyBackspace}
+		case "Tab":
+			msg = tea.KeyPressMsg{Code: tea.KeyTab}
 		case "PgUp":
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 		case "C-h", "C-l":
@@ -1370,5 +1382,110 @@ func TestCleanupChecklistAndConfirm(t *testing.T) {
 	}
 	if !strings.Contains(h.m.View().Content, "removed 1 item") {
 		t.Fatal(h.m.View().Content)
+	}
+}
+
+// gitSettings opens settings › git over home-network and lab, lab's branches being list.
+func gitSettings(t *testing.T, list ...api.Branch) *harness {
+	t.Helper()
+	h := start(t, 120, 30, "running", "running")
+	h.be.info.Detected = "origin/main"
+	h.be.branchList = api.BranchList{Branches: list}
+	h.press("S", "Tab")
+	if h.m.settings == nil || !h.m.settings.GitShown() {
+		t.Fatalf("S, Tab should open settings › git:\n%s", ansi.Strip(h.m.View().Content))
+	}
+	return h
+}
+
+func TestSettingsGitAddsAnOverride(t *testing.T) {
+	h := gitSettings(t, api.Branch{Name: "develop", Local: true, Remote: true}, api.Branch{Name: "main", Remote: true})
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "No overrides. New stories start from each repo's default branch.") || !strings.Contains(v, "j/k move · ⏎ choose · ⌫ remove · esc back") {
+		t.Fatalf("empty git section:\n%s", v)
+	}
+	h.press("Enter") // + add override
+	v = ansi.Strip(h.m.View().Content)
+	if h.m.picker == nil || h.m.pickKind != pickOverrideProject || !strings.Contains(v, "base override for…") || !strings.Contains(v, "home-network") {
+		t.Fatalf("no project picker:\n%s", v)
+	}
+	h.typeText("lab")
+	h.press("Enter")
+	if got := strings.Join(h.be.reads, ","); got != "storyinfo,branches fetch=false" {
+		t.Fatalf("reads = %s (no fetch for the base picker)", got)
+	}
+	v = ansi.Strip(h.m.View().Content)
+	if h.m.pickKind != pickOverrideBranch || !strings.Contains(v, "base branch for lab · detected: origin/main") || strings.Contains(v, "not in") {
+		t.Fatalf("no branch picker:\n%s", v)
+	}
+	h.press("Enter") // develop
+	if got := h.be.actions[len(h.be.actions)-1]; got != "lab base develop" {
+		t.Fatalf("actions = %q", h.be.actions)
+	}
+	v = ansi.Strip(h.m.View().Content)
+	if h.m.picker != nil || !strings.Contains(v, "lab: new stories start from origin/develop") || !strings.Contains(v, "lab  develop") {
+		t.Fatalf("after the save the row should show:\n%s", v)
+	}
+	if len(h.be.saves) != 0 {
+		t.Fatalf("Enter in settings › git must not save the Claude fields: %v", h.be.saves)
+	}
+	h.press("j", "Enter") // the add row again: lab is left out now
+	if v = ansi.Strip(h.m.picker.Render(120, 10)); h.m.pickKind != pickOverrideProject || strings.Contains(v, "lab") {
+		t.Fatalf("the picker must leave out lab:\n%s", v)
+	}
+}
+
+func TestSettingsGitChangesAndRemovesAnOverride(t *testing.T) {
+	h := start(t, 120, 30, "running", "running")
+	h.be.projects[1].BaseOverride = "develop"
+	h.be.branchList = api.BranchList{Branches: []api.Branch{{Name: "main", Remote: true}, {Name: "develop", Remote: true}, {Name: "release/1.4", Local: true}}}
+	drain(h.m, h.m.loadProjects())
+	h.press("S", "Tab")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "› lab  develop") {
+		t.Fatalf("the override row:\n%s", v)
+	}
+	h.press("Enter") // change it
+	if h.m.pickKind != pickOverrideBranch || h.m.picker.Choice() != "develop" {
+		t.Fatalf("the branch picker should open on the current override, at %q", h.m.picker.Choice())
+	}
+	h.typeText("release")
+	h.press("Enter")
+	if got := h.be.actions[len(h.be.actions)-1]; got != "lab base release/1.4" {
+		t.Fatalf("actions = %q", h.be.actions)
+	}
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "lab: new stories start from release/1.4") || !strings.Contains(v, "lab  release/1.4") {
+		t.Fatalf("a local-only branch has no origin/:\n%s", v)
+	}
+	n := len(h.be.actions)
+	h.press("BSpace")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "remove base override of lab (release/1.4)? y/n") {
+		t.Fatalf("Backspace should ask:\n%s", v)
+	}
+	h.press("n")
+	if len(h.be.actions) != n || h.m.settings == nil {
+		t.Fatalf("n keeps the override: %q", h.be.actions[n:])
+	}
+	h.press("BSpace", "y")
+	if got := h.be.actions[len(h.be.actions)-1]; got != "lab base" {
+		t.Fatalf("actions = %q", h.be.actions)
+	}
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "lab: new stories start from each repo's default branch") || !strings.Contains(v, "No overrides.") {
+		t.Fatalf("after the remove:\n%s", v)
+	}
+}
+
+func TestSettingsGitWorkspaceBranchesNameTheMissingRepos(t *testing.T) {
+	h := gitSettings(t, api.Branch{Name: "develop", Remote: true, Repos: []string{"api"}}, api.Branch{Name: "main", Remote: true, Repos: []string{"api", "web"}})
+	h.press("Enter")
+	h.typeText("lab")
+	h.press("Enter")
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "develop  · not in web") || strings.Contains(v, "main  · not in") {
+		t.Fatalf("workspace branch picker:\n%s", v)
+	}
+	h.press("Enter")
+	if got := h.be.actions[len(h.be.actions)-1]; got != "lab base develop" {
+		t.Fatalf("the label's note must not reach the server: %q", h.be.actions)
 	}
 }

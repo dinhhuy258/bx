@@ -1,7 +1,7 @@
 bx settings                                                                                                          dev
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
-                     │ For new sessions. Running and resumed ones keep what they started with.
+   Git               │ For new sessions. Running and resumed ones keep what they started with.
                      │
                      │  › Model            ◂ opus              ▸ •
                      │    Effort           ◂ default           ▸

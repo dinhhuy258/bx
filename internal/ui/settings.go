@@ -22,11 +22,14 @@ const (
 	SettingsUpToDate                              // s with nothing to sync
 	SettingsNothingSelected                       // s with no item selected
 	SettingsSyncApply                             // y in the confirmation: sync SyncScope
+	SettingsGitChoose                             // Enter in the git section: read GitChoice
+	SettingsGitRemove                             // Backspace on an override: remove GitChoice's
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
 // fields the server sent. Edits stay here until they are saved. The Claude section also shows
 // the sync list below its fields; fld is the cursor over the fields, then the list's rows.
+// The Git section is the client's own (see settings_git.go); there fld is the cursor over its rows.
 type Settings struct {
 	Server   string // the server's host, for the header
 	sections []settings.Section
@@ -34,6 +37,7 @@ type Settings struct {
 	edits    map[string]string // changed keys only
 	sec, fld int
 	sync     syncList
+	git      []GitOverride // the git section's rows, by project
 }
 
 // NewSettings starts an empty screen; Load fills it.
@@ -44,10 +48,11 @@ func NewSettings(server string) *Settings {
 // Loaded reports whether the server's sections have arrived.
 func (s *Settings) Loaded() bool { return len(s.sections) > 0 }
 
-// Load takes what the server holds, after a GET or a save. Edits that now match it are dropped.
+// Load takes what the server holds, after a GET or a save, and adds the git section after the
+// server's sections. Edits that now match it are dropped.
 func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 	if len(sections) > 0 {
-		s.sections = sections
+		s.sections = append(slices.Clone(sections), settings.Section{ID: gitSection, Title: "Git"})
 	}
 	s.saved = maps.Clone(values)
 	if s.saved == nil {
@@ -55,7 +60,15 @@ func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 	}
 	maps.DeleteFunc(s.edits, func(k, v string) bool { return s.saved[k] == v })
 	s.sec = min(s.sec, max(len(s.sections)-1, 0))
-	s.fld = min(s.fld, max(len(s.fields())+len(s.syncRows())-1, 0))
+	s.fld = min(s.fld, max(s.rowCount()-1, 0))
+}
+
+// rowCount is the number of rows the cursor moves through in the open section.
+func (s *Settings) rowCount() int {
+	if s.GitShown() {
+		return len(s.git) + 1
+	}
+	return len(s.fields()) + len(s.syncRows())
 }
 
 // Changes are the edited keys and their new values.
@@ -86,10 +99,13 @@ func (s *Settings) field() (settings.Field, bool) {
 
 // Key feeds one key: Tab next section, j/k field or sync row, h/l the value or a folder's
 // fold, Space a sync checkbox, s the sync confirmation, r a rescan, Enter save, Esc close.
-// While the confirmation is open only y, n and Esc act.
+// While the confirmation is open only y, n and Esc act. The git section has its own keys (gitKey).
 func (s *Settings) Key(key string) SettingsResult {
 	if s.sync.confirm {
 		return s.confirmKey(key)
+	}
+	if s.GitShown() {
+		return s.gitKey(key)
 	}
 	switch key {
 	case "Esc", "C-c":
@@ -105,7 +121,7 @@ func (s *Settings) Key(key string) SettingsResult {
 	case "Tab":
 		s.sec, s.fld = (s.sec+1)%len(s.sections), 0
 	case "j", "Down", "C-j":
-		s.fld = min(s.fld+1, max(len(s.fields())+len(s.syncRows())-1, 0))
+		s.fld = min(s.fld+1, max(s.rowCount()-1, 0))
 	case "k", "Up", "C-k":
 		s.fld = max(s.fld-1, 0)
 	case "h", "Left":
@@ -185,6 +201,11 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 			}
 		}
 		lines = append(lines, truncate(" "+strings.Join(tabs, pal.dim.Render(" · ")), w), "")
+		if s.GitShown() {
+			git := s.gitLines(w, h-len(lines), pal)
+			git[0] = truncate(" "+git[0], w) // under the tabs
+			return pad(append(lines, git...), h)
+		}
 		if s.sync.confirm {
 			return pad(append(lines, s.confirmLines(w, h-len(lines), pal)...), h)
 		}
@@ -205,12 +226,17 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 		}
 		l = append(l, truncate(" "+cursor+" "+title, left))
 	}
-	r := []string{pal.bold.Render(s.sections[s.sec].Title)}
-	if help := s.sections[s.sec].Help; help != "" {
-		r = append(r, wrap(help, right, pal.dim)...)
+	var r []string
+	if !s.GitShown() {
+		r = append(r, pal.bold.Render(s.sections[s.sec].Title))
+		if help := s.sections[s.sec].Help; help != "" {
+			r = append(r, wrap(help, right, pal.dim)...)
+		}
+		r = append(r, "")
 	}
-	r = append(r, "")
 	switch {
+	case s.GitShown():
+		r = s.gitLines(right, h-len(lines), pal)
 	case s.sync.confirm:
 		r = append(r, s.confirmLines(right, h-len(lines)-len(r), pal)...)
 	default:

@@ -115,13 +115,15 @@ type pickKind int
 const (
 	pickProjects pickKind = iota
 	pickRepos
-	pickStoryRepos  // the repositories of a new workspace story
-	pickAddRepos    // repositories to add to a workspace story
-	pickCleanup     // what cleanup removes
-	pickStorySource // new story from: new branch, existing branch or pull request
-	pickStoryType   // the branch type of a new branch
-	pickStoryBranch // the existing branch of a new story
-	pickStoryPR     // the pull request of a new story
+	pickStoryRepos      // the repositories of a new workspace story
+	pickAddRepos        // repositories to add to a workspace story
+	pickCleanup         // what cleanup removes
+	pickStorySource     // new story from: new branch, existing branch or pull request
+	pickStoryType       // the branch type of a new branch
+	pickStoryBranch     // the existing branch of a new story
+	pickStoryPR         // the pull request of a new story
+	pickOverrideProject // settings › git: the project of a new base override
+	pickOverrideBranch  // settings › git: the base branch of a project
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -170,7 +172,8 @@ type Model struct {
 	syncSeq      int          // bumped on every sync scan or apply; older replies are dropped
 	syncMac      claudesync.MacScan
 	syncPlan     api.SyncPlan
-	syncDone     bool // a sync succeeded since the screen opened or the last r
+	syncDone     bool          // a sync succeeded since the screen opened or the last r
+	override     overrideDraft // the base override being picked in settings › git; see story.go
 
 	activity bool        // the list pane shows the activity list of every project
 	act      ui.Activity // its cursor
@@ -359,6 +362,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.gotPRs(msg)
 	case storyMsg:
 		return m, m.gotStory(msg)
+	case overrideBranchesMsg:
+		m.gotOverrideBranches(msg)
+		return m, nil
 	case createdMsg:
 		if msg.err != nil {
 			m.setFlash("error: " + msg.err.Error())
@@ -421,6 +427,9 @@ func (m *Model) gotProjects(msg projectsMsg) tea.Cmd {
 		return nil
 	}
 	m.projects = msg.list
+	if m.settings != nil {
+		m.settings.SetGitOverrides(m.gitOverrides())
+	}
 	if m.opened.keep(func(name string) bool {
 		return slices.ContainsFunc(msg.list, func(p api.ProjectSummary) bool { return p.Name == name })
 	}) {
@@ -965,6 +974,10 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			return m.createStory()
 		case pickAddRepos:
 			return m.addStoryRepos(m.pickStory, checked, false)
+		case pickOverrideProject:
+			return m.chooseOverrideBranch(choice)
+		case pickOverrideBranch:
+			return m.setOverride(choice)
 		case pickCleanup:
 			m.pickCleanup(checked)
 			return nil
@@ -998,6 +1011,7 @@ func (m *Model) openSettings() tea.Cmd {
 		}
 	}
 	m.settings, m.settingsNote, m.syncDone = ui.NewSettings(host), "loading settings…", false
+	m.settings.SetGitOverrides(m.gitOverrides())
 	return tea.Batch(m.loadSettings(), m.scanSync())
 }
 
@@ -1061,6 +1075,14 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 		m.setFlash("Nothing selected")
 	case ui.SettingsSyncApply:
 		return m.applySync()
+	case ui.SettingsGitChoose:
+		if project, add := m.settings.GitChoice(); !add {
+			return m.chooseOverrideBranch(project)
+		}
+		m.openOverrideProjects()
+	case ui.SettingsGitRemove:
+		project, _ := m.settings.GitChoice()
+		m.openPrompt(ui.PromptRemoveOverride, project, fmt.Sprintf("remove base override of %s (%s)? y/n", project, m.baseOverride(project)), "")
 	}
 	return nil
 }
@@ -1143,6 +1165,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		}
 	case ui.PromptDiscardSettings:
 		m.settings = nil
+	case ui.PromptRemoveOverride:
+		return m.removeOverride(target)
 	case ui.PromptAddFolder:
 		if text == "" {
 			return nil
@@ -1516,6 +1540,8 @@ func (m *Model) bar() string {
 		text = m.prompt.Line()
 	case m.settings != nil && m.flash != "":
 		text = m.flash
+	case m.settings != nil && m.settings.GitShown():
+		text = ui.SettingsGitBar(m.narrow)
 	case m.settings != nil:
 		text = ui.SettingsBar(len(m.settings.Changes()), m.settings.SyncChanges(), m.narrow)
 	case m.busy != "" && !m.claudeFocused: // Esc on the list cancels it

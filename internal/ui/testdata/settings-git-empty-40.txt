@@ -1,0 +1,13 @@
+bx settings                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Claude · Git
+
+ git · base branch overrides
+
+   No overrides. New stories start from
+   each repo's default branch.
+ › + add override
+
+
+
+

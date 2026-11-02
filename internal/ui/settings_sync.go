@@ -232,7 +232,7 @@ func (s *Settings) restoreCursor(key string) {
 			return
 		}
 	}
-	s.fld = min(s.fld, max(n+len(s.syncRows())-1, 0))
+	s.fld = min(s.fld, max(s.rowCount()-1, 0))
 }
 
 // toggle checks or clears the item, or all items of the folder, under the cursor. It reports

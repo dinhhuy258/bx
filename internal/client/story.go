@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -397,4 +398,148 @@ func (m *Model) stopBusy() {
 		m.busyCancel()
 	}
 	m.busy, m.busyCancel = "", nil
+}
+
+// overrideDraft is a base override between its pickers in settings › git.
+type overrideDraft struct {
+	project  string
+	branches map[string]api.Branch // branch picker: label → branch
+}
+
+// overrideBranchesMsg is the detected base and the branches of a project, for the base
+// branch picker of settings › git.
+type overrideBranchesMsg struct {
+	project string
+	info    api.StoryInfo
+	list    api.BranchList
+	err     error
+}
+
+// gitOverrides are the projects with a base override, for settings › git.
+func (m *Model) gitOverrides() []ui.GitOverride {
+	var out []ui.GitOverride
+	for _, p := range m.projects {
+		if p.BaseOverride != "" {
+			out = append(out, ui.GitOverride{Project: p.Name, Base: p.BaseOverride})
+		}
+	}
+	return out
+}
+
+// baseOverride is the base override of project, "" for none.
+func (m *Model) baseOverride(project string) string {
+	for _, p := range m.projects {
+		if p.Name == project {
+			return p.BaseOverride
+		}
+	}
+	return ""
+}
+
+// openOverrideProjects opens the picker of the projects without a base override.
+func (m *Model) openOverrideProjects() {
+	var items []string
+	for _, p := range m.projects {
+		if p.BaseOverride == "" {
+			items = append(items, p.Name)
+		}
+	}
+	if len(items) == 0 {
+		m.setFlash("every project has a base override")
+		return
+	}
+	m.picker, m.pickKind = ui.NewPicker("base override for…", items), pickOverrideProject
+}
+
+// chooseOverrideBranch loads the detected base and the branches of project, without fetching,
+// for the base branch picker.
+func (m *Model) chooseOverrideBranch(project string) tea.Cmd {
+	m.override = overrideDraft{project: project}
+	m.setFlash("loading…")
+	be, ctx := m.be, m.ctx
+	return func() tea.Msg {
+		info, err := be.StoryInfo(ctx, project)
+		if err != nil {
+			return overrideBranchesMsg{project: project, err: err}
+		}
+		list, err := be.Branches(ctx, project, false)
+		return overrideBranchesMsg{project, info, list, err}
+	}
+}
+
+// gotOverrideBranches opens the base branch picker, on the current override if there is one.
+// In a workspace a branch some repositories lack says which.
+func (m *Model) gotOverrideBranches(msg overrideBranchesMsg) {
+	if m.settings == nil || msg.project != m.override.project {
+		return
+	}
+	if msg.err != nil {
+		m.setFlash("error: " + msg.err.Error())
+		return
+	}
+	if len(msg.list.Branches) == 0 {
+		m.setFlash("no branches in " + msg.project)
+		return
+	}
+	m.flash = ""
+	var repos []string // a workspace's: every repository some branch is in
+	for _, b := range msg.list.Branches {
+		for _, r := range b.Repos {
+			if !slices.Contains(repos, r) {
+				repos = append(repos, r)
+			}
+		}
+	}
+	slices.Sort(repos)
+	current := m.baseOverride(msg.project)
+	m.override.branches = map[string]api.Branch{}
+	items := make([]string, 0, len(msg.list.Branches))
+	selected := ""
+	for _, b := range msg.list.Branches {
+		label := b.Name
+		if missing := slices.DeleteFunc(slices.Clone(repos), func(r string) bool { return slices.Contains(b.Repos, r) }); len(missing) > 0 {
+			label += "  · not in " + strings.Join(missing, ", ")
+		}
+		items = append(items, label)
+		m.override.branches[label] = b
+		if b.Name == current {
+			selected = label
+		}
+	}
+	title := "base branch for " + msg.project
+	if msg.info.Detected != "" {
+		title += " · detected: " + msg.info.Detected
+	}
+	m.picker, m.pickKind = ui.NewPicker(title, items), pickOverrideBranch
+	if selected != "" {
+		m.picker.Select(selected)
+	}
+}
+
+// setOverride saves the chosen branch as the base override of the picked project.
+func (m *Model) setOverride(choice string) tea.Cmd {
+	p, b := m.override.project, m.override.branches[choice]
+	if p == "" || b.Name == "" {
+		return nil
+	}
+	if _, err := m.be.Do(m.ctx, p, "base", api.Action{Base: b.Name}); err != nil {
+		m.setFlash("error: " + err.Error())
+		return nil
+	}
+	base := b.Name
+	if b.Remote {
+		base = "origin/" + base
+	}
+	m.setFlash(p + ": new stories start from " + base)
+	return m.loadProjects()
+}
+
+// removeOverride drops the base override of project: new stories go back to the detected base.
+func (m *Model) removeOverride(project string) tea.Cmd {
+	if _, err := m.be.Do(m.ctx, project, "base", api.Action{}); err != nil {
+		m.setFlash("error: " + err.Error())
+		return nil
+	}
+	m.setFlash(project + ": new stories start from each repo's default branch")
+	return m.loadProjects()
 }
