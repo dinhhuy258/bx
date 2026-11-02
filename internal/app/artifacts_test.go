@@ -1,7 +1,10 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -55,5 +58,49 @@ func TestArtifactsWithoutFileServerGiveNoLink(t *testing.T) {
 	}
 	if strings.Contains(got(), "<file name>") {
 		t.Fatalf("link without a file server:\n%s", got())
+	}
+}
+
+func TestStopKeepsArtifactsDeleteRemovesThem(t *testing.T) {
+	a, _, p := artifactsApp(t)
+	num, err := a.NewChat(p, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := filepath.Join(a.ArtifactsDir(p.Name, num), "report.html")
+	if err := os.WriteFile(page, []byte("<p>x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Stop(p, num); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(page); err != nil {
+		t.Fatalf("stop removed the page: %v", err)
+	}
+	if err := a.DeleteSession(p, num, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(a.ArtifactsDir(p.Name, num)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("folder left after delete: %v", err)
+	}
+}
+
+func TestCloseStoryRemovesArtifacts(t *testing.T) {
+	a, _, p := artifactsApp(t)
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "s1"}); err != nil {
+		t.Fatal(err)
+	}
+	num, err := a.NewSession(p, "s1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.ArtifactsDir(p.Name, num), "a.html"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CloseStory(p, "s1", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(a.ArtifactsDir(p.Name, num)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("folder left after close: %v", err)
 	}
 }

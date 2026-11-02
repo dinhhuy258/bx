@@ -41,3 +41,11 @@ func artifactPermissions(dir string) map[string]any {
 	rule := "/" + filepath.ToSlash(dir) + "/**"
 	return map[string]any{"allow": []string{"Write(" + rule + ")", "Edit(" + rule + ")"}}
 }
+
+// removeSessionFiles deletes session num's uploads and artifacts. Best effort: a leftover
+// folder is harmless, and uploads.Remove refuses a symlinked path rather than follow it.
+func (a *App) removeSessionFiles(project string, num int) {
+	for _, base := range []string{a.Cfg.UploadsDir(), a.Cfg.ArtifactsDir()} {
+		_ = uploads.Remove(base, project, num)
+	}
+}

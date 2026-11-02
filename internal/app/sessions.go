@@ -217,7 +217,7 @@ func (a *App) Stop(p *state.Project, num int) error {
 	return nil
 }
 
-// DeleteSession forgets a session and its uploads. Without force a session whose tmux session
+// DeleteSession forgets a session and its uploads and artifacts. Without force a session whose tmux session
 // is alive is refused with *RunningError; force kills it first. Claude's transcript in
 // ~/.claude stays, and the number is not reused.
 func (a *App) DeleteSession(p *state.Project, num int, force bool) error {
@@ -236,7 +236,7 @@ func (a *App) DeleteSession(p *state.Project, num int, force bool) error {
 			return err
 		}
 	}
-	_ = uploads.Remove(a.Cfg.UploadsDir(), p.Name, num) // best effort: a leftover folder is harmless
+	a.removeSessionFiles(p.Name, num)
 	delete(p.Sessions, num)
 	return a.SaveProject(p)
 }
@@ -379,10 +379,10 @@ func (a *App) stopStory(p *state.Project, name string) error {
 	return nil
 }
 
-// forgetStory drops the story and its sessions, with their uploads, from the state.
+// forgetStory drops the story and its sessions, with their uploads and artifacts, from the state.
 func (a *App) forgetStory(p *state.Project, name string) error {
 	for _, n := range p.SessionsOf(name) {
-		_ = uploads.Remove(a.Cfg.UploadsDir(), p.Name, n) // best effort: a leftover folder is harmless
+		a.removeSessionFiles(p.Name, n)
 		delete(p.Sessions, n)
 	}
 	delete(p.Stories, name)
