@@ -97,7 +97,7 @@ func TestCloseStoryRemovesArtifacts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(a.ArtifactsDir(p.Name, num), "a.html"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.CloseStory(p, "s1", false); err != nil {
+	if _, err := a.CloseStory(p, "s1", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(a.ArtifactsDir(p.Name, num)); !errors.Is(err, os.ErrNotExist) {

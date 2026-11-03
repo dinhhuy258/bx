@@ -3,20 +3,19 @@ import { ago, confirmBox, sheet, toast } from './ui.js';
 
 // withForce runs an action that the server may refuse with 409 (uncommitted files, or a
 // session that is still open) and offers to resend it with force. message(result) builds the
-// question; without it the question lists the uncommitted files. It resolves to true when the
-// action went through, false otherwise; errors are toasted.
+// question; without it the question lists the uncommitted files. It resolves to the reply (an
+// api.Result, {} for an empty body) when the action went through, false otherwise; errors are
+// toasted.
 export async function withForce(project, action, body, what, { message, ok = 'Continue', danger = false } = {}) {
   try {
-    await api.action(project, action, body);
-    return true;
+    return (await api.action(project, action, body)) || {};
   } catch (e) {
     if (e.status !== 409 || !e.result) { toast(e.message); return false; }
     const detail = e.result.detail ? ` (${e.result.detail})` : '';
     const text = message ? message(e.result) : `${what}: ${e.result.dirty} uncommitted files${detail}. Continue anyway?`;
     if (!(await confirmBox(text, ok, { danger }))) return false;
     try {
-      await api.action(project, action, { ...body, force: true });
-      return true;
+      return (await api.action(project, action, { ...body, force: true })) || {};
     } catch (e2) {
       toast(e2.message);
       return false;

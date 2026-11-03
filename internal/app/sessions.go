@@ -1,14 +1,18 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/dinhhuy258/bx/internal/claude"
+	"github.com/dinhhuy258/bx/internal/git"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/uploads"
 )
@@ -330,15 +334,28 @@ func (e *DirtyError) Error() string {
 	return fmt.Sprintf("story %q has %d uncommitted files", e.Story, e.Files)
 }
 
-// CloseStory stops the story's sessions, removes its worktree and forgets it. Without force
-// a dirty worktree is refused with *DirtyError; force discards the changes. The branches stay.
-func (a *App) CloseStory(p *state.Project, name string, force bool) error {
-	if _, ok := p.Stories[name]; !ok {
-		return fmt.Errorf("no story %q", name)
+// CloseStory stops the story's sessions, removes its worktree, forgets it and deletes its
+// branch, here and on origin. Without force a dirty worktree is refused with *DirtyError; force
+// discards the changes. Once the story is closed a branch that cannot be deleted is no error:
+// the returned message says what happened to it (see deleteBranches).
+func (a *App) CloseStory(p *state.Project, name string, force bool) (string, error) {
+	story, ok := p.Stories[name]
+	if !ok {
+		return "", fmt.Errorf("no story %q", name)
 	}
+	var err error
 	if p.IsWorkspace() {
-		return a.closeWorkspaceStory(p, name, force)
+		err = a.closeWorkspaceStory(p, name, force)
+	} else {
+		err = a.closeRepoStory(p, name, force)
 	}
+	if err != nil {
+		return "", err
+	}
+	return a.deleteBranches(p, story), nil
+}
+
+func (a *App) closeRepoStory(p *state.Project, name string, force bool) error {
 	dir := a.Cfg.WorktreeDir(p.Name, name)
 	if !force {
 		if n, err := a.Git.DirtyCount(dir); err == nil && n > 0 {
@@ -354,6 +371,82 @@ func (a *App) CloseStory(p *state.Project, name string, force bool) error {
 		}
 	}
 	return a.forgetStory(p, name)
+}
+
+// BranchDeleteTimeout bounds the delete of a closed story's branch on origin, in each
+// repository. It runs under the write lock, so it is short.
+const BranchDeleteTimeout = 30 * time.Second
+
+// defaultBranches are never deleted with a story, whatever it was made from.
+var defaultBranches = []string{"main", "master", "develop", "trunk"}
+
+// deleteBranches deletes a closed story's branch in each of its repositories: the local branch,
+// then origin's (see git.DeleteRemoteBranch). A base branch (main, master, develop, trunk,
+// origin's HEAD, the base override, the branch the story forked from) is kept. It returns one
+// line: "deleted branch feat/x (local, origin)", in a workspace "deleted branch feat/x (api:
+// local, origin · web: local)", then any branch kept or failed.
+func (a *App) deleteBranches(p *state.Project, story *state.Story) string {
+	type repo struct{ rel, dir, base string }
+	repos := []repo{{"", p.Path, story.Base}}
+	if p.IsWorkspace() {
+		repos = repos[:0]
+		for _, r := range story.Repos {
+			repos = append(repos, repo{r.Rel, filepath.Join(p.Path, r.Rel), r.Base})
+		}
+	}
+	b := story.Branch
+	var deleted, notes []string
+	for _, r := range repos {
+		at := func(s string) string { // "api: s" in a workspace
+			if r.rel == "" {
+				return s
+			}
+			return r.rel + ": " + s
+		}
+		if a.isBaseBranch(p, r.dir, r.base, b) {
+			notes = append(notes, at("kept "+b+", a base branch"))
+			continue
+		}
+		var done []string
+		if a.Git.RefExists(r.dir, "refs/heads/"+b) {
+			if err := a.Git.DeleteBranch(r.dir, b); err != nil {
+				notes = append(notes, at("local delete failed: "+err.Error()))
+			} else {
+				done = append(done, "local")
+			}
+		}
+		if a.Git.HasRemote(r.dir) {
+			ctx, cancel := context.WithTimeout(context.Background(), BranchDeleteTimeout)
+			ok, err := a.Git.DeleteRemoteBranch(ctx, r.dir, b)
+			cancel()
+			switch {
+			case errors.Is(err, git.ErrRemoteMoved):
+				notes = append(notes, at("kept "+b+" on origin, "+err.Error()))
+			case err != nil:
+				notes = append(notes, at("origin delete failed: "+err.Error()))
+			case ok:
+				done = append(done, "origin")
+			}
+		}
+		if len(done) > 0 {
+			deleted = append(deleted, at(strings.Join(done, ", ")))
+		}
+	}
+	var out []string
+	if len(deleted) > 0 {
+		out = append(out, fmt.Sprintf("deleted branch %s (%s)", b, strings.Join(deleted, " · ")))
+	}
+	return strings.Join(append(out, notes...), " · ")
+}
+
+// isBaseBranch reports whether b is a branch stories of repo start from, so closing a story on
+// it must not delete it.
+func (a *App) isBaseBranch(p *state.Project, repo, base, b string) bool {
+	if slices.Contains(defaultBranches, b) || b == p.BaseOverride || b == strings.TrimPrefix(base, "origin/") {
+		return true
+	}
+	head, err := a.Git.OriginHead(repo)
+	return err == nil && b == head
 }
 
 // stopStory kills the story's running sessions and shells.

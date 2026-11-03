@@ -821,10 +821,15 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "close_story":
 		if row.Kind == ui.RowStory && row.Story != "" {
-			text := fmt.Sprintf("close story %s, stop its sessions and remove its worktree? y/n", row.Story)
+			what := "its sessions"
 			if n := len(m.m.ShellsOf(row.Story)); n > 0 {
-				text = fmt.Sprintf("close story %s, stop its sessions and %s and remove its worktree? y/n", row.Story, plural(n, "shell", "shells"))
+				what += " and " + plural(n, "shell", "shells")
 			}
+			branch := "its branch"
+			if st := m.m.P.Stories[row.Story]; st != nil && st.Branch != "" {
+				branch = "branch " + st.Branch
+			}
+			text := fmt.Sprintf("close story %s, stop %s, remove its worktree and delete %s (local + origin)? y/n", row.Story, what, branch)
 			m.openPrompt(ui.PromptCloseStory, row.Story, text, "")
 		}
 	case "waiting":
@@ -1352,7 +1357,11 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		case err != nil:
 			m.setFlash("error: " + err.Error())
 		default:
-			m.setFlash("closed story " + target)
+			flash := "closed story " + target
+			if res.Message != "" {
+				flash += " · " + res.Message
+			}
+			m.setFlash(flash)
 			return m.poll()
 		}
 	case ui.PromptStop:

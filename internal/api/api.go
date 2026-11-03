@@ -85,7 +85,8 @@ type Result struct {
 	// alive; resend with force to kill it.
 	Running bool `json:"running,omitempty"`
 	// POST stories: Story is the new story, Num its first session, Message the success line
-	// and SessionError why that session did not start (the story is kept).
+	// and SessionError why that session did not start (the story is kept). POST stories/close:
+	// Message is what happened to the branch, "deleted branch feat/x (local, origin)".
 	Story        string `json:"story,omitempty"`
 	Message      string `json:"message,omitempty"`
 	SessionError string `json:"session_error,omitempty"`

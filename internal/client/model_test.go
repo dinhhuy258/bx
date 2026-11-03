@@ -27,7 +27,8 @@ type fakeBackend struct {
 	projects  []api.ProjectSummary
 	snaps     map[string]api.Snapshot
 	actions   []string
-	dirty     int // stories/close without force is refused with this many files
+	dirty     int    // stories/close without force is refused with this many files
+	closeMsg  string // the Message of a stories/close that goes through
 	created   []api.NewProject
 	createErr error
 	values    map[string]string // the server's settings
@@ -217,6 +218,8 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 		}
 	case action == "stories/close" && !a.Force && f.dirty > 0:
 		return api.Result{Error: "dirty", Dirty: f.dirty}, errors.New("dirty")
+	case action == "stories/close":
+		return api.Result{Message: f.closeMsg}, nil
 	case action == "delete" && !a.Force && f.running[a.Num]:
 		return api.Result{Error: "running", Running: true}, errors.New("running")
 	case action == "stories/repos" && !a.Force && f.origDirty > 0:
@@ -1063,9 +1066,13 @@ func TestCloseStoryAsksAgainWhenDirty(t *testing.T) {
 	if !strings.Contains(h.m.View().Content, "2 uncommitted") {
 		t.Fatal(h.m.View().Content)
 	}
+	h.be.closeMsg = "deleted branch feat/s1 (local, origin)"
 	h.press("y")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories/close s1|home-network stories/close s1 force" {
 		t.Fatalf("actions = %q", got)
+	}
+	if h.m.flash != "closed story s1 · deleted branch feat/s1 (local, origin)" {
+		t.Fatalf("flash = %q", h.m.flash)
 	}
 }
 
@@ -1521,7 +1528,7 @@ func TestCloseStoryCountsShells(t *testing.T) {
 	h.setShells([]api.Shell{{Story: "s1", K: 1, Command: "zsh"}, {Story: "s1", K: 2, Command: "npm"}}, nil)
 	h.m.m.SelectStory("s1")
 	h.press("D")
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "close story s1, stop its sessions and 2 shells and remove its worktree? y/n") {
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "close story s1, stop its sessions and 2 shells, remove its worktree and delete branch feat/s1 (local + origin)? y/n") {
 		t.Fatalf("bar = %q", bar)
 	}
 }

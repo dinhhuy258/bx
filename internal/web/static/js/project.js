@@ -98,8 +98,11 @@ export function showProject(root, name) {
     items.push({ label: 'Close story', run: async () => {
       const n = shellsOf(story).length;
       const shells = n ? ` and ${n} ${n === 1 ? 'shell' : 'shells'}` : '';
-      if (await confirmBox(`Close ${story}? Its sessions${shells} stop and the worktree is removed.`, 'Close')) {
-        force('stories/close', { name: story }, `Close ${story}`);
+      const branch = (snap.project.stories[story] || {}).branch;
+      const del = branch ? `branch ${branch}` : 'its branch';
+      if (await confirmBox(`Close ${story}? Its sessions${shells} stop, the worktree is removed and ${del} is deleted here and on origin.`, 'Close')) {
+        const r = await force('stories/close', { name: story }, `Close ${story}`);
+        if (r) toast(r.message ? `Closed ${story} · ${r.message}` : `Closed ${story}`);
       }
     } });
     sheet(story, items);

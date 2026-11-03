@@ -114,8 +114,9 @@ func (s *Server) Handler() http.Handler {
 		return 0, s.App.AddStoryRepos(p, r.Name, r.Repos, r.Force)
 	}))
 	mux.HandleFunc("GET /api/projects/{name}/repos", s.workspaceRepos)
-	mux.HandleFunc("POST /api/projects/{name}/stories/close", s.action(func(p *state.Project, r api.Action) (int, error) {
-		return 0, s.App.CloseStory(p, r.Name, r.Force)
+	mux.HandleFunc("POST /api/projects/{name}/stories/close", s.actionResult(func(p *state.Project, r api.Action) (api.Result, error) {
+		msg, err := s.App.CloseStory(p, r.Name, r.Force)
+		return api.Result{Message: msg}, err
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/resume", s.action(func(p *state.Project, r api.Action) (int, error) {
 		err := s.App.Resume(p, r.Num)

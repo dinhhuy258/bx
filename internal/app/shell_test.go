@@ -120,7 +120,7 @@ func TestCloseStoryKillsItsShells(t *testing.T) {
 	f.Replies[listShells] = "$8\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tzsh\n" +
 		"$9\tbxsh-home-network-1\thome-network\t\t1\t\tzsh\n"
 	f.Calls = nil
-	if err := a.CloseStory(p, "s1", true); err != nil {
+	if _, err := a.CloseStory(p, "s1", true); err != nil {
 		t.Fatal(err)
 	}
 	if calls(f) != "kill-session -t $8" {
