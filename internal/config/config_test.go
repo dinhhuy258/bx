@@ -15,7 +15,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if c.Root != root {
 		t.Errorf("Root = %q", c.Root)
 	}
-	if c.Keys.First(c.Keys.List, "waiting") != "a" || c.Keys.First(c.Keys.List, "projects") != "o" {
+	if c.Keys.First(c.Keys.List, "inbox") != "a" || c.Keys.First(c.Keys.List, "projects") != "o" {
 		t.Fatalf("list keys: %+v", c.Keys.List)
 	}
 	if got := c.Keys.List["down"]; len(got) != 2 || got[0] != "j" || got[1] != "Down" {
@@ -27,7 +27,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if c.Keys.List["fold_all"][0] != "Z" {
 		t.Errorf("fold_all = %v", c.Keys.List["fold_all"])
 	}
-	if c.Keys.First(c.Keys.List, "activity") != "A" || c.Keys.First(c.Keys.List, "prev_project") != "[" || c.Keys.First(c.Keys.List, "next_project") != "]" {
+	if _, ok := c.Keys.List["activity"]; ok || c.Keys.First(c.Keys.List, "prev_project") != "[" || c.Keys.First(c.Keys.List, "next_project") != "]" {
 		t.Errorf("project keys: %+v", c.Keys.List)
 	}
 }
@@ -67,6 +67,24 @@ ntfy_url = "https://ntfy.example/bx-secret"
 	}
 	if c.Keys.List["fold_all"][0] != "z M" {
 		t.Errorf("fold_all = %v", c.Keys.List["fold_all"])
+	}
+}
+
+// The old "waiting" and "activity" actions became "inbox": a config that binds them still works.
+func TestOldInboxActions(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[keys.list]\nwaiting = \"g\"\nactivity = \"G\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Keys.List["inbox"]; len(got) != 2 || got[0] != "g" || got[1] != "G" {
+		t.Fatalf("inbox = %v", got)
+	}
+	if _, ok := c.Keys.List["waiting"]; ok {
+		t.Fatalf("list keys: %+v", c.Keys.List)
 	}
 }
 

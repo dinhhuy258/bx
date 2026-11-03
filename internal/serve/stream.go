@@ -43,7 +43,11 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 		httpError(w, statusOf(err), err)
 		return
 	}
-	s.bridge(w, r, sid, fmt.Sprintf("%s [%d]", p.Name, num))
+	uuid := ""
+	if se := p.Sessions[num]; se != nil {
+		uuid = se.UUID
+	}
+	s.bridge(w, r, sid, uuid, fmt.Sprintf("%s [%d]", p.Name, num))
 }
 
 // shellStream serves GET /api/projects/{name}/shells/stream?story=&k=: shell k of a story
@@ -66,12 +70,14 @@ func (s *Server) shellStream(w http.ResponseWriter, r *http.Request) {
 		httpError(w, statusOf(err), err)
 		return
 	}
-	s.bridge(w, r, sid, fmt.Sprintf("%s shell %s$%d", p.Name, group(story), k))
+	s.bridge(w, r, sid, "", fmt.Sprintf("%s shell %s$%d", p.Name, group(story), k))
 }
 
 // bridge attaches to tmux session sid in a pty and bridges it to a WebSocket until either side
-// ends. label names it in the log ("stream <label>: open (80x24)" … "stream <label>: closed").
-func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, label string) {
+// ends. uuid is the Claude session watched ("" for a shell): while the stream is open the
+// session is read (see unread.go). label names it in the log ("stream <label>: open (80x24)"
+// … "stream <label>: closed").
+func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label string) {
 	if err := s.App.Tmux.PrepareCopy(); err != nil {
 		s.Log("stream %s: copy-mode setup: %v", label, err)
 	}
@@ -94,6 +100,10 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, label strin
 		return
 	}
 	defer s.untrack(st)
+	if uuid != "" {
+		s.watch(uuid)
+		defer s.unwatch(uuid)
+	}
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
@@ -261,6 +271,19 @@ func (s *Server) untrack(st *stream) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.streams, st)
+}
+
+// watch and unwatch count an open stream of a Claude session; opening one reads it.
+func (s *Server) watch(uuid string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unread.open(uuid)
+}
+
+func (s *Server) unwatch(uuid string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.unread.close(uuid)
 }
 
 func (s *Server) isClosing() bool {

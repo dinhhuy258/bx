@@ -1,8 +1,9 @@
 import { api } from './api.js';
 import { h, icon, topBar, dotted, tile, poll, toast, ask, sheet } from './ui.js';
 
-// Every project by name; those with a session waiting for an answer get their own section at
-// the top. There is no opened list on the phone.
+// Every project by name; those with a session that needs you (waiting for an answer, or unread:
+// finished a turn nobody has opened since) get their own section at the top. There is no
+// opened list on the phone.
 export function showProjects(root) {
   const body = h('div', { class: 'page' });
   const err = h('div', { class: 'error', hidden: true });
@@ -16,7 +17,8 @@ export function showProjects(root) {
       const ps = await api.projects();
       err.hidden = true;
       ps.sort((a, b) => a.name.localeCompare(b.name));
-      const need = ps.filter((p) => p.waiting > 0), rest = ps.filter((p) => !(p.waiting > 0));
+      const needs = (p) => p.waiting > 0 || p.unread > 0;
+      const need = ps.filter(needs), rest = ps.filter((p) => !needs(p));
       const parts = [];
       if (need.length) parts.push(section(dotted('wait', 'Needs you'), need, 'card attn'));
       if (rest.length) parts.push(section(need.length ? 'All projects' : null, rest, 'card'));
@@ -34,13 +36,14 @@ const section = (label, ps, cls) => h('section', { class: 'sec' },
   label ? h('div', { class: 'sec-head' }, h('span', { class: 'sec-label' }, label)) : null,
   h('div', { class: cls }, ps.map(projectRow)));
 
-// projectRow: [folder tile][ name / ● 1 waiting ● 2 running ][›], the tile tinted by state
+// projectRow: [folder tile][ name / ● 1 waiting ● 1 unread ● 2 running ][›], the tile tinted by state
 function projectRow(p) {
-  const counts = [p.waiting ? dotted('wait', `${p.waiting} waiting`) : null, p.running ? dotted('run', `${p.running} running`) : null];
+  const counts = [p.waiting ? dotted('wait', `${p.waiting} waiting`) : null, p.unread ? dotted('unread', `${p.unread} unread`) : null,
+    p.running ? dotted('run', `${p.running} running`) : null];
   return h('a', { class: 'item-link', href: `#/p/${encodeURIComponent(p.name)}` },
-    tile(icon('folder'), p.waiting ? 'wait' : p.running ? 'run' : ''),
+    tile(icon('folder'), p.waiting ? 'wait' : p.unread ? 'unread' : p.running ? 'run' : ''),
     h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, p.name),
-      h('span', { class: 'item-meta' }, p.waiting || p.running ? counts : 'Nothing running')),
+      h('span', { class: 'item-meta' }, p.waiting || p.unread || p.running ? counts : 'Nothing running')),
     icon('chev', 'i chev'));
 }
 

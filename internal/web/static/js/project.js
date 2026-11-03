@@ -80,7 +80,7 @@ export function showProject(root, name) {
   // sessionRow is [tile][ title / ● state · #n ][⋯], the tile and dot coloured by the state
   function sessionRow(n, s) {
     const st = (snap.session_states || {})[n] || { state: 'idle', text: '' };
-    const tone = toneOf(st.state);
+    const tone = toneOf(st.state, st.unread);
     const text = st.state === 'gone' || st.state === 'done' ? st.state : st.text || st.state;
     return h('div', { class: s.done ? 'item done' : 'item' },
       h('a', { class: 'item-link', href: `#/p/${enc(name)}/s/${n}` },

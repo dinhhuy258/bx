@@ -20,10 +20,10 @@ type BarContext struct {
 }
 
 var labels = map[string]string{
-	"focus": "focus mode", "waiting": "jump to waiting", "projects": "projects",
+	"focus": "focus mode", "inbox": "inbox", "projects": "projects",
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
 	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "lazygit": "lazygit", "nvim": "nvim", "shell": "new shell", "prs": "PRs",
-	"rename": "rename", "resume": "resume", "close_story": "close story", "activity": "activity", "close_project": "close project",
+	"rename": "rename", "resume": "resume", "close_story": "close story", "close_project": "close project",
 	"settings": "settings", "add_repo": "add repo", "stop": "stop", "delete": "delete",
 	"cleanup": "cleanup", "artifacts": "artifacts",
 }
@@ -107,7 +107,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		}
 	}
 	parts = append(parts, lk("shell"), lk("fold_all"), lk("new_chat"), lk("new_session"), lk("new_story"))
-	parts = append(parts, lk("keymap"), lk("waiting"), lk("projects"), lk("activity"), lk("settings"))
+	parts = append(parts, lk("keymap"), lk("inbox"), lk("projects"), lk("settings"))
 	if ctx.Projects > 1 {
 		parts = append(parts, switchKeys(cfg))
 	}
@@ -128,7 +128,7 @@ func switchKeys(cfg *config.Config) string {
 	return config.Pretty(prev) + " " + config.Pretty(next) + " switch project"
 }
 
-// ActivityBar is the key bar of the activity list. header tells that the cursor is on a
+// ActivityBar is the key bar of the inbox. header tells that the cursor is on a
 // project's header.
 func ActivityBar(cfg *config.Config, header bool, ctx BarContext) string {
 	if ctx.Flash != "" {
@@ -152,7 +152,7 @@ func ActivityBar(cfg *config.Config, header bool, ctx BarContext) string {
 	if !header {
 		parts = append(parts, lk("focus", "focus"))
 	}
-	parts = append(parts, lk("activity", "back"), switchKeys(cfg))
+	parts = append(parts, lk("inbox", "back"), switchKeys(cfg))
 	if ctx.Narrow {
 		parts = append(parts, config.Pretty(cfg.Client.PaneRight)+" back")
 	}
@@ -166,7 +166,7 @@ type WaitingElsewhere struct {
 }
 
 // FocusLine is the single status line shown in focus mode.
-func FocusLine(m *Model, waitingKey, exitKey string, runningElsewhere int, waiting []WaitingElsewhere) string {
+func FocusLine(m *Model, inboxKey, exitKey string, runningElsewhere int, waiting []WaitingElsewhere) string {
 	num, s := m.SelectedSession()
 	left := m.P.Name
 	if s != nil {
@@ -178,7 +178,7 @@ func FocusLine(m *Model, waitingKey, exitKey string, runningElsewhere int, waiti
 		if len(waiting) > 1 {
 			w += fmt.Sprintf(" +%d", len(waiting)-1)
 		}
-		right = append(right, w+" · "+config.Pretty(waitingKey)+" jump")
+		right = append(right, w+" · "+config.Pretty(inboxKey)+" inbox")
 	}
 	right = append(right, fmt.Sprintf("● %d running", runningElsewhere), config.Pretty(exitKey)+" exit")
 	return left + "    " + strings.Join(right, " · ")

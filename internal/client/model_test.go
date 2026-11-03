@@ -276,11 +276,18 @@ func (c *fakeConn) CopyMode(context.Context) error {
 }
 func (c *fakeConn) Close() { c.closed = true }
 
+// snapshot is a project with session 1 in story s1, in the agent status given; "unread" is an
+// idle session that finished a turn nobody has opened since.
 func snapshot(name, status string) api.Snapshot {
 	p := state.New(name, "/p/"+name)
 	p.Stories["s1"] = &state.Story{Branch: "feat/s1"}
 	p.AddSession(&state.Session{Story: "s1", UUID: name + "-u1", Title: "Add lease time", Created: time.Now()})
-	return api.Snapshot{Project: p, Live: ui.Live{Now: time.Now(), Agents: map[string]claude.Agent{name + "-u1": {SessionID: name + "-u1", Status: status}}}}
+	live := ui.Live{Now: time.Now(), Agents: map[string]claude.Agent{name + "-u1": {SessionID: name + "-u1", Status: status}}}
+	if status == "unread" {
+		live.Agents[name+"-u1"] = claude.Agent{SessionID: name + "-u1", Status: "idle"}
+		live.Unread = map[string]bool{name + "-u1": true}
+	}
+	return api.Snapshot{Project: p, Live: live}
 }
 
 type harness struct {
@@ -318,6 +325,8 @@ func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *
 			sum.Waiting, sum.WaitingSessions = 1, []int{1}
 		case "running":
 			sum.Running = 1
+		case "unread":
+			sum.Unread = 1
 		}
 		be.projects = append(be.projects, sum)
 	}
@@ -1149,9 +1158,10 @@ func TestDeleteAsksTwiceWhenRunning(t *testing.T) {
 	}
 }
 
-func TestWaitingJumpsAcrossProjects(t *testing.T) {
+// a then Enter opens the most urgent session, in another project too.
+func TestInboxOpensWaitingAcrossProjects(t *testing.T) {
 	h := start(t, 120, 30, "running", "waiting")
-	h.press("a")
+	h.press("a", "Enter")
 	if h.m.project != "lab" || strings.Join(h.opened, "|") != "lab 1" || !h.m.claudeFocused {
 		t.Fatalf("project=%q opened=%q", h.m.project, h.opened)
 	}
@@ -1530,7 +1540,7 @@ func TestProjectStripAndSwitchKeys(t *testing.T) {
 	h := start(t, 240, 30, "waiting", "running") // the key bar with the switch keys is about 230 columns
 	h.press("o", "Enter", "[")                   // open lab, then back to home-network
 	v := ansi.Strip(h.m.View().Content)
-	if !strings.Contains(v, "◉ home-network  ● lab") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "A activity") {
+	if !strings.Contains(v, "◉ home-network  ● lab") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "a inbox") {
 		t.Fatalf("strip and key bar:\n%s", v)
 	}
 	h.press("]")
@@ -1547,16 +1557,16 @@ func TestProjectStripAndSwitchKeys(t *testing.T) {
 	}
 }
 
-func TestActivityListsEveryProject(t *testing.T) {
-	h := start(t, 160, 30, "running", "waiting")
-	h.press("A") // the activity list
+func TestInboxListsEveryProject(t *testing.T) {
+	h := start(t, 160, 30, "unread", "waiting")
+	h.press("a") // the inbox
 	v := ansi.Strip(h.m.View().Content)
 	// lab waits, so it comes first
 	lab, home := strings.Index(v, "  lab "), strings.Index(v, "  home-network ")
-	if !strings.Contains(v, "bx activity") || lab < 0 || home < 0 || lab > home {
-		t.Fatalf("activity:\n%s", v)
+	if !strings.Contains(v, "bx inbox") || lab < 0 || home < 0 || lab > home {
+		t.Fatalf("inbox:\n%s", v)
 	}
-	if !strings.Contains(v, "s1 · asks: needs you") || !strings.Contains(v, "s1 · running") || !strings.Contains(v, "A back") || strings.Contains(v, "y yes") {
+	if !strings.Contains(v, "s1 · asks: needs you") || !strings.Contains(v, "s1 · idle · unread") || !strings.Contains(v, "a back") || strings.Contains(v, "y yes") {
 		t.Fatalf("rows and key bar:\n%s", v)
 	}
 	h.press("y") // the cursor starts on lab's waiting session: no quick answer
@@ -1573,16 +1583,17 @@ func TestActivityListsEveryProject(t *testing.T) {
 	}
 }
 
-func TestActivityEmpty(t *testing.T) {
-	h := start(t, 160, 30, "idle")
-	h.press("A")
+// Running and read idle sessions need nothing from you: the inbox leaves them out.
+func TestInboxEmpty(t *testing.T) {
+	h := start(t, 160, 30, "idle", "running")
+	h.press("a")
 	v := ansi.Strip(h.m.View().Content)
-	if !strings.Contains(v, "Nothing is running or waiting.") || !strings.Contains(v, "A back to home-network · o projects") {
-		t.Fatalf("empty activity:\n%s", v)
+	if !strings.Contains(v, "Nothing needs you.") || !strings.Contains(v, "a back to home-network · o projects") {
+		t.Fatalf("empty inbox:\n%s", v)
 	}
-	h.press("A")
+	h.press("a")
 	if h.m.activity {
-		t.Fatal("A leaves the activity list")
+		t.Fatal("a leaves the inbox")
 	}
 }
 

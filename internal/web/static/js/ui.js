@@ -21,13 +21,14 @@ export const bar = (left, title, right) =>
 export const topBar = (left, title, meta, right) =>
   h('header', { class: 'bar sbar' }, left, h('h1', { class: 'ttl' }, title, meta), right);
 
-// toneOf is the colour of a session state: run (green), wait (amber), gone (red) or '' (dim).
-export const toneOf = (state) => ({ running: 'run', starting: 'run', waiting: 'wait', gone: 'gone' })[state] || '';
+// toneOf is the colour of a session state: run (green), wait (amber), gone (red), unread (blue:
+// an idle session that finished a turn nobody has opened since) or '' (dim).
+export const toneOf = (state, unread) => unread ? 'unread' : ({ running: 'run', starting: 'run', waiting: 'wait', gone: 'gone' })[state] || '';
 
 // dotted is a state with its coloured dot: "● 1 waiting".
 export const dotted = (tone, text) => h('span', { class: `st${tone ? ` ${tone}` : ''}` }, h('span', { class: 'dot' }), text);
 
-// tile is a row's square icon tile, tinted by tone (run, wait, gone or shell).
+// tile is a row's square icon tile, tinted by tone (run, wait, gone, unread or shell).
 export const tile = (content, tone) => h('span', { class: `tile${tone ? ` tile-${tone}` : ''}` }, content);
 
 // An open modal dialog makes the rest of the page inert and sits above it, so elements that

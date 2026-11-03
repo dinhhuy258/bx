@@ -41,6 +41,7 @@ type Server struct {
 	closing  bool
 	seen     map[string]map[int]bool // by project, the sessions in tmux at the last watch
 	started  map[string]map[int]bool // by project, the sessions bx serve started since the last watch
+	unread   unread                  // the sessions that finished a turn nobody watched; see unread.go
 
 	prepared func() // tests: called by newStory between PrepareStory and taking write; nil in production
 }
@@ -56,7 +57,7 @@ type diffCache struct {
 // New builds a Server.
 func New(a *app.App, cfg *config.Config, l claude.Lister, log func(string, ...any)) *Server {
 	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{},
-		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}}
+		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread()}
 }
 
 // Handler routes the API.
@@ -222,6 +223,11 @@ func (s *Server) watchOnce() {
 	started := s.started
 	s.started = map[string]map[int]bool{}
 	s.mu.Unlock()
+	// keeps unread up to date while no client polls, so a turn that ends with every screen
+	// closed is still caught
+	if _, err := s.liveAgents(); err != nil {
+		s.Log("watch: claude agents: %v", err)
+	}
 	ss, up, err := s.App.Tmux.List()
 	if err != nil {
 		s.Log("watch: tmux: %v", err)
@@ -334,6 +340,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 	if agents != nil { // on an error, the last list
 		live.Agents = claude.IndexByUUID(agents)
 	}
+	live.Unread = s.unreadSnapshot()
 	out := []api.ProjectSummary{}
 	for _, name := range names {
 		p, err := s.App.LoadProject(name)
@@ -344,7 +351,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		m := ui.NewModel(p)
 		m.SetLive(live)
 		sum := api.ProjectSummary{Name: name, BaseOverride: p.BaseOverride}
-		sum.Running, sum.Waiting = m.Counts()
+		sum.Running, sum.Waiting, sum.Unread = m.Counts()
 		for _, n := range sortedNums(p) {
 			if !p.Sessions[n].Done && m.State(n) == claude.Waiting {
 				sum.WaitingSessions = append(sum.WaitingSessions, n)
@@ -578,7 +585,7 @@ func sessionStates(p *state.Project, live ui.Live, tm map[int]string, tmuxOK boo
 		case m.State(n) == claude.Running:
 			st = "running"
 		}
-		out[n] = api.SessionState{State: st, Text: m.StateText(n)}
+		out[n] = api.SessionState{State: st, Text: m.StateText(n), Unread: m.Unread(n)}
 	}
 	return out
 }
@@ -759,7 +766,15 @@ func (s *Server) collect(p *state.Project) ui.Live {
 		}
 	}
 	l.Diff = s.diff(p)
+	l.Unread = s.unreadSnapshot()
 	return l
+}
+
+// unreadSnapshot copies the unread set, for ui.Live.Unread.
+func (s *Server) unreadSnapshot() map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.unread.snapshot()
 }
 
 // liveAgents runs `claude agents`, shared by every poll for 1 s. On an error it returns the
@@ -781,6 +796,7 @@ func (s *Server) liveAgents() ([]claude.Agent, error) {
 		agents = []claude.Agent{}
 	}
 	s.agents, s.agentsAt = agents, time.Now()
+	s.unread.observe(agents)
 	return agents, nil
 }
 

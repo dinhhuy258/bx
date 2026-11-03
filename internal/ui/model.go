@@ -31,6 +31,7 @@ type Live struct {
 	DirtyFiles int                     `json:"dirty_files"` // git status --porcelain in the project folder
 	Branch     string                  `json:"branch"`      // current branch of the project folder
 	AgentsErr  bool                    `json:"agents_err"`  // claude agents --json failed; keep the last state
+	Unread     map[string]bool         `json:"unread"`      // by session uuid: finished a turn nobody has opened since (serve/unread.go)
 }
 
 // RowKind tells what a row is.
@@ -428,6 +429,12 @@ func (m *Model) State(num int) claude.State {
 	return a.State()
 }
 
+// Unread reports an idle session that finished a turn nobody has opened since.
+func (m *Model) Unread(num int) bool {
+	s := m.P.Sessions[num]
+	return s != nil && !s.Done && m.Live.Unread[s.UUID] && !m.Starting(num) && !m.Gone(num) && m.State(num) == claude.Idle
+}
+
 // Gone reports a session whose process is not in the agents list and is not done.
 func (m *Model) Gone(num int) bool {
 	s := m.P.Sessions[num]
@@ -494,6 +501,9 @@ func (m *Model) StateText(num int) string {
 		text = "running"
 	default:
 		text = "idle"
+		if m.Unread(num) {
+			text = "idle · unread"
+		}
 	}
 	if m.Live.Dups[s.UUID] {
 		text += " · duplicate"
@@ -511,8 +521,8 @@ func (m *Model) branch() string {
 	return m.Live.Branch
 }
 
-// Counts returns running and waiting totals for the project.
-func (m *Model) Counts() (running, waiting int) {
+// Counts returns the running, waiting and unread totals for the project.
+func (m *Model) Counts() (running, waiting, unread int) {
 	for n, s := range m.P.Sessions {
 		if s.Done {
 			continue
@@ -522,14 +532,18 @@ func (m *Model) Counts() (running, waiting int) {
 			running++
 		case claude.Waiting:
 			waiting++
+		default:
+			if m.Unread(n) {
+				unread++
+			}
 		}
 	}
 	return
 }
 
-// Summary is the folded-story marker string: "◆1 ●2 ○1 ✓1" (only non-zero parts).
+// Summary is the folded-story marker string: "◆1 ●2 ◎1 ○1 ✓1" (only non-zero parts).
 func (m *Model) Summary(story string) string {
-	var wait, run, idle, done int
+	var wait, run, unread, idle, done int
 	for _, n := range m.P.SessionsOf(story) {
 		if m.P.Sessions[n].Done {
 			done++
@@ -541,14 +555,18 @@ func (m *Model) Summary(story string) string {
 		case claude.Running:
 			run++
 		default:
-			idle++
+			if m.Unread(n) {
+				unread++
+			} else {
+				idle++
+			}
 		}
 	}
 	var parts []string
 	for _, p := range []struct {
 		dot string
 		n   int
-	}{{"◆", wait}, {"●", run}, {"○", idle}, {"✓", done}} {
+	}{{"◆", wait}, {"●", run}, {"◎", unread}, {"○", idle}, {"✓", done}} {
 		if p.n > 0 {
 			parts = append(parts, fmt.Sprintf("%s%d", p.dot, p.n))
 		}
@@ -571,25 +589,10 @@ func (m *Model) Dot(num int) string {
 	case claude.Running:
 		return "●"
 	}
+	if m.Unread(num) {
+		return "◎"
+	}
 	return "○"
-}
-
-// NextWaiting returns the lowest-numbered waiting session after the selected one, wrapping. 0 = none.
-func (m *Model) NextWaiting() int {
-	cur, _ := m.SelectedSession()
-	nums := make([]int, 0, len(m.P.Sessions))
-	for n := range m.P.Sessions {
-		nums = append(nums, n)
-	}
-	sort.Ints(nums)
-	for pass := 0; pass < 2; pass++ {
-		for _, n := range nums {
-			if (pass == 1 || n > cur) && m.State(n) == claude.Waiting {
-				return n
-			}
-		}
-	}
-	return 0
 }
 
 // Age renders a session's age like the prototype: 6m, 1h, 1d.

@@ -46,15 +46,16 @@ func strip(tabs []ProjectTab, current string, width int, pal palette) string {
 	return truncate(line, width)
 }
 
-// ActivityRow is one row of the activity list: a project's header (Num 0) or one of its sessions.
+// ActivityRow is one row of the inbox: a project's header (Num 0) or one of its sessions.
 type ActivityRow struct {
 	Project string
 	Num     int
 }
 
-// ActivityRows lists every running or waiting session of models, grouped by project: projects
-// with a waiting session first, then by name; in a project, waiting before running, then by number.
-// Idle, done and gone sessions are left out, and so are projects with none left.
+// ActivityRows is the inbox: every session of models that needs you, waiting or unread, grouped
+// by project: projects with a waiting session first, then by name; in a project, waiting before
+// unread, then by number. Running, read idle, done and gone sessions are left out, and so are
+// projects with none left.
 func ActivityRows(models []*Model) []ActivityRow {
 	type group struct {
 		name string
@@ -65,11 +66,11 @@ func ActivityRows(models []*Model) []ActivityRow {
 	for _, m := range models {
 		g := group{name: m.P.Name}
 		for n := range m.P.Sessions {
-			switch m.State(n) {
-			case claude.Waiting:
+			switch {
+			case m.State(n) == claude.Waiting:
 				g.wait = true
 				g.nums = append(g.nums, n)
-			case claude.Running:
+			case m.Unread(n):
 				g.nums = append(g.nums, n)
 			}
 		}
@@ -101,8 +102,8 @@ func ActivityRows(models []*Model) []ActivityRow {
 	return rows
 }
 
-// Activity is the cursor of the activity list. It stays on its row while rows move; when the row
-// leaves (the session went idle) it stays at the same place in the list.
+// Activity is the cursor of the inbox. It stays on its row while rows move; when the row leaves
+// (the session was answered or read) it stays at the same place in the list.
 type Activity struct {
 	sel ActivityRow
 	idx int
@@ -144,15 +145,15 @@ func (a *Activity) Move(rows []ActivityRow, delta int) {
 	a.sel = rows[a.idx]
 }
 
-// RenderActivity draws the activity list at width x height in place of the list pane. empty is
-// the hint under "Nothing is running or waiting.".
+// RenderActivity draws the inbox at width x height in place of the list pane. empty is the hint
+// under "Nothing needs you..
 func RenderActivity(models []*Model, a *Activity, width, height int, o RenderOptions, empty string) string {
 	if width < 30 {
 		return "bx: terminal too narrow"
 	}
 	pal := newPalette(o.Plain)
 	byName := map[string]*Model{}
-	run, wait := 0, 0
+	unread, wait := 0, 0
 	for _, m := range models {
 		byName[m.P.Name] = m
 	}
@@ -164,7 +165,7 @@ func RenderActivity(models []*Model, a *Activity, width, height int, o RenderOpt
 		if byName[r.Project].State(r.Num) == claude.Waiting {
 			wait++
 		} else {
-			run++
+			unread++
 		}
 	}
 	nProjects := 0
@@ -173,14 +174,18 @@ func RenderActivity(models []*Model, a *Activity, width, height int, o RenderOpt
 			nProjects++
 		}
 	}
-	head := fit(pal.brand.Render("bx")+" "+pal.bold.Render("activity"), pal.dim.Render(plural(nProjects, "project", "projects")), width)
+	head := fit(pal.brand.Render("bx")+" "+pal.bold.Render("inbox"), pal.dim.Render(plural(nProjects, "project", "projects")), width)
 	waitText := pal.dim.Render(fmt.Sprintf("◆ %d needs you", wait))
 	if wait > 0 {
 		waitText = pal.amber.Render(fmt.Sprintf("◆ %d needs you", wait))
 	}
-	top := []string{head, rule(width, o), fit(pal.blue.Render(fmt.Sprintf("● %d running", run)), waitText, width)}
+	unreadText := pal.dim.Render(fmt.Sprintf("◎ %d unread", unread))
+	if unread > 0 {
+		unreadText = pal.green.Render(fmt.Sprintf("◎ %d unread", unread))
+	}
+	top := []string{head, rule(width, o), fit(waitText, unreadText, width)}
 	if len(rows) == 0 {
-		top = append(top, "", "  Nothing is running or waiting.", truncate("  "+pal.dim.Render(empty), width))
+		top = append(top, "", "  Nothing needs you.", truncate("  "+pal.dim.Render(empty), width))
 		return pad(top, height)
 	}
 
@@ -195,13 +200,13 @@ func RenderActivity(models []*Model, a *Activity, width, height int, o RenderOpt
 		}
 		m := byName[r.Project]
 		if r.Num == 0 {
-			pw, pr := 0, 0
+			pw, pu := 0, 0
 			for _, x := range rows {
 				if x.Project == r.Project && x.Num != 0 {
 					if m.State(x.Num) == claude.Waiting {
 						pw++
 					} else {
-						pr++
+						pu++
 					}
 				}
 			}
@@ -209,14 +214,14 @@ func RenderActivity(models []*Model, a *Activity, width, height int, o RenderOpt
 			if pw > 0 {
 				counts = append(counts, pal.amber.Render(fmt.Sprintf("◆ %d", pw)))
 			}
-			if pr > 0 {
-				counts = append(counts, pal.blue.Render(fmt.Sprintf("● %d", pr)))
+			if pu > 0 {
+				counts = append(counts, pal.green.Render(fmt.Sprintf("◎ %d", pu)))
 			}
 			body = append(body, fit(cursor+" "+pal.bold.Render(r.Project), strings.Join(counts, "  "), width))
 			continue
 		}
 		s := m.P.Sessions[r.Num]
-		dot, st := pal.blue.Render(m.Dot(r.Num)), m.StateText(r.Num)
+		dot, st := pal.green.Render(m.Dot(r.Num)), pal.green.Render(m.StateText(r.Num))
 		if m.State(r.Num) == claude.Waiting {
 			dot, st = pal.amber.Render(m.Dot(r.Num)), pal.amber.Render(st)
 		}

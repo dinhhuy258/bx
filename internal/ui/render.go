@@ -51,7 +51,7 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 	showAge := width >= 46
 	var lines []string
 
-	run, wait := m.Counts()
+	run, wait, _ := m.Counts()
 	nStories := len(m.P.Stories)
 	head := fit(pal.brand.Render("bx")+" "+pal.bold.Render(m.P.Name), pal.dim.Render(plural(nStories, "story", "stories")), width)
 	// the rule stays on the second line, level with the Claude pane's
@@ -95,7 +95,7 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 		case claude.Running:
 			dot = pal.blue.Render(dot)
 		default:
-			if s.Done {
+			if s.Done || m.Unread(r.Num) {
 				dot = pal.green.Render(dot)
 			} else {
 				dot = pal.dim.Render(dot)
@@ -111,8 +111,11 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 		}
 		lines = append(lines, fit(cursor+"  "+dot+" "+title, right, width))
 		st := m.StateText(r.Num)
-		if m.State(r.Num) == claude.Waiting {
+		switch {
+		case m.State(r.Num) == claude.Waiting:
 			st = pal.amber.Render(st)
+		case m.Unread(r.Num):
+			st = pal.green.Render(st)
 		}
 		lines = append(lines, truncate("      "+st, width))
 	}

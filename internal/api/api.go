@@ -25,10 +25,11 @@ type Shell = ui.Shell
 
 // SessionState is the derived state of one session, keyed by session number in Snapshot.
 // State is "starting", "running", "waiting", "idle", "done" or "gone"; Text is the TUI's row
-// label.
+// label. Unread marks an idle session that finished a turn nobody has opened since.
 type SessionState struct {
-	State string `json:"state"`
-	Text  string `json:"text"`
+	State  string `json:"state"`
+	Text   string `json:"text"`
+	Unread bool   `json:"unread,omitempty"`
 }
 
 // ProjectSummary is one row of GET /api/projects.
@@ -36,7 +37,8 @@ type ProjectSummary struct {
 	Name            string `json:"name"`
 	Running         int    `json:"running"`
 	Waiting         int    `json:"waiting"`
-	WaitingSessions []int  `json:"waiting_sessions,omitempty"` // numbers, ascending; for the a key
+	WaitingSessions []int  `json:"waiting_sessions,omitempty"` // numbers, ascending
+	Unread          int    `json:"unread"`                     // idle sessions that finished a turn nobody has opened since
 	BaseOverride    string `json:"base_override,omitempty"`    // the branch new stories start from, set in settings › git
 }
 

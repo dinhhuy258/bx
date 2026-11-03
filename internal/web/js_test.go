@@ -257,13 +257,16 @@ const text = (e) => typeof e === 'string' ? e : e.children.map(text).join('');
 const byClass = (root, c) => all(root).filter((e) => e.className.split(' ').includes(c));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-api.projects = async () => [{ name: 'zeta', running: 0, waiting: 0 }, { name: 'bx', running: 2, waiting: 1 }, { name: 'home', running: 1, waiting: 0 }];
+api.projects = async () => [{ name: 'zeta', running: 0, waiting: 0 }, { name: 'bx', running: 2, waiting: 1 }, { name: 'home', running: 1, waiting: 0 },
+  { name: 'lab', running: 0, waiting: 0, unread: 1 }];
 let root = new El('main');
 let s = showProjects(root);
 await tick(); s.stop();
 const secs = byClass(root, 'sec');
 if (secs.length !== 2) fail('projects sections: ' + secs.length);
 if (!text(secs[0]).startsWith('Needs you') || !byClass(secs[0], 'attn').length) fail('needs you: ' + text(secs[0]));
+const lab = byClass(secs[0], 'item-link')[1];
+if (lab?.href !== '#/p/lab' || !byClass(lab, 'tile-unread').length || text(byClass(lab, 'item-meta')[0]) !== '1 unread') fail('lab row: ' + (lab && text(lab)));
 const rows = byClass(secs[1], 'item-link').map((r) => byClass(r, 'item-title').map(text)[0]);
 if (rows.join() !== 'home,zeta') fail('all projects: ' + rows);
 const bx = byClass(secs[0], 'item-link')[0];
@@ -281,7 +284,7 @@ api.snapshot = async () => ({
   project: { kind: '', stories: { 'fix/login': {}, idle: {} },
     sessions: { 1: { title: 'explain policy', done: false }, 2: { title: 'old', done: true }, 3: { title: 'login', story: 'fix/login', done: false } } },
   live: { branch: 'master', dirty_files: 2, diff: { 'fix/login': { add: 5, del: 1, dirty: 0 } } },
-  session_states: { 1: { state: 'waiting', text: 'waiting for you' }, 3: { state: 'running', text: 'running' } },
+  session_states: { 1: { state: 'waiting', text: 'waiting for you' }, 3: { state: 'idle', text: 'idle · unread', unread: true } },
   shells: [{ story: '', k: 1, command: 'npm', title: 'dev' }],
 });
 root = new El('main');
@@ -294,7 +297,8 @@ const items = byClass(ps[0], 'item');
 if (items.length !== 3 || !items[1].className.includes('done')) fail('chats rows: ' + items.map((i) => i.className));
 if (!byClass(items[0], 'tile-wait').length || text(byClass(items[0], 'item-meta')[0]) !== 'waiting for you · #1') fail('waiting row: ' + text(byClass(items[0], 'item-meta')[0]));
 if (!byClass(items[2], 'tile-shell').length || !byClass(items[2], 'busy').length || text(byClass(items[2], 'item-meta')[0]) !== 'npm') fail('shell row');
-if (text(byClass(ps[1], 'diff')[0]) !== '+5−1' || !byClass(ps[1], 'tile-run').length) fail('story diff/tile');
+if (text(byClass(ps[1], 'diff')[0]) !== '+5−1' || !byClass(ps[1], 'tile-unread').length) fail('story diff/tile');
+if (text(byClass(ps[1], 'item-meta')[0]) !== 'idle · unread · #3') fail('unread row: ' + text(byClass(ps[1], 'item-meta')[0]));
 const add = byClass(ps[2], 'card-add');
 if (add.length !== 1 || text(add[0]) !== 'New session') fail('empty story add row');
 `

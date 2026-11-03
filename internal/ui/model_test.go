@@ -174,9 +174,31 @@ func TestAlive(t *testing.T) {
 	}
 }
 
+// Unread is an idle session the server marked; a working, done or gone one never is.
+func TestUnread(t *testing.T) {
+	m, _ := sampleModel()
+	m.Live.Unread = map[string]bool{"u1": true, "u3": true, "u5": true}
+	if m.Unread(1) || !m.Unread(3) || m.Unread(5) || m.Unread(6) {
+		t.Fatalf("unread 1=%v 3=%v 5=%v 6=%v", m.Unread(1), m.Unread(3), m.Unread(5), m.Unread(6))
+	}
+	if m.Dot(3) != "◎" || m.StateText(3) != "idle · unread" || m.Dot(6) != "○" || m.StateText(6) != "idle" {
+		t.Fatalf("dot %q text %q · dot %q text %q", m.Dot(3), m.StateText(3), m.Dot(6), m.StateText(6))
+	}
+	if s := m.Summary("guest-vlan-fix"); s != "◆1 ●1 ◎1" {
+		t.Fatalf("summary = %q", s)
+	}
+	if _, _, unread := m.Counts(); unread != 1 {
+		t.Fatalf("unread = %d", unread)
+	}
+	delete(m.Live.Agents, "u3") // its process left: gone, not unread
+	if m.Unread(3) {
+		t.Fatal("a gone session is not unread")
+	}
+}
+
 func TestCounts(t *testing.T) {
 	m, _ := sampleModel()
-	run, wait := m.Counts()
+	run, wait, _ := m.Counts()
 	if run != 2 || wait != 1 {
 		t.Fatalf("run=%d wait=%d", run, wait)
 	}
@@ -185,13 +207,6 @@ func TestCounts(t *testing.T) {
 	}
 	if s := m.Summary("zigbee-map-docs"); s != "✓1" {
 		t.Fatalf("summary = %q", s)
-	}
-}
-
-func TestNextWaiting(t *testing.T) {
-	m, _ := sampleModel()
-	if n := m.NextWaiting(); n != 2 {
-		t.Fatalf("next waiting = %d", n)
 	}
 }
 

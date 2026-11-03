@@ -80,7 +80,7 @@ func TestKeyBar(t *testing.T) {
 	m, _ := sampleModel()
 	cfg := config.Default("/x")
 	kb := KeyBar(m, cfg, BarContext{})
-	for _, want := range []string{"j/k move", "⏎ type in Claude", "Z fold all", "F focus", "c new chat", "a jump to waiting", "o projects"} {
+	for _, want := range []string{"j/k move", "⏎ type in Claude", "Z fold all", "F focus", "c new chat", "a inbox", "o projects"} {
 		if !strings.Contains(kb, want) {
 			t.Errorf("list bar missing %q: %s", want, kb)
 		}
@@ -181,7 +181,7 @@ func TestFocusLine(t *testing.T) {
 	m, _ := sampleModel()
 	m.SelectSession(1)
 	line := FocusLine(m, "a", "C-h", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
-	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · a jump · ● 1 running · ^h exit"
+	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · a inbox · ● 1 running · ^h exit"
 	if line != want {
 		t.Fatalf("\n got %q\nwant %q", line, want)
 	}
@@ -233,33 +233,40 @@ func TestRenderProjectStrip(t *testing.T) {
 
 func TestActivityRowsAndRender(t *testing.T) {
 	home, _ := sampleModel()
+	home.Live.Unread = map[string]bool{"u1": true, "u3": true, "u6": true} // u1 runs again: not unread
 	p, live := sampleHomeNetwork()
 	p.Name = "bx"
 	live.Agents["u2"] = claude.Agent{SessionID: "u2", Status: "idle"} // bx has nothing waiting
+	live.Unread = map[string]bool{"u7": true}
 	bx := NewModel(p)
 	bx.SetLive(live)
 	rows := ActivityRows([]*Model{bx, home})
-	want := []ActivityRow{{"home-network", 0}, {"home-network", 2}, {"home-network", 1}, {"home-network", 4}, {"bx", 0}, {"bx", 1}, {"bx", 4}}
+	// running and read idle sessions are left out; waiting comes before unread
+	want := []ActivityRow{{"home-network", 0}, {"home-network", 2}, {"home-network", 3}, {"home-network", 6}, {"bx", 0}, {"bx", 7}}
 	if fmt.Sprint(rows) != fmt.Sprint(want) {
 		t.Fatalf("rows %v\nwant %v", rows, want)
 	}
 	var a Activity
 	out := RenderActivity([]*Model{bx, home}, &a, 46, 30, RenderOptions{Plain: true}, "")
-	for _, s := range []string{"bx activity", "2 projects", "● 4 running", "◆ 1 needs you", "  home-network", "◆ 1  ● 2", "›  ◆ [2] Write the test checklist", "guest-vlan-fix · asks: permission prompt"} {
+	for _, s := range []string{"bx inbox", "2 projects", "◆ 1 needs you", "◎ 3 unread", "  home-network", "◆ 1  ◎ 2", "›  ◆ [2] Write the test checklist",
+		"guest-vlan-fix · asks: permission prompt", "◎ [3] Shorter lease for the IoT VLAN", "guest-vlan-fix · idle · unread", "chats · idle · unread"} {
 		if !strings.Contains(out, s) {
 			t.Errorf("missing %q in\n%s", s, out)
 		}
 	}
+	if strings.Contains(out, "running") || strings.Contains(out, "[1] Fix guest") {
+		t.Errorf("running sessions in the inbox:\n%s", out)
+	}
 	// the cursor stays on its session when the rows move
-	a.Move(rows, 2) // from home-network [2] to [4]
-	if a.Selected(rows) != (ActivityRow{"home-network", 4}) {
+	a.Move(rows, 2) // from home-network [2] to [6]
+	if a.Selected(rows) != (ActivityRow{"home-network", 6}) {
 		t.Fatal(a.Selected(rows))
 	}
-	home.Live.Agents["u1"] = claude.Agent{SessionID: "u1", Status: "idle"}
-	if r := a.Selected(ActivityRows([]*Model{bx, home})); r != (ActivityRow{"home-network", 4}) {
+	home.Live.Agents["u2"] = claude.Agent{SessionID: "u2", Status: "idle"} // answered: it leaves
+	if r := a.Selected(ActivityRows([]*Model{bx, home})); r != (ActivityRow{"home-network", 6}) {
 		t.Fatalf("cursor moved to %v", r)
 	}
-	if out := RenderActivity(nil, &a, 46, 10, RenderOptions{Plain: true}, "A back"); !strings.Contains(out, "Nothing is running or waiting.") {
+	if out := RenderActivity(nil, &a, 46, 10, RenderOptions{Plain: true}, "a back"); !strings.Contains(out, "Nothing needs you.") {
 		t.Fatal(out)
 	}
 }

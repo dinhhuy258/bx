@@ -1,4 +1,4 @@
-:root { color-scheme: dark; --bg: #111; --fg: #e6e6e6; --dim: #888; --line: #2a2a2a; --accent: #4c9aff; --wait: #f5a623; --run: #3fb950; --gone: #f85149; }
+:root { color-scheme: dark; --bg: #111; --fg: #e6e6e6; --dim: #888; --line: #2a2a2a; --accent: #4c9aff; --wait: #f5a623; --run: #3fb950; --gone: #f85149; --unread: var(--accent); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.4 -apple-system, system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
@@ -44,10 +44,12 @@ svg.chev { color: var(--dim); flex: none; }
 .st.run { color: var(--run); }
 .st.wait { color: var(--wait); }
 .st.gone { color: var(--gone); }
+.st.unread { color: var(--unread); }
 .tile { flex: none; width: 36px; height: 36px; border-radius: 9px; background: #222; color: var(--dim); display: inline-flex; align-items: center; justify-content: center; font: 600 13px Menlo, monospace; }
 .tile-run { background: rgba(63, 185, 80, .14); color: var(--run); }
 .tile-wait { background: rgba(245, 166, 35, .14); color: var(--wait); }
 .tile-gone { background: rgba(248, 81, 73, .14); color: var(--gone); }
+.tile-unread { background: rgba(76, 154, 255, .14); color: var(--unread); }
 .tile-shell { background: rgba(95, 215, 215, .12); color: #5fd7d7; }
 .pill { flex: none; font-size: 12px; padding: 2px 8px; border-radius: 99px; margin-right: 4px; }
 .pill.busy { color: var(--wait); background: rgba(245, 166, 35, .14); }

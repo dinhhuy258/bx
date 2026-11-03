@@ -195,7 +195,7 @@ type Model struct {
 	syncDone     bool          // a sync succeeded since the screen opened or the last r
 	override     overrideDraft // the base override being picked in settings › git; see story.go
 
-	activity bool        // the list pane shows the activity list of every project
+	activity bool        // the list pane shows the inbox: what needs you in every project
 	act      ui.Activity // its cursor
 
 	width, height int
@@ -278,15 +278,15 @@ func (m *Model) poll() tea.Cmd {
 	}
 }
 
-// pollActivity fetches the snapshot of every other project with a running or waiting session,
-// while the activity list is shown.
+// pollActivity fetches the snapshot of every other project with a waiting or unread session,
+// while the inbox is shown.
 func (m *Model) pollActivity() tea.Cmd {
 	if !m.activity {
 		return nil
 	}
 	var cmds []tea.Cmd
 	for _, p := range m.projects {
-		if p.Name == m.project || p.Running+p.Waiting == 0 {
+		if p.Name == m.project || p.Waiting+p.Unread == 0 {
 			continue
 		}
 		be, ctx, project := m.be, m.ctx, p.Name
@@ -298,15 +298,15 @@ func (m *Model) pollActivity() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// activityModels are the lists the activity list draws from: the open project and every other
-// one the server says has a running or waiting session.
+// activityModels are the lists the inbox draws from: the open project and every other one the
+// server says has a waiting or unread session.
 func (m *Model) activityModels() []*ui.Model {
 	var out []*ui.Model
 	if m.m != nil {
 		out = append(out, m.m)
 	}
 	for _, p := range m.projects {
-		if um := m.models[p.Name]; um != nil && p.Name != m.project && p.Running+p.Waiting > 0 {
+		if um := m.models[p.Name]; um != nil && p.Name != m.project && p.Waiting+p.Unread > 0 {
 			out = append(out, um)
 		}
 	}
@@ -827,11 +827,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			m.openPrompt(ui.PromptCloseStory, row.Story, text, "")
 		}
-	case "waiting":
-		return m, m.jumpWaiting()
 	case "projects":
 		m.openProjectPicker()
-	case "activity":
+	case "inbox": // a fresh cursor starts on the first session: waiting first, then unread
 		m.activity, m.act = true, ui.Activity{}
 		return m, m.pollActivity()
 	case "settings":
@@ -850,7 +848,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// activityKey handles a list key while the activity list is shown. Keys that act on one project's
+// activityKey handles a list key while the inbox is shown. Keys that act on one project's
 // list (new chat, rename, ...) do nothing here.
 func (m *Model) activityKey(action string) tea.Cmd {
 	rows := ui.ActivityRows(m.activityModels())
@@ -860,7 +858,7 @@ func (m *Model) activityKey(action string) tea.Cmd {
 		m.act.Move(rows, 1)
 	case "up":
 		m.act.Move(rows, -1)
-	case "activity":
+	case "inbox":
 		m.activity = false
 	case "open":
 		switch {
@@ -876,8 +874,6 @@ func (m *Model) activityKey(action string) tea.Cmd {
 			m.focusMode = true
 			return m.openSession(r.Project, r.Num)
 		}
-	case "waiting":
-		return m.jumpWaiting()
 	case "projects":
 		m.openProjectPicker()
 	case "settings":
@@ -893,7 +889,7 @@ func (m *Model) activityKey(action string) tea.Cmd {
 }
 
 // stepProject opens the opened project delta places away in name order, wrapping, and leaves
-// the activity list.
+// the inbox.
 func (m *Model) stepProject(delta int) tea.Cmd {
 	names := m.opened.Projects
 	if len(names) < 2 {
@@ -1096,25 +1092,6 @@ func (m *Model) backToClaude() tea.Cmd {
 	m.claudeFocused = true
 	m.resizeTerm()
 	return m.connect() // nil unless the stream dropped
-}
-
-// jumpWaiting goes to the next session that needs an answer: in this project first, then in
-// the others in name order. It opens the session and gives it the keys.
-func (m *Model) jumpWaiting() tea.Cmd {
-	if n := m.m.NextWaiting(); n != 0 {
-		m.m.SelectSession(n)
-		return m.enterClaude()
-	}
-	list := append([]api.ProjectSummary(nil), m.projects...)
-	sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
-	for _, p := range list {
-		if p.Name == m.project || len(p.WaitingSessions) == 0 {
-			continue
-		}
-		return m.openSession(p.Name, p.WaitingSessions[0])
-	}
-	m.setFlash("nothing is waiting")
-	return nil
 }
 
 // openProjectPicker lists the projects this client has not opened yet, then the ways to add one.
@@ -1681,11 +1658,11 @@ func (m *Model) body() string {
 	return body + "\n" + m.bar()
 }
 
-// list is the list pane: the open project's list with the project strip, or the activity list.
+// list is the list pane: the open project's list with the project strip, or the inbox.
 func (m *Model) list(width int, focused bool) string {
 	o := ui.RenderOptions{Focused: focused}
 	if m.activity {
-		back := fmt.Sprintf("%s back to %s · %s projects", config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "activity")), m.project, config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "projects")))
+		back := fmt.Sprintf("%s back to %s · %s projects", config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "inbox")), m.project, config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "projects")))
 		return ui.RenderActivity(m.activityModels(), &m.act, width, m.height-1, o, back)
 	}
 	o.Projects = m.tabs()
@@ -1848,7 +1825,7 @@ func (m *Model) bar() string {
 				waiting = append(waiting, ui.WaitingElsewhere{Project: p.Name, Num: n})
 			}
 		}
-		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "waiting"), m.cfg.Client.PaneLeft, run, waiting)
+		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "inbox"), m.cfg.Client.PaneLeft, run, waiting)
 	case m.activity && !m.claudeFocused && m.seq == "":
 		r := m.act.Selected(ui.ActivityRows(m.activityModels()))
 		text = ui.ActivityBar(m.cfg, r.Num == 0, ui.BarContext{Flash: m.flash, Narrow: m.narrow})

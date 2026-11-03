@@ -65,8 +65,8 @@ func Default(root string) *Config {
 				"new_chat": {"c"}, "new_session": {"n"}, "new_story": {"w"},
 				"lazygit": {"d"}, "nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
-				"waiting": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
-				"activity": {"A"}, "prev_project": {"["}, "next_project": {"]"}, "close_project": {"x"},
+				"inbox": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
+				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"x"},
 				"settings": {"S"}, "stop": {"s"}, "delete": {"X"}, "cleanup": {"C"}, "artifacts": {"v"},
 			},
 		},
@@ -133,7 +133,23 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 }
 
+// inboxWas are the list actions merged into "inbox" (jump to a waiting session, the activity
+// list): a config that binds one still works.
+var inboxWas = []string{"waiting", "activity"}
+
 func applyBinds(dst map[string][]string, src map[string]bind) {
+	if _, ok := src["inbox"]; !ok {
+		var keys bind
+		for _, old := range inboxWas {
+			keys = append(keys, src[old]...)
+		}
+		if len(keys) > 0 {
+			src["inbox"] = keys
+		}
+	}
+	for _, old := range inboxWas {
+		delete(src, old)
+	}
 	for action, b := range src {
 		if len(b) == 0 {
 			delete(dst, action)
