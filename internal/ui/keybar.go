@@ -117,13 +117,16 @@ func rowPart(m *Model, cfg *config.Config, ctx BarContext) (string, []string) {
 		fold = lk("open", "collapse")
 	}
 	if r.Story == "" {
-		return "chats", []string{fold}
+		if m.P.IsWorkspace() { // a workspace folder is no repository: nothing to sync
+			return "chats", []string{fold}
+		}
+		return "chats", []string{fold, lk("sync", "sync")}
 	}
 	review := "review"
 	if n := m.Live.Review[r.Story]; n > 0 {
 		review = fmt.Sprintf("review ·%d", n)
 	}
-	parts := []string{fold, lk("close_story", "close"), lk("review", review)}
+	parts := []string{fold, lk("sync", "sync"), lk("close_story", "close"), lk("review", review)}
 	if m.P.IsWorkspace() {
 		parts = append(parts, lk("add_repo", "add repo"))
 	}

@@ -128,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/stories/repos", s.action(func(p *state.Project, r api.Action) (int, error) {
 		return 0, s.App.AddStoryRepos(p, r.Name, r.Repos, r.Force)
 	}))
+	mux.HandleFunc("POST /api/projects/{name}/sync", s.syncStory)
 	mux.HandleFunc("GET /api/projects/{name}/repos", s.workspaceRepos)
 	mux.HandleFunc("POST /api/projects/{name}/stories/close", s.actionResult(func(p *state.Project, r api.Action) (api.Result, error) {
 		msg, err := s.App.CloseStory(p, r.Name, r.Force)
@@ -693,6 +694,73 @@ func (s *Server) newStory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// syncStory fast-forwards a story ("" = the project folder) to origin. Without force a story
+// Claude works in is a 409 with Running and Num, its first busy session. The fetch runs before
+// the write lock, so it blocks no other change; the client going away cancels it. The
+// fast-forward runs under the lock, from a fresh load. Every outcome, a refusal included, is a
+// 200 whose Message says what happened.
+func (s *Server) syncStory(w http.ResponseWriter, r *http.Request) {
+	var req api.Action
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, 400, fmt.Errorf("decode body: %w", err))
+		return
+	}
+	name := r.PathValue("name")
+	p, err := s.load(name)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	if !req.Force {
+		if busy := s.busySessions(p, req.Story); len(busy) > 0 {
+			err := &app.BusyError{Story: req.Story, Nums: busy}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error(), Running: true, Num: busy[0]})
+			return
+		}
+	}
+	plan, err := s.App.PrepareSync(r.Context(), p, req.Story)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	s.write.Lock()
+	defer s.write.Unlock()
+	if p, err = s.load(name); err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	msg, err := s.App.ApplySync(p, plan)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	s.Log("sync %s %s: %s", name, group(req.Story), msg)
+	s.mu.Lock()
+	delete(s.diffs, name) // the new diff and ↓N show in the next poll
+	s.mu.Unlock()
+	writeJSON(w, api.Result{Story: req.Story, Message: msg})
+}
+
+// busySessions lists the sessions of story ("" = chats) Claude is working in. When `claude
+// agents` fails it uses the last list, like a poll.
+func (s *Server) busySessions(p *state.Project, story string) []int {
+	m := ui.NewModel(p)
+	m.SetLive(s.collectAgents())
+	return app.BusySessions(p, story, func(n int) bool { return m.State(n) == claude.Running })
+}
+
+// collectAgents is the agents part of collect, without the git work.
+func (s *Server) collectAgents() ui.Live {
+	l := ui.Live{}
+	agents, _ := s.liveAgents()
+	if agents != nil {
+		l.Agents, l.Dups = claude.IndexByUUID(agents), claude.Duplicates(agents)
+	}
+	return l
+}
+
 // storyError replies to a refused story: a 409 with Exists for a branch that exists.
 func storyError(w http.ResponseWriter, err error) {
 	var exists *app.BranchExistsError
@@ -781,6 +849,7 @@ func (s *Server) collect(p *state.Project) ui.Live {
 		if b, err := s.App.Git.CurrentBranch(p.Path); err == nil {
 			l.Branch = b
 		}
+		l.Behind = s.behind(p.Path)
 	}
 	l.Diff = s.diff(p)
 	l.Unread = s.unreadSnapshot()
@@ -859,7 +928,22 @@ func (s *Server) storyDiff(dir, base string) ui.Diff {
 	if n, err := s.App.Git.DirtyCount(dir); err == nil {
 		sd.Dirty = n
 	}
+	sd.Behind = s.behind(dir)
 	return sd
+}
+
+// behind counts the commits origin/<branch> has that the branch checked out in dir lacks, as
+// last fetched; 0 with no such branch on origin. It never talks to origin.
+func (s *Server) behind(dir string) int {
+	b, err := s.App.Git.CurrentBranch(dir)
+	if err != nil || b == "HEAD" || !s.App.Git.RefExists(dir, "refs/remotes/origin/"+b) {
+		return 0
+	}
+	_, n, err := s.App.Git.AheadBehind(dir, "HEAD", "refs/remotes/origin/"+b)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func sortedNums(p *state.Project) []int {

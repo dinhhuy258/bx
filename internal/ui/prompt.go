@@ -40,6 +40,7 @@ const (
 	PromptLogin                 // y/n: open a shell running gh auth login for github.com
 	PromptComment               // a review comment on a diff line, empty = delete it
 	PromptClearSent             // y/n: drop the sent comments of a review (Target is the story)
+	PromptSyncBusy              // y/n: sync a story Claude works in (Target is the story, "" = chats)
 )
 
 // PromptResult is what a key did to the prompt.
@@ -137,7 +138,8 @@ func (p *Prompt) YesNo() bool {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
 		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
 		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume,
-		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin, PromptClearSent:
+		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin, PromptClearSent,
+		PromptSyncBusy:
 		return true
 	}
 	return false
@@ -300,6 +302,8 @@ func (p *Prompt) verb() string {
 		return "log in"
 	case PromptClearSent:
 		return "clear"
+	case PromptSyncBusy:
+		return "sync"
 	}
 	return "yes"
 }

@@ -17,10 +17,15 @@ type Diff struct {
 	Add   int `json:"add"`
 	Del   int `json:"del"`
 	Dirty int `json:"dirty,omitempty"` // git status --porcelain in the story worktree
+	// Behind is the commits origin/<branch> has that the worktree's branch lacks, as last
+	// fetched: what a sync would bring in.
+	Behind int `json:"behind,omitempty"`
 }
 
 // Plus adds two diffs, for a story of several repositories.
-func (d Diff) Plus(o Diff) Diff { return Diff{d.Add + o.Add, d.Del + o.Del, d.Dirty + o.Dirty} }
+func (d Diff) Plus(o Diff) Diff {
+	return Diff{d.Add + o.Add, d.Del + o.Del, d.Dirty + o.Dirty, d.Behind + o.Behind}
+}
 
 // Live is everything derived on each tick and never stored.
 type Live struct {
@@ -30,6 +35,7 @@ type Live struct {
 	Diff       map[string]Diff         `json:"diff"`             // by story
 	DirtyFiles int                     `json:"dirty_files"`      // git status --porcelain in the project folder
 	Branch     string                  `json:"branch"`           // current branch of the project folder
+	Behind     int                     `json:"behind,omitempty"` // commits origin/<Branch> has that the project folder lacks, as last fetched
 	AgentsErr  bool                    `json:"agents_err"`       // claude agents --json failed; keep the last state
 	Unread     map[string]bool         `json:"unread"`           // by session uuid: finished a turn nobody has opened since (serve/unread.go)
 	Review     map[string]int          `json:"review,omitempty"` // by story: unsent review comments

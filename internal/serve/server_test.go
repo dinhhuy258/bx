@@ -1050,3 +1050,38 @@ func putJSON(t *testing.T, ts *httptest.Server, path string, body, out any) int 
 	_ = json.NewDecoder(r.Body).Decode(out)
 	return r.StatusCode
 }
+
+func TestSyncAsksWhileClaudeWorksAndShowsBehind(t *testing.T) {
+	s, _, ts := newServer(t)
+	repo := s.Cfg.ProjectDir("home-network")
+	seed := withOrigin(t, repo)
+	s.Lister = fakeLister{[]claude.Agent{{SessionID: "u1", Status: "busy"}}}
+	res, code := post(t, ts, "/api/projects/home-network/sync", api.Action{Story: "s1"})
+	if code != 409 || !res.Running || res.Num != 1 || res.Error != "Claude is working in s1 (session [1])" {
+		t.Fatalf("busy: %d %+v", code, res)
+	}
+	res, code = post(t, ts, "/api/projects/home-network/sync", api.Action{Story: "s1", Force: true})
+	if code != 200 || res.Message != "s1 isn't on origin yet · nothing to sync" {
+		t.Fatalf("force: %d %+v", code, res)
+	}
+
+	// someone pushed main: ↓1 from the last fetch, then synced
+	gitIn(t, seed, "checkout", "-q", "main")
+	if err := os.WriteFile(filepath.Join(seed, "new.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, seed, "add", ".")
+	gitIn(t, seed, "commit", "-qm", "new")
+	gitIn(t, seed, "push", "-q", "origin", "main")
+	gitIn(t, repo, "fetch", "-q", "origin")
+	if snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network"); snap.Live.Behind != 1 {
+		t.Fatalf("behind %d", snap.Live.Behind)
+	}
+	res, code = post(t, ts, "/api/projects/home-network/sync", api.Action{Story: ""})
+	if code != 200 || res.Message != "main synced · 1 new commit from origin" {
+		t.Fatalf("chats: %d %+v", code, res)
+	}
+	if snap, _ := get[api.Snapshot](t, ts, "/api/projects/home-network"); snap.Live.Behind != 0 {
+		t.Fatalf("behind after sync %d", snap.Live.Behind)
+	}
+}

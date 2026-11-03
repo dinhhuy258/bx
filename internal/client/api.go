@@ -71,6 +71,14 @@ func (c *API) NewStory(ctx context.Context, project string, a api.Action) (api.R
 	return res, err
 }
 
+// Sync is POST /api/projects/{name}/sync. The server fetches from origin first, so it has the
+// long timeout. A story Claude works in is refused with an error and Result.Running.
+func (c *API) Sync(ctx context.Context, project string, a api.Action) (api.Result, error) {
+	var res api.Result
+	err := c.call(ctx, createTimeout, http.MethodPost, "/api/projects/"+url.PathEscape(project)+"/sync", a, &res)
+	return res, err
+}
+
 // StoryInfo is GET /api/projects/{name}/storyinfo: the base and last type of a new story. The
 // server may ask origin for its HEAD (git remote set-head), so it gets longer than a poll.
 func (c *API) StoryInfo(ctx context.Context, project string) (api.StoryInfo, error) {
