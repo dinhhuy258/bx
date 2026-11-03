@@ -67,6 +67,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/github/repos", s.githubRepos)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	mux.HandleFunc("GET /api/mcp", s.getMCP)
+	mux.HandleFunc("GET /api/mcp/doc", s.getMCPDoc)
+	mux.HandleFunc("PUT /api/mcp/doc", s.putMCPDoc)
 	mux.HandleFunc("GET /api/projects/{name}", s.getProject)
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/stream", s.stream)
 	mux.HandleFunc("GET /api/projects/{name}/shells/stream", s.shellStream)
@@ -546,6 +549,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	for name := range p.Stories {
 		dirs[name] = s.App.Dir(p, name)
 	}
+	p.MCPServers = nil // the web client reads the snapshot; server configs may hold tokens
 	writeJSON(w, api.Snapshot{Project: p, Live: live, SessionStates: states, Shells: shells, Dirs: dirs})
 }
 

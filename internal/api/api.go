@@ -22,6 +22,17 @@ type Snapshot struct {
 // list pane renders.
 type Shell = ui.Shell
 
+// MCP is GET /api/mcp?tui=1: the global MCP servers and every project with its own. Only the
+// TUI may ask: a server's config may hold a token.
+type MCP = ui.MCP
+
+// MCPDoc is GET and PUT /api/mcp/doc?tui=1&project=<name> ("" = the global servers): the
+// servers as the .mcp.json text the TUI edits. PUT with empty text removes them. A refused PUT
+// is a 400 whose Result has the error and its Line.
+type MCPDoc struct {
+	Text string `json:"text"`
+}
+
 // SessionState is the derived state of one session, keyed by session number in Snapshot.
 // State is "starting", "running", "waiting", "idle", "done" or "gone"; Text is the TUI's row
 // label.
@@ -92,6 +103,8 @@ type Result struct {
 	// or "both"; Branch is that branch. Resend with use_existing to use it.
 	Exists string `json:"exists,omitempty"`
 	Branch string `json:"branch,omitempty"`
+	// Line is the line of a refused MCP document (PUT /api/mcp/doc), 0 when unknown.
+	Line int `json:"line,omitempty"`
 }
 
 // StoryInfo is GET /api/projects/{name}/storyinfo, for the new story prompt: the base a new
