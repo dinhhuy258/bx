@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 )
@@ -107,19 +106,7 @@ func (s *Settings) gitLines(w, h int, pal palette) []string {
 		add = " " + pal.blue.Render("›") + " " + pal.bold.Render(gitAdd)
 	}
 	rows = append(rows, truncate(add, w))
-	if avail := max(h-len(out), 3); len(rows) > avail {
-		start := min(max(s.fld-(avail-1)/2, 0), len(rows)-avail)
-		end := start + avail
-		shown := slices.Clone(rows[start:end])
-		more := func(n int) string { return "     " + pal.dim.Render(fmt.Sprintf("… %d more", n)) }
-		if start > 0 {
-			shown[0] = more(start + 1)
-		}
-		if end < len(rows) {
-			shown[len(shown)-1] = more(len(rows) - end + 1)
-		}
-		rows = shown
-	}
+	rows = window(rows, s.fld, max(h-len(out), 3), pal)
 	return append(out, rows...)
 }
 

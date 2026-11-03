@@ -1,0 +1,29 @@
+bx settings                                                                                                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Claude            │ MCP
+   Git               │ For new and resumed sessions. Running ones keep what they started with.
+ › MCP               │
+   Notifications     │    Mode  ◂ merge  ▸
+                     │
+                     │    Global      3 servers  github · postgres · sentry
+                     │
+                     │  project servers · 3 of 34 projects have their own
+                     │
+                     │    api-server  1 server  stripe
+                     │  › bx          ✗ not saved  line 9, column 5: invalid character
+                     │    infra       ✗ skipped  x: args must be a list of strings
+                     │    + add project servers
+                     │
+                     │  A new session in bx starts with
+                     │    github      stdio  npx -y @modelcontextprotocol/server-github              global
+                     │    sentry      http   https://mcp.sentry.dev/mcp                              global
+                     │    playwright  stdio  npx -y @playwright/mcp@1.2.0                            bx
+                     │    postgres    stdio  npx -y @mcp/postgres postgres://localhost/bx            bx  replaces global
+
+
+
+
+
+
+
+

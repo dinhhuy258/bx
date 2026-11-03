@@ -25,6 +25,9 @@ const (
 	SettingsGitChoose                             // Enter in the git section: read GitChoice
 	SettingsGitRemove                             // Backspace on an override: remove GitChoice's
 	SettingsEdit                                  // Enter on a text field: edit TextField in a prompt
+	SettingsMCPEdit                               // Enter on an MCP row: edit MCPChoice's servers (or add a project)
+	SettingsMCPRemove                             // Backspace on an MCP row: remove its servers, or drop its draft
+	SettingsMCPReload                             // r on an MCP row: read the servers again
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
@@ -38,12 +41,15 @@ type Settings struct {
 	edits    map[string]string // changed keys only
 	sec, fld int
 	sync     syncList
-	git      []GitOverride // the git section's rows, by project
+	git      []GitOverride     // the git section's rows, by project
+	mcp      MCP               // the MCP section's rows (see mcp.go)
+	mcpTotal int               // every project, for "3 of 34"
+	mcpErrs  map[string]string // by scope ("" = global): why the last save was refused
 }
 
 // NewSettings starts an empty screen; Load fills it.
 func NewSettings(server string) *Settings {
-	return &Settings{Server: server, saved: map[string]string{}, edits: map[string]string{}}
+	return &Settings{Server: server, saved: map[string]string{}, edits: map[string]string{}, mcpErrs: map[string]string{}}
 }
 
 // Loaded reports whether the server's sections have arrived.
@@ -73,7 +79,7 @@ func (s *Settings) rowCount() int {
 	if s.GitShown() {
 		return len(s.git) + 1
 	}
-	return len(s.fields()) + len(s.syncRows())
+	return len(s.fields()) + len(s.syncRows()) + s.mcpRowCount()
 }
 
 // Changes are the edited keys and their new values.
@@ -124,6 +130,9 @@ func (s *Settings) Key(key string) SettingsResult {
 	}
 	if s.GitShown() {
 		return s.gitKey(key)
+	}
+	if _, ok := s.MCPChoice(); ok && key != "Tab" && key != "Esc" && key != "C-c" && !isMove(key) {
+		return s.mcpKey(key) // moves, Tab and Esc work as on any row
 	}
 	switch key {
 	case "Esc", "C-c":
@@ -240,6 +249,9 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 			return pad(append(lines, s.confirmLines(w, h-len(lines), pal)...), h)
 		}
 		lines = append(lines, s.fieldLines(w, pal)...)
+		if s.MCPShown() {
+			lines = append(lines, s.mcpLines(w, h-len(lines)-len(s.helpLines(w, pal)), pal)...)
+		}
 		help := s.helpLines(w, pal)
 		if s.syncShown() {
 			lines = append(lines, s.syncLines(w, h-len(lines)-len(help), pal)...)
@@ -274,6 +286,9 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 		var help []string
 		if text := s.cursorHelp(); text != "" {
 			help = append([]string{""}, wrap(text, right, pal.dim)...)
+		}
+		if s.MCPShown() {
+			r = append(r, s.mcpLines(right, h-len(lines)-len(r)-len(help), pal)...)
 		}
 		if s.syncShown() {
 			r = append(r, s.syncLines(right, h-len(lines)-len(r)-len(help), pal)...)
@@ -362,6 +377,9 @@ func (s *Settings) helpLines(w int, pal palette) []string {
 
 // cursorHelp is the help of the field under the cursor, or the keys of the sync list.
 func (s *Settings) cursorHelp() string {
+	if _, ok := s.MCPChoice(); ok {
+		return "" // the key bar has the row's keys; the rows show the rest
+	}
 	if f, ok := s.field(); ok {
 		return f.Help
 	}
@@ -369,6 +387,15 @@ func (s *Settings) cursorHelp() string {
 		return syncHint
 	}
 	return ""
+}
+
+// isMove reports whether key moves the cursor up or down.
+func isMove(key string) bool {
+	switch key {
+	case "j", "Down", "C-j", "k", "Up", "C-k":
+		return true
+	}
+	return false
 }
 
 // wrap breaks text into lines of at most w cells, each drawn in style.
