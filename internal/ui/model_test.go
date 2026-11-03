@@ -125,7 +125,7 @@ func TestStateText(t *testing.T) {
 		1: "running",
 		2: "asks: permission prompt",
 		3: "idle",
-		5: "done · r to resume",
+		5: "done · ⏎ to resume",
 		6: "idle",
 		7: "idle",
 	}
@@ -137,7 +137,7 @@ func TestStateText(t *testing.T) {
 	live.Agents["u3"] = live.Agents["u1"]
 	delete(live.Agents, "u1")
 	m.SetLive(live)
-	if got := m.StateText(1); got != "gone · r to resume" {
+	if got := m.StateText(1); got != "gone · ⏎ to resume" {
 		t.Errorf("gone = %q", got)
 	}
 }

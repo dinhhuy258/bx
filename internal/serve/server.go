@@ -577,7 +577,7 @@ func sessionStates(p *state.Project, live ui.Live, tm map[int]string, tmuxOK boo
 		case s.Done:
 			st = "done"
 		case tmuxOK && !inTmux:
-			out[n] = api.SessionState{State: "gone", Text: "gone · r to resume"}
+			out[n] = api.SessionState{State: "gone", Text: "gone · ⏎ to resume"}
 			continue
 		case tmuxOK && m.Gone(n):
 			out[n] = api.SessionState{State: "starting", Text: "starting"}

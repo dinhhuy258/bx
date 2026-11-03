@@ -64,7 +64,7 @@ func Default(root string) *Config {
 				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
 				"new_session": {"n"}, "new_story": {"w"},
 				"shell": {"t"}, "keymap": {"?"},
-				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
+				"rename": {"R"}, "close_story": {"D"}, "add_repo": {"+"},
 				"inbox": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},

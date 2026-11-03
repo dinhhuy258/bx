@@ -23,10 +23,9 @@ type keymapGroup struct {
 // in no group is listed under "other" by its name.
 var keymapGroups = []keymapGroup{
 	{"SESSION", "the selected [n] row", []keymapItem{
-		{"open", "type in Claude"},
+		{"open", "type in Claude; resume a stopped or gone one"},
 		{"focus", "focus mode · Claude full screen"},
-		{"stop_session", "stop · Claude exits; resume picks it up"},
-		{"resume", "resume a stopped or gone session"},
+		{"stop_session", "stop · Claude exits; ⏎ resumes it"},
 		{"delete_session", "delete · removes uploads and artifacts; transcript stays in ~/.claude"},
 		{"rename", "rename"},
 		{"artifacts", "artifacts · the pages it made"},

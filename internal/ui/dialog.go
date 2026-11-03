@@ -213,7 +213,8 @@ func choiceLine(label string, f Field, focused bool, pal palette, plain bool) st
 	return line
 }
 
-// Fade draws s faint, for the screen behind a dialog.
+// Fade draws s faint: the screen behind a dialog, the list while Claude has the keys, a shell
+// that ended. It renews the faint after every reset inside, so it holds across s's own styling.
 func Fade(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {

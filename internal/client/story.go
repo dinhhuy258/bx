@@ -339,19 +339,15 @@ func (m *Model) gotStory(msg storyMsg) tea.Cmd {
 	case errors.Is(msg.err, context.Canceled):
 		m.setFlash("cancelled")
 		return nil
-	case res.Exists != "":
+	case res.Exists != "": // only a new branch is refused so: the form says so, Enter again uses it
 		where := map[string]string{"local": "locally", "origin": "on origin", "both": "locally and on origin"}[res.Exists]
+		d.exists = res.Branch
 		m.draft = &d
-		if d.act.Source == "" && d.act.Name != "" { // the new story form: say so in it
-			d.exists = res.Branch
-			typ := d.act.Type
-			if typ == "" {
-				typ = naming.DefaultType(d.info.LastType)
-			}
-			m.openStoryForm(d.act.Name, typ, fmt.Sprintf("%s exists %s · ⏎ again starts the story on it", res.Branch, where))
-			return nil
+		typ := d.act.Type
+		if typ == "" {
+			typ = naming.DefaultType(d.info.LastType)
 		}
-		m.ask(ui.PromptUseBranch, "", "Branch exists", fmt.Sprintf("%s exists %s.", res.Branch, where), "Start the story on it?")
+		m.openStoryForm(d.act.Name, typ, fmt.Sprintf("%s exists %s · ⏎ again starts the story on it", res.Branch, where))
 		return nil
 	case msg.err != nil:
 		m.setFlash("error: " + msg.err.Error())

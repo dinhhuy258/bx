@@ -810,9 +810,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "fold_all":
 		m.m.FoldAll()
 	case "focus":
-		if sess != nil && sess.Done {
-			m.setFlash("done · r to resume")
-		} else if sess != nil && !m.m.Gone(num) {
+		if sess != nil && (sess.Done || m.m.Gone(num)) {
+			m.askResume(num, sess.Title)
+		} else if sess != nil {
 			m.focusMode = true
 			return m, m.enterClaude()
 		}
@@ -828,13 +828,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		} else if sess != nil {
 			m.openPrompt(ui.PromptRename, "", fmt.Sprintf("Title of [%d]", num), sess.Title)
 		}
-	case "resume":
-		if sess != nil && (m.m.Gone(num) || sess.Done) {
-			_ = m.do("resume", api.Action{Num: num})
-		}
 	case "stop_session":
 		if sess != nil && !sess.Done {
-			m.ask(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("Stop [%d]?", num), sess.Title, "", "Claude stops and its window closes.", config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "resume"))+" resumes it later.")
+			m.ask(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("Stop [%d]?", num), sess.Title, "", "Claude stops and its window closes.", "⏎ on it resumes it later.")
 		}
 	case "close_shell":
 		if onShell {
@@ -1052,17 +1048,28 @@ func (m *Model) enterClaude() tea.Cmd {
 	if sess == nil {
 		return nil
 	}
-	if sess.Done {
-		m.setFlash("done · r to resume")
-		return nil
-	}
-	if m.m.Gone(num) {
-		m.setFlash("session is gone · r to resume")
+	if sess.Done || m.m.Gone(num) {
+		m.askResume(num, sess.Title)
 		return nil
 	}
 	m.claudeFocused = true
 	m.resizeTerm()
 	return m.show(sessionTarget(num))
+}
+
+// askResume asks before starting Claude again in a done or gone session.
+func (m *Model) askResume(num int, title string) {
+	m.ask(ui.PromptResume, strconv.Itoa(num), fmt.Sprintf("Resume [%d]?", num), title, "", "Claude starts again where it left off.")
+}
+
+// resume starts Claude again in a session, then shows it in the pane with the keys.
+func (m *Model) resume(num int) tea.Cmd {
+	if m.do("resume", api.Action{Num: num}) != nil {
+		return nil
+	}
+	m.claudeFocused = true
+	m.resizeTerm()
+	return tea.Batch(m.show(sessionTarget(num)), m.poll())
 }
 
 // enterShell shows a shell in the pane and gives it the keys.
@@ -1425,8 +1432,6 @@ func (m *Model) newSession(story string) tea.Cmd {
 
 func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	switch kind {
-	case ui.PromptUseBranch:
-		return m.useBranch()
 	case ui.PromptAddRepoForce:
 		return m.addStoryRepos(target, m.addRepos, true)
 	case ui.PromptRename:
@@ -1457,6 +1462,9 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		return m.newShell(story)
 	case ui.PromptNewSession:
 		return m.newSession(target)
+	case ui.PromptResume:
+		num, _ := strconv.Atoi(target)
+		return m.resume(num)
 	case ui.PromptCloseProject:
 		if target != m.project { // the project changed under the prompt
 			return nil
@@ -1833,7 +1841,7 @@ func (m *Model) screen() string {
 		join := "┫"
 		if m.claudeFocused {
 			join = "┣"
-			list = restyle(list, "\x1b[2m")
+			list = ui.Fade(list)
 		}
 		// both rules join the separator on the rule's row
 		sep := strings.TrimRight("┃\n"+join+"\n"+strings.Repeat("┃\n", max(m.height-3, 0)), "\n")
@@ -1887,16 +1895,6 @@ const paneHeader = 2
 // ruleColor draws the rules of the pane without the focus; focusColor the focused one and the separator.
 const ruleColor, focusColor = "#3b4261", "#7aa2f7"
 
-// restyle starts every line of s with the SGR sequence sgr and renews it after each reset inside,
-// so it holds across the line's own styling.
-func restyle(s, sgr string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = sgr + strings.ReplaceAll(l, "\x1b[m", "\x1b[m"+sgr) + "\x1b[m"
-	}
-	return strings.Join(lines, "\n")
-}
-
 // pane is the Claude pane: a title line naming the open session and a rule, then the session's
 // screen, or a hint when no session is open.
 func (m *Model) pane() string {
@@ -1908,7 +1906,7 @@ func (m *Model) pane() string {
 	if !m.target.Zero() {
 		screen := m.term.View()
 		if m.paneClosed { // a shell that ended: its last output, faint
-			screen = restyle(screen, "\x1b[2m")
+			screen = ui.Fade(screen)
 		}
 		return m.paneTitle() + "\n" + rule + "\n" + screen
 	}

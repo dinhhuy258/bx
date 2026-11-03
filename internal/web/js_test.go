@@ -295,10 +295,10 @@ const ps = byClass(root, 'sec');
 if (ps.map((x) => text(byClass(x, 'sec-label')[0])).join() !== 'Chats,fix/login,idle') fail('groups: ' + ps.map((x) => text(byClass(x, 'sec-label')[0])));
 const items = byClass(ps[0], 'item');
 if (items.length !== 3 || !items[1].className.includes('done')) fail('chats rows: ' + items.map((i) => i.className));
-if (!byClass(items[0], 'tile-wait').length || text(byClass(items[0], 'item-meta')[0]) !== 'waiting for you · #1') fail('waiting row: ' + text(byClass(items[0], 'item-meta')[0]));
+if (!byClass(items[0], 'tile-wait').length || text(byClass(items[0], 'item-meta')[0]) !== 'waiting for you') fail('waiting row: ' + text(byClass(items[0], 'item-meta')[0]));
 if (!byClass(items[2], 'tile-shell').length || !byClass(items[2], 'busy').length || text(byClass(items[2], 'item-meta')[0]) !== 'npm') fail('shell row');
 if (text(byClass(ps[1], 'diff')[0]) !== '+5−1' || !byClass(ps[1], 'tile-unread').length) fail('story diff/tile');
-if (text(byClass(ps[1], 'item-meta')[0]) !== 'idle · unread · #3') fail('unread row: ' + text(byClass(ps[1], 'item-meta')[0]));
+if (text(byClass(ps[1], 'item-meta')[0]) !== 'idle · unread') fail('unread row: ' + text(byClass(ps[1], 'item-meta')[0]));
 const add = byClass(ps[2], 'card-add');
 if (add.length !== 1 || text(add[0]) !== 'New session') fail('empty story add row');
 `

@@ -22,15 +22,15 @@ const (
 	PromptStop           // y/n: stop a live session (Target is its number)
 	PromptDelete         // y/n: delete a session's record (Target is its number)
 	PromptDeleteForce    // y/n: the session is still open; kill it and delete
-	PromptUseBranch      // y/n: the branch of a new story exists; use it
 	PromptRemoveOverride // y/n: remove a project's base override (Target is the project)
 	PromptSettingText    // a text setting's new value (Target is its key)
-	PromptNewShell       // y/n, Enter also opens: open a shell (Target is "story/k")
+	PromptNewShell       // y/n: open a shell (Target is "story/k")
 	PromptCloseShell     // y/n: close a shell, killing what runs in it (Target is "story/k")
 	PromptRenameShell    // a shell's new title, empty = its command (Target is "story/k")
 	PromptRemoveMCP      // y/n: remove the MCP servers of a scope (Target is the project, "" = global)
-	PromptNewSession     // y/n, Enter also starts: start a session (Target is the story, "" = a chat)
+	PromptNewSession     // y/n: start a session (Target is the story, "" = a chat)
 	PromptCloseProject   // y/n: take the open project off this client's list (Target is the project)
+	PromptResume         // y/n: start Claude again in a done or gone session (Target is its number)
 )
 
 // PromptResult is what a key did to the prompt.
@@ -118,8 +118,8 @@ func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 func (p *Prompt) YesNo() bool {
 	switch p.Kind {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
-		PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride,
-		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject:
+		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
+		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume:
 		return true
 	}
 	return false
@@ -225,7 +225,7 @@ func (p *Prompt) Dialog() Dialog {
 	}
 	if !p.YesNo() {
 		return Dialog{
-			Title: titles[p.Kind], Tone: ToneForm, Body: p.Body,
+			Title: titles[p.Kind], Tone: ToneForm,
 			Fields:  []Field{{Label: p.Label, Value: p.Input}},
 			Buttons: []Button{{Key: "esc", Label: "Cancel"}, {Key: "⏎", Label: verb, Default: true}},
 		}
@@ -255,14 +255,14 @@ func (p *Prompt) verb() string {
 		return "delete"
 	case PromptDeleteForce:
 		return "kill and delete"
-	case PromptUseBranch:
-		return "use branch"
 	case PromptRemoveOverride, PromptRemoveMCP:
 		return "remove"
 	case PromptNewShell:
 		return "open"
 	case PromptNewSession:
 		return "start"
+	case PromptResume:
+		return "resume"
 	case PromptCloseShell, PromptCloseProject:
 		return "close"
 	case PromptNewStory, PromptNewProject:

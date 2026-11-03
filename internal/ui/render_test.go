@@ -120,7 +120,7 @@ func TestKeyBar(t *testing.T) {
 		t.Fatal("selected", n)
 	}
 	kb = KeyBar(m, cfg, BarContext{})
-	if !strings.Contains(kb, "r resume") || strings.Contains(kb, "s stop") || strings.Contains(kb, "F focus") {
+	if !strings.Contains(kb, "⏎ resume") || strings.Contains(kb, "type in Claude") || strings.Contains(kb, "s stop") || strings.Contains(kb, "F focus") {
 		t.Error(kb)
 	}
 	kb = KeyBar(m, cfg, BarContext{ClaudeFocused: true})

@@ -495,7 +495,7 @@ func TestSnapshotSessionStates(t *testing.T) {
 	if err := s.App.SaveProject(p); err != nil {
 		t.Fatal(err)
 	}
-	gone := api.SessionState{State: "gone", Text: "gone · r to resume"}
+	gone := api.SessionState{State: "gone", Text: "gone · ⏎ to resume"}
 	for _, c := range []struct {
 		name string
 		tmux *string // the list-sessions reply; nil: tmux fails
@@ -504,7 +504,7 @@ func TestSnapshotSessionStates(t *testing.T) {
 		{"tmux known", ptr("$5\tbx-home-network-1\n$6\tbx-home-network-4\n$7\tbx-home-network-5\n$8\tbx-home-network-6\n"),
 			map[int]api.SessionState{
 				1: {State: "waiting", Text: "asks: needs you"},
-				2: {State: "done", Text: "done · r to resume"},
+				2: {State: "done", Text: "done · ⏎ to resume"},
 				3: gone,
 				4: {State: "running", Text: "running"},
 				5: {State: "idle", Text: "idle"},
@@ -514,7 +514,7 @@ func TestSnapshotSessionStates(t *testing.T) {
 		{"tmux failing", nil, // the agents alone decide, as in the TUI
 			map[int]api.SessionState{
 				1: {State: "waiting", Text: "asks: needs you"},
-				2: {State: "done", Text: "done · r to resume"},
+				2: {State: "done", Text: "done · ⏎ to resume"},
 				3: gone,
 				4: {State: "running", Text: "running"},
 				5: {State: "idle", Text: "idle"},

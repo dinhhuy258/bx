@@ -1298,24 +1298,31 @@ func TestStopTheOpenSessionClosesItsStream(t *testing.T) {
 	}
 }
 
-func TestResumeDoneSession(t *testing.T) {
-	h := start(t, 120, 30, "idle")
-	h.markDone()
-	h.press("r")
-	if got := strings.Join(h.be.actions, "|"); got != "home-network resume 1" {
-		t.Fatalf("actions = %q", got)
-	}
-}
-
-func TestDoneSessionRefusesEnterAndFocus(t *testing.T) {
-	h := start(t, 120, 30, "idle")
-	h.markDone()
+func TestEnterOnADoneSessionAsksThenResumes(t *testing.T) {
 	for _, k := range []string{"Enter", "F"} {
-		h.m.flash = ""
+		h := start(t, 120, 30, "idle")
+		h.markDone()
 		h.press(k)
-		if len(h.opened) != 0 || h.m.claudeFocused || !strings.Contains(h.m.View().Content, "done · r to resume") {
-			t.Fatalf("%s: opened=%q focused=%v\n%s", k, h.opened, h.m.claudeFocused, h.m.View().Content)
+		if v := view(h); len(h.be.actions) != 0 || h.m.claudeFocused || !strings.Contains(v, "Resume [1]?") || !strings.Contains(v, "Claude starts again where it left off.") {
+			t.Fatalf("%s asks first: actions=%q\n%s", k, h.be.actions, v)
 		}
+		h.press("Enter") // Resume is the default
+		if got := strings.Join(h.be.actions, "|"); got != "home-network resume 1" {
+			t.Fatalf("%s: actions = %q", k, got)
+		}
+		if !h.m.claudeFocused || h.m.target.Num != 1 {
+			t.Fatalf("%s: the resumed session is shown with the keys: focused=%v num=%d", k, h.m.claudeFocused, h.m.target.Num)
+		}
+	}
+	h := start(t, 120, 30, "idle")
+	h.markDone()
+	h.press("Enter", "n")
+	if len(h.be.actions) != 0 || h.m.claudeFocused {
+		t.Fatalf("n resumes nothing: %q", h.be.actions)
+	}
+	h.press("r") // no resume key any more
+	if len(h.be.actions) != 0 || h.m.prompt.Active() {
+		t.Fatalf("r did something: %q", h.be.actions)
 	}
 }
 

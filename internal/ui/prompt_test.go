@@ -49,7 +49,7 @@ func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 func TestQuestionsEnterPicksTheDefault(t *testing.T) {
 	// Enter takes the action, unless the question loses something for good
 	for k, enter := range map[PromptKind]PromptResult{
-		PromptStop: PromptSubmit, PromptUseBranch: PromptSubmit, PromptRemoveOverride: PromptSubmit,
+		PromptStop: PromptSubmit, PromptResume: PromptSubmit, PromptRemoveOverride: PromptSubmit,
 		PromptNewShell: PromptSubmit, PromptNewSession: PromptSubmit, PromptCloseProject: PromptSubmit,
 		PromptDelete: PromptCancel, PromptDeleteForce: PromptCancel, PromptCloseStory: PromptCancel,
 		PromptCloseShell: PromptCancel, PromptDiscardSettings: PromptCancel,
@@ -74,8 +74,8 @@ func TestQuestionsEnterPicksTheDefault(t *testing.T) {
 		}
 	}
 	var p Prompt
-	p.Ask(PromptUseBranch, "", "Branch exists", "fix/x exists on origin.")
-	if p.Line() != "y use branch · n cancel · ⏎ use branch · esc cancel" {
+	p.Ask(PromptResume, "6", "Resume [6]?", "old")
+	if p.Line() != "y resume · n cancel · ⏎ resume · esc cancel" {
 		t.Fatal(p.Line())
 	}
 	p.Open(PromptRenameShell, "s1/1", "Name", "dev")

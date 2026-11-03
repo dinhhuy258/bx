@@ -89,16 +89,16 @@ func rowPart(m *Model, cfg *config.Config, ctx BarContext) (string, []string) {
 	r := m.Selected()
 	if num, sess := m.SelectedSession(); sess != nil {
 		open := lk("open", "type in Claude")
-		if ctx.Narrow {
+		switch {
+		case sess.Done || m.Gone(num):
+			open = lk("open", "resume")
+		case ctx.Narrow:
 			open = lk("open", "Claude")
 		}
 		parts := []string{open}
-		if sess.Done {
-			parts = append(parts, lk("resume", "resume"))
-		} else {
-			parts = append(parts, lk("focus", "focus mode"))
-			if m.Gone(num) {
-				parts = append(parts, lk("resume", "resume"))
+		if !sess.Done {
+			if !m.Gone(num) {
+				parts = append(parts, lk("focus", "focus mode"))
 			}
 			parts = append(parts, lk("stop_session", "stop"))
 		}

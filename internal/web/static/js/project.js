@@ -77,7 +77,7 @@ export function showProject(root, name) {
       h('button', { class: 'ib', 'aria-label': 'Shell actions', onclick: () => shellMenu({ project: name, sh, refresh, onClosed: refresh }) }, icon('more')));
   }
 
-  // sessionRow is [tile][ title / ● state · #n ][⋯], the tile and dot coloured by the state
+  // sessionRow is [tile][ title / ● state ][⋯], the tile and dot coloured by the state
   function sessionRow(n, s) {
     const st = (snap.session_states || {})[n] || { state: 'idle', text: '' };
     const tone = toneOf(st.state, st.unread);
@@ -86,7 +86,7 @@ export function showProject(root, name) {
       h('a', { class: 'item-link', href: `#/p/${enc(name)}/s/${n}` },
         tile(icon('spark'), tone),
         h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, s.title || `#${n}`),
-          h('span', { class: 'item-meta' }, dotted(tone, text), ` · #${n}`))),
+          h('span', { class: 'item-meta' }, dotted(tone, text)))),
       h('button', { class: 'ib', 'aria-label': 'Session actions', onclick: () => sessionMenu({ project: name, num: n, session: s, state: st.state, act, refresh, ask, withForce: force, onDeleted: refresh }) }, icon('more')));
   }
 

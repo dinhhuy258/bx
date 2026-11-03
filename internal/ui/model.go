@@ -480,13 +480,13 @@ func (m *Model) StateText(num int) string {
 		return ""
 	}
 	if s.Done {
-		return "done · r to resume"
+		return "done · ⏎ to resume"
 	}
 	if m.Starting(num) {
 		return "starting"
 	}
 	if m.Gone(num) {
-		return "gone · r to resume"
+		return "gone · ⏎ to resume"
 	}
 	a := m.Live.Agents[s.UUID]
 	var text string
