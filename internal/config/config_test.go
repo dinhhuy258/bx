@@ -165,3 +165,13 @@ func TestMCPPaths(t *testing.T) {
 		t.Fatalf("%q %q", c.MCPFile(), c.SessionMCPDir())
 	}
 }
+
+func TestReviewFileAndKey(t *testing.T) {
+	c := Default("/r")
+	if got := c.ReviewFile("home-network", "s1"); got != filepath.Join("/r", "review", "home-network", "s1.json") {
+		t.Errorf("ReviewFile = %s", got)
+	}
+	if a := c.Keys.ListAction("G"); a != "review" {
+		t.Errorf("G = %q", a)
+	}
+}

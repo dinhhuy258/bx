@@ -93,7 +93,10 @@ export function showProject(root, name) {
   function storyMenu(story) {
     const shellItem = { label: 'New shell', run: () => newShell(story) };
     if (!story) { sheet('Chats', [{ label: 'New session', run: () => newSession('') }, shellItem]); return; }
-    const items = [{ label: 'New session', run: () => newSession(story) }, shellItem];
+    const rv = ((snap.live && snap.live.review) || {})[story] || 0, d = ((snap.live && snap.live.diff) || {})[story];
+    const hint = [rv ? `${rv} to send` : '', d ? `+${d.add} −${d.del}` : ''].filter(Boolean).join(' · ');
+    const items = [{ label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } },
+      { label: 'New session', run: () => newSession(story) }, shellItem];
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
     // closing removes the worktree: red, in its own group, and asked twice when files would be lost
     items.push({ label: 'Close story', icon: 'trash', hint: 'Stops its sessions and removes its worktree', danger: true, run: async () => {

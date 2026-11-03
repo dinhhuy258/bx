@@ -70,6 +70,7 @@ func Default(root string) *Config {
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
 				"settings": {"P"}, "stop_session": {"S"}, "delete_session": {"D"}, "close_shell": {"D"}, "cleanup": {"C"}, "artifacts": {"V"},
+				"review": {"G"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
@@ -153,6 +154,11 @@ func (c *Config) ProjectDir(project string) string {
 // WorktreeDir is <root>/worktrees/<project>/<story>.
 func (c *Config) WorktreeDir(project, story string) string {
 	return filepath.Join(c.Root, "worktrees", project, story)
+}
+
+// ReviewFile is a story's review comments: <root>/review/<project>/<story>.json.
+func (c *Config) ReviewFile(project, story string) string {
+	return filepath.Join(c.Root, "review", project, story+".json")
 }
 
 // StateFile is <root>/state/<project>.json.

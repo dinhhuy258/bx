@@ -30,6 +30,7 @@ const (
 	createTimeout = 10 * time.Minute
 	syncTimeout   = 2 * time.Minute
 	uploadTimeout = 2 * time.Minute
+	sendTimeout   = 60 * time.Second // a send may resume Claude and wait up to 30 s for it
 )
 
 // NewAPI builds a client for base.
@@ -193,6 +194,34 @@ func (c *API) Artifacts(ctx context.Context, project string, num int) (api.Artif
 	var out api.ArtifactList
 	path := fmt.Sprintf("/api/projects/%s/sessions/%d/artifacts", url.PathEscape(project), num)
 	return out, c.call(ctx, pollTimeout, http.MethodGet, path, nil, &out)
+}
+
+func reviewPath(project, story string) string {
+	return "/api/projects/" + url.PathEscape(project) + "/stories/" + url.PathEscape(story) + "/review"
+}
+
+// Review is GET …/stories/{story}/review: the diff since the story's base, with its comments.
+func (c *API) Review(ctx context.Context, project, story string) (api.Review, error) {
+	var out api.Review
+	return out, c.call(ctx, reposTimeout, http.MethodGet, reviewPath(project, story), nil, &out)
+}
+
+// SaveReview is PUT …/review: the whole comment list at the version it was read at.
+func (c *API) SaveReview(ctx context.Context, project, story string, cs api.ReviewComments) (api.Review, error) {
+	var out api.Review
+	return out, c.call(ctx, reposTimeout, http.MethodPut, reviewPath(project, story), cs, &out)
+}
+
+// SendReview is POST …/review/send: paste the unsent comments into a session.
+func (c *API) SendReview(ctx context.Context, project, story string, r api.ReviewSend) (api.Result, error) {
+	var out api.Result
+	return out, c.call(ctx, sendTimeout, http.MethodPost, reviewPath(project, story)+"/send", r, &out)
+}
+
+// ClearSent is POST …/review/clear-sent: drop the sent comments.
+func (c *API) ClearSent(ctx context.Context, project, story string) (api.Review, error) {
+	var out api.Review
+	return out, c.call(ctx, reposTimeout, http.MethodPost, reviewPath(project, story)+"/clear-sent", struct{}{}, &out)
 }
 
 // Upload is POST /api/projects/{name}/sessions/{num}/files: one file for the session, saved on

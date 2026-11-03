@@ -83,3 +83,20 @@ func TestQuestionsEnterPicksTheDefault(t *testing.T) {
 		t.Fatal("rename shell is a text prompt with the old title")
 	}
 }
+
+func TestCommentPrompt(t *testing.T) {
+	var p Prompt
+	p.OpenComment("Comment · a.go:3 (removed line)", "\tx := 1", "first\nsecond")
+	d := p.Dialog()
+	if d.Title != "Comment · a.go:3 (removed line)" || len(d.Body) != 1 || d.Body[0] != "> x := 1" ||
+		d.Fields[0].Value != "first second" || p.YesNo() {
+		t.Fatalf("%+v", d)
+	}
+	if p.Line() != "⏎ save · esc cancel" {
+		t.Fatal(p.Line())
+	}
+	p.Ask(PromptClearSent, "s1", "Clear 2 sent comments?")
+	if !p.YesNo() || p.Danger() || p.Line() != "y clear · n cancel · ⏎ clear · esc cancel" {
+		t.Fatal(p.Line())
+	}
+}

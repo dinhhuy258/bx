@@ -47,6 +47,12 @@ type fakeBackend struct {
 	cleanup   api.Cleanup  // the reply of every cleanup scan
 	cleaned   [][]string   // the ids of every cleanup apply
 	// new stories
+	review      api.Review // the stored review: GET returns it, PUT and clear-sent change it
+	saveRev     []api.ReviewComments
+	sends       []api.ReviewSend
+	sendRes     api.Result
+	sendErr     error
+	reviewErr   error                 // PUT fails with this
 	artifacts   api.ArtifactList      // the reply of every artifacts list
 	reads       []string              // "storyinfo", "branches fetch", "prs <q>"
 	info        api.StoryInfo         // the reply of storyinfo
@@ -150,6 +156,42 @@ func (f *fakeBackend) NewStory(ctx context.Context, project string, a api.Action
 }
 
 func (f *fakeBackend) Cleanup(context.Context) (api.Cleanup, error) { return f.cleanup, nil }
+
+func (f *fakeBackend) Review(_ context.Context, project, story string) (api.Review, error) {
+	f.reads = append(f.reads, "review "+project+" "+story)
+	return f.review, nil
+}
+
+func (f *fakeBackend) SaveReview(_ context.Context, _, _ string, c api.ReviewComments) (api.Review, error) {
+	f.saveRev = append(f.saveRev, c)
+	if f.reviewErr != nil {
+		return api.Review{}, f.reviewErr
+	}
+	for i := range c.Comments {
+		if c.Comments[i].ID == "" {
+			c.Comments[i].ID = fmt.Sprintf("n%d", i)
+		}
+	}
+	f.review.Version++
+	f.review.Comments = c.Comments
+	return f.review, nil
+}
+
+func (f *fakeBackend) SendReview(_ context.Context, _, _ string, r api.ReviewSend) (api.Result, error) {
+	f.sends = append(f.sends, r)
+	return f.sendRes, f.sendErr
+}
+
+func (f *fakeBackend) ClearSent(context.Context, string, string) (api.Review, error) {
+	var left []api.Comment
+	for _, c := range f.review.Comments {
+		if c.SentAt == 0 {
+			left = append(left, c)
+		}
+	}
+	f.review.Comments = left
+	return f.review, nil
+}
 
 func (f *fakeBackend) Artifacts(_ context.Context, project string, num int) (api.ArtifactList, error) {
 	f.reads = append(f.reads, fmt.Sprintf("artifacts %s %d", project, num))

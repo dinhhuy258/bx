@@ -43,6 +43,8 @@ type Server struct {
 	started  map[string]map[int]bool // by project, the sessions bx serve started since the last watch
 	unread   unread                  // the sessions that finished a turn nobody watched; see unread.go
 
+	sending map[string]bool // "project/story" of a review send in progress
+
 	prepared func() // tests: called by newStory between PrepareStory and taking write; nil in production
 }
 
@@ -57,7 +59,7 @@ type diffCache struct {
 // New builds a Server.
 func New(a *app.App, cfg *config.Config, l claude.Lister, log func(string, ...any)) *Server {
 	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{},
-		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread()}
+		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread(), sending: map[string]bool{}}
 }
 
 // Handler routes the API.
@@ -151,6 +153,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/cleanup", s.cleanupApply)
 	mux.HandleFunc("POST /api/claude/sync/plan", s.claudeSyncPlan)
 	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
+	s.reviewRoutes(mux)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
 	return sameOrigin(mux)
 }
@@ -781,6 +784,7 @@ func (s *Server) collect(p *state.Project) ui.Live {
 	}
 	l.Diff = s.diff(p)
 	l.Unread = s.unreadSnapshot()
+	l.Review = s.reviewCounts(p)
 	return l
 }
 

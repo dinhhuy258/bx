@@ -46,3 +46,14 @@ func TestSyncFileContentIsBase64(t *testing.T) {
 		t.Fatalf("%+v %v", out, err)
 	}
 }
+
+func TestReviewJSON(t *testing.T) {
+	r := Review{Base: "main", Total: 1, Files: []DiffFile{{Path: "a.go", Status: "modified", Add: 1,
+		Hunks: []Hunk{{Header: "@@ -1 +1 @@", Rows: []DiffRow{{Kind: "add", New: 1, Text: "x"}}}}}},
+		ReviewComments: ReviewComments{Version: 2, Comments: []Comment{{ID: "c1", File: "a.go", Side: "new", Line: 1, Body: "why", SentTo: 3, SentAt: 9}}}}
+	b, _ := json.Marshal(r)
+	want := `{"base":"main","total":1,"files":[{"path":"a.go","status":"modified","add":1,"del":0,"hunks":[{"header":"@@ -1 +1 @@","rows":[{"kind":"add","old":0,"new":1,"text":"x"}]}]}],"version":2,"comments":[{"id":"c1","file":"a.go","side":"new","line":1,"code":"","body":"why","sent_to":3,"sent_at":9}]}`
+	if string(b) != want {
+		t.Fatalf("got  %s\nwant %s", b, want)
+	}
+}

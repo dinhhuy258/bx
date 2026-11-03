@@ -60,6 +60,10 @@ func quarantine(path string, cause error) error {
 	return &CorruptError{Path: path, Quarantine: q, Err: cause}
 }
 
+// Quarantine moves a corrupt file aside as <name>.corrupt-<timestamp>.json and returns the
+// *CorruptError for it. Other stores (review comments) use it too.
+func Quarantine(path string, cause error) error { return quarantine(path, cause) }
+
 // Save writes p atomically: temp file in the same folder, fsync, rename.
 func Save(path string, p *Project) error {
 	p.Version = CurrentVersion

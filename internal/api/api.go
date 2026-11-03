@@ -297,3 +297,19 @@ type CleanupRequest struct {
 type CleanupResult struct {
 	Removed int `json:"removed"`
 }
+
+// The review types live in ui, which draws the review screen and cannot import api.
+type (
+	Review         = ui.ReviewData
+	ReviewComments = ui.ReviewComments
+	DiffFile       = ui.DiffFile
+	Hunk           = ui.Hunk
+	DiffRow        = ui.DiffRow
+	Comment        = ui.Comment
+)
+
+// ReviewSend is POST …/review/send: the session to paste into, or New for a new one.
+type ReviewSend struct {
+	Session int  `json:"session,omitempty"`
+	New     bool `json:"new,omitempty"`
+}

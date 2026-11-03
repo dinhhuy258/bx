@@ -216,6 +216,12 @@ func TestRealServer(t *testing.T) {
 	if out, _ := exec.Command("tmux", "-S", r.Socket, "show", "-gv", "prefix").Output(); strings.TrimSpace(string(out)) != "None" {
 		t.Fatalf("conf not loaded: prefix=%q", out)
 	}
+	if err := tm.Paste(id, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := exec.Command("tmux", "-S", r.Socket, "list-buffers").Output(); strings.Contains(string(out), "bx-review") {
+		t.Fatalf("buffer kept: %s", out)
+	}
 	if err := tm.KillSession(id); err != nil {
 		t.Fatal(err)
 	}
@@ -234,5 +240,30 @@ func TestIsNoServer(t *testing.T) {
 		if got := IsNoServer(c.err); got != c.want {
 			t.Errorf("IsNoServer(%v) = %v, want %v", c.err, got, c.want)
 		}
+	}
+}
+
+func TestPasteLoadsAndPastesTheBuffer(t *testing.T) {
+	f := &Fake{}
+	if err := New(f).Paste("$5", "fix this\nand that"); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, c := range f.Calls {
+		got = append(got, strings.Join(c, " "))
+	}
+	want := "load-buffer -b bx-review-5 -\npaste-buffer -p -d -b bx-review-5 -t $5"
+	if strings.Join(got, "\n") != want {
+		t.Fatalf("calls:\n%s", strings.Join(got, "\n"))
+	}
+	if len(f.Inputs) != 1 || f.Inputs[0] != "fix this\nand that" {
+		t.Fatalf("inputs = %q", f.Inputs)
+	}
+}
+
+func TestPasteStopsWhenLoadFails(t *testing.T) {
+	f := &Fake{Errs: map[string]error{"load-buffer -b bx-review-5 -": errors.New("boom")}}
+	if err := New(f).Paste("$5", "x"); err == nil || len(f.Calls) != 0 {
+		t.Fatalf("err = %v, calls = %v", err, f.Calls)
 	}
 }

@@ -38,6 +38,8 @@ const (
 	PromptRemoveAccountOverride // y/n: remove a project's account override (Target is the project)
 	PromptDiscardAccount        // y/n: drop the edits of the account form
 	PromptLogin                 // y/n: open a shell running gh auth login for github.com
+	PromptComment               // a review comment on a diff line, empty = delete it
+	PromptClearSent             // y/n: drop the sent comments of a review (Target is the story)
 )
 
 // PromptResult is what a key did to the prompt.
@@ -56,6 +58,7 @@ type Prompt struct {
 	Target string // the story a new session or a close applies to
 	Label  string // a form's field label; a question's title
 	Body   []string
+	Title  string // a form's title when it is not the kind's (a comment names its line)
 	Input  string
 
 	// the new story form: its branch types, the chosen one, the field with the cursor (0 the
@@ -118,6 +121,13 @@ func (p *Prompt) Ask(kind PromptKind, target, title string, body ...string) {
 	*p = Prompt{Kind: kind, Target: target, Label: title, Body: body}
 }
 
+// OpenComment starts the comment form on a diff line: title names the line, the body quotes
+// its code. The field is one line, so a comment written on the phone is joined with spaces.
+func (p *Prompt) OpenComment(title, code, initial string) {
+	p.Open(PromptComment, "", "Comment (empty deletes it)", strings.ReplaceAll(initial, "\n", " "))
+	p.Title, p.Body = title, []string{"> " + strings.TrimSpace(ReviewText(code))}
+}
+
 // Active reports whether a prompt is open.
 func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 
@@ -127,7 +137,7 @@ func (p *Prompt) YesNo() bool {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
 		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
 		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume,
-		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin:
+		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin, PromptClearSent:
 		return true
 	}
 	return false
@@ -233,8 +243,12 @@ func (p *Prompt) Dialog() Dialog {
 		}
 	}
 	if !p.YesNo() {
+		title := titles[p.Kind]
+		if p.Title != "" {
+			title = p.Title
+		}
 		return Dialog{
-			Title: titles[p.Kind], Tone: ToneForm,
+			Title: title, Tone: ToneForm, Body: p.Body,
 			Fields:  []Field{{Label: p.Label, Value: p.Input}},
 			Buttons: []Button{{Key: "esc", Label: "Cancel"}, {Key: "⏎", Label: verb, Default: true}},
 		}
@@ -278,12 +292,14 @@ func (p *Prompt) verb() string {
 		return "create"
 	case PromptRename, PromptRenameShell:
 		return "rename"
-	case PromptSettingText, PromptAccountText:
+	case PromptSettingText, PromptAccountText, PromptComment:
 		return "save"
 	case PromptRuleOwner:
 		return "next"
 	case PromptLogin:
 		return "log in"
+	case PromptClearSent:
+		return "clear"
 	}
 	return "yes"
 }

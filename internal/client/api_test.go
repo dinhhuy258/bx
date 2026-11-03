@@ -184,3 +184,35 @@ func TestAPIMCPDoc(t *testing.T) {
 		t.Fatalf("%v %+v %s %s", err, res, gotPath, gotBody)
 	}
 }
+
+func TestReviewCalls(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got = append(got, r.Method+" "+r.URL.EscapedPath()+" "+strings.TrimSpace(string(body)))
+		if strings.HasSuffix(r.URL.Path, "/send") {
+			_, _ = w.Write([]byte(`{"num":3,"message":"Pasted 1 comment into [3]"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"base":"main","total":0,"files":[],"version":4,"comments":[]}`))
+	}))
+	defer srv.Close()
+	c := &API{Base: srv.URL, HTTP: srv.Client()}
+	ctx := context.Background()
+	r, err := c.Review(ctx, "home network", "s1")
+	if err != nil || r.Version != 4 {
+		t.Fatal(r, err)
+	}
+	_, _ = c.SaveReview(ctx, "p", "s1", api.ReviewComments{Version: 4})
+	res, _ := c.SendReview(ctx, "p", "s1", api.ReviewSend{Session: 3})
+	_, _ = c.ClearSent(ctx, "p", "s1")
+	want := []string{
+		"GET /api/projects/home%20network/stories/s1/review ",
+		`PUT /api/projects/p/stories/s1/review {"version":4,"comments":null}`,
+		`POST /api/projects/p/stories/s1/review/send {"session":3}`,
+		"POST /api/projects/p/stories/s1/review/clear-sent {}",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") || res.Num != 3 {
+		t.Fatalf("%s\n%+v", strings.Join(got, "\n"), res)
+	}
+}

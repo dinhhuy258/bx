@@ -25,13 +25,14 @@ func (d Diff) Plus(o Diff) Diff { return Diff{d.Add + o.Add, d.Del + o.Del, d.Di
 // Live is everything derived on each tick and never stored.
 type Live struct {
 	Now        time.Time               `json:"now"`
-	Agents     map[string]claude.Agent `json:"agents"`      // by session uuid
-	Dups       map[string]bool         `json:"dups"`        // uuids seen twice
-	Diff       map[string]Diff         `json:"diff"`        // by story
-	DirtyFiles int                     `json:"dirty_files"` // git status --porcelain in the project folder
-	Branch     string                  `json:"branch"`      // current branch of the project folder
-	AgentsErr  bool                    `json:"agents_err"`  // claude agents --json failed; keep the last state
-	Unread     map[string]bool         `json:"unread"`      // by session uuid: finished a turn nobody has opened since (serve/unread.go)
+	Agents     map[string]claude.Agent `json:"agents"`           // by session uuid
+	Dups       map[string]bool         `json:"dups"`             // uuids seen twice
+	Diff       map[string]Diff         `json:"diff"`             // by story
+	DirtyFiles int                     `json:"dirty_files"`      // git status --porcelain in the project folder
+	Branch     string                  `json:"branch"`           // current branch of the project folder
+	AgentsErr  bool                    `json:"agents_err"`       // claude agents --json failed; keep the last state
+	Unread     map[string]bool         `json:"unread"`           // by session uuid: finished a turn nobody has opened since (serve/unread.go)
+	Review     map[string]int          `json:"review,omitempty"` // by story: unsent review comments
 }
 
 // RowKind tells what a row is.

@@ -395,3 +395,56 @@ func runJS(t *testing.T, src string) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
+
+// reviewScript draws the review screen from a stubbed api and checks Send counts only unsent
+// comments, a sent bubble is dimmed, and ask has a textarea field.
+const reviewScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; this.value = ''; this.hidden = false; this.open = false; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  fire(k, e = {}) { for (const f of this.on[k] || []) f(e); }
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+  replaceChildren(...c) { this.children = c; }
+  showModal() { this.open = true; }
+  close() { this.open = false; this.fire('close'); }
+  remove() {}
+  set textContent(v) { this.children = []; this._t = v; }
+  get textContent() { return this._t; }
+}
+const made = [];
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => { const e = new El(t); made.push(e); return e; }, createElementNS: (_, t) => new El(t), body: new El('body'), querySelector: () => null };
+globalThis.location = { hash: '' };
+globalThis.window = globalThis;
+const fail = (m) => { console.error(m); process.exit(1); };
+const text = (e) => typeof e === 'string' ? e : (e.textContent ?? '') + (e.children || []).map(text).join('');
+
+const { api } = await import(process.argv[2] + '/api.js');
+const { showReview, unsentOf, sideOf, lineOf } = await import(process.argv[2] + '/review.js');
+const { ask } = await import(process.argv[2] + '/ui.js');
+
+if (sideOf({ kind: 'del', old: 4 }) !== 'old' || lineOf({ kind: 'del', old: 4 }) !== 4 || lineOf({ kind: 'add', new: 7 }) !== 7) fail('sideOf/lineOf');
+if (unsentOf([{ id: 'a' }, { id: 'b', sent_at: 5 }]).length !== 1) fail('unsentOf');
+
+api.review = async () => ({ base: 'main', total: 1, version: 2, files: [{ path: 'a.go', status: 'modified', add: 1, del: 0,
+  hunks: [{ header: '@@ -1 +1,2 @@', rows: [{ kind: 'ctx', old: 1, new: 1, text: 'x' }, { kind: 'add', old: 0, new: 2, text: 'y' }] }] }],
+  comments: [{ id: 'a', file: 'a.go', side: 'new', line: 2, body: 'why y' }, { id: 'b', file: 'a.go', side: 'new', line: 1, body: 'old', sent_to: 3, sent_at: 9 }] });
+const root = new El('div');
+showReview(root, 'home-network', 's1');
+await new Promise((r) => setTimeout(r, 0));
+const send = made.find((e) => e.tag === 'button' && e.className === 'primary');
+if (!send || text(send) !== 'Send 1' || send.disabled) fail('send button: ' + (send && text(send)));
+const bubbles = made.filter((e) => typeof e.className === 'string' && e.className.startsWith('rv-bubble'));
+if (bubbles.length !== 2 || !bubbles.some((b) => b.className === 'rv-bubble sent' && text(b).includes('✓ sent → [3]'))) fail('bubbles: ' + bubbles.map(text).join(' | '));
+
+made.length = 0;
+ask('Comment', [{ name: 'body', label: 'Comment', type: 'textarea', value: 'hi' }], 'Save');
+const ta = made.find((e) => e.tag === 'textarea');
+if (!ta || ta.value !== 'hi') fail('textarea');
+`
+
+func TestReviewScreen(t *testing.T) {
+	runJS(t, reviewScript)
+}

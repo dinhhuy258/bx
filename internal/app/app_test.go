@@ -469,3 +469,20 @@ func TestLaunchLogsKeepServerFailure(t *testing.T) {
 		t.Fatalf("log: %q", logged)
 	}
 }
+
+func TestCloseStoryRemovesItsReview(t *testing.T) {
+	a, f, p := newApp(t)
+	if _, err := a.NewStory(context.Background(), p, StoryOpts{Name: "s1"}); err != nil {
+		t.Fatal(err)
+	}
+	path := a.Cfg.ReviewFile(p.Name, "s1")
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte(`{"version":1,"comments":[]}`), 0o644)
+	f.Replies[listSessions] = ""
+	if _, err := a.CloseStory(p, "s1", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("review file kept: %v", err)
+	}
+}

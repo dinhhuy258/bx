@@ -56,6 +56,10 @@ type Backend interface {
 	CleanupApply(ctx context.Context, ids []string) (api.CleanupResult, error)
 	Artifacts(ctx context.Context, project string, num int) (api.ArtifactList, error)
 	Upload(ctx context.Context, project string, num int, name string, content []byte) (api.UploadResult, error)
+	Review(ctx context.Context, project, story string) (api.Review, error)
+	SaveReview(ctx context.Context, project, story string, c api.ReviewComments) (api.Review, error)
+	SendReview(ctx context.Context, project, story string, r api.ReviewSend) (api.Result, error)
+	ClearSent(ctx context.Context, project, story string) (api.Review, error)
 }
 
 // Conn is one open session stream.
@@ -119,6 +123,18 @@ type (
 		list api.ArtifactList
 		err  error
 	}
+	// reviewMsg is a load or a save of the review of story; done is flashed on success.
+	reviewMsg struct {
+		story string
+		r     api.Review
+		err   error
+		done  string
+	}
+	reviewSentMsg struct {
+		story string
+		res   api.Result
+		err   error
+	}
 	// attachedMsg is the end of an attach: the clipboard's file uploaded to session num as path.
 	attachedMsg struct {
 		project    string
@@ -146,6 +162,7 @@ const (
 	pickRuleAccount              // settings › git: the account of a rule
 	pickAccountProject           // settings › git: the project of a new account override
 	pickOverrideAccount          // settings › git: the account of a project override
+	pickReviewSend               // the session that gets a review's unsent comments
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -199,9 +216,12 @@ type Model struct {
 	cleanIDs    []string          // the ticked ids; non-nil while the confirm box is open
 	cleanLabels []string          // their labels, shown in the box
 
-	settings     *ui.Settings // the settings screen, full screen while open
-	settingsNote string       // shown in its place until the server's sections arrive
-	syncSeq      int          // bumped on every sync scan or apply; older replies are dropped
+	review       *ui.Review     // the review screen, nil when closed
+	reviewLine   ui.ReviewLine  // the line the open comment form is on
+	reviewSend   map[string]int // the send picker's labels → session number (0 = a new session)
+	settings     *ui.Settings   // the settings screen, full screen while open
+	settingsNote string         // shown in its place until the server's sections arrive
+	syncSeq      int            // bumped on every sync scan or apply; older replies are dropped
 	syncMac      claudesync.MacScan
 	syncPlan     api.SyncPlan
 	syncDone     bool                                                          // a sync succeeded since the screen opened or the last r
@@ -458,6 +478,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case artifactsMsg:
 		m.gotArtifacts(msg)
 		return m, nil
+	case reviewMsg:
+		return m, m.gotReview(msg)
+	case reviewSentMsg:
+		return m, m.gotReviewSent(msg)
 	case attachedMsg:
 		m.gotAttached(msg)
 		return m, nil
@@ -721,6 +745,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.settings != nil {
 		return m, m.settingsKey(key)
 	}
+	if m.review != nil {
+		return m, m.reviewKey(key)
+	}
 	if m.m == nil {
 		switch {
 		case key == "C-c":
@@ -862,6 +889,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "cleanup":
 		return m, m.loadCleanup()
+	case "review":
+		if row.Kind == ui.RowStory && row.Story != "" {
+			return m, m.openReview(row.Story)
+		}
 	case "artifacts":
 		if sess != nil {
 			return m, m.loadArtifacts(num)
@@ -1024,7 +1055,7 @@ const wheelLines = 3
 
 // wheel scrolls the Claude pane when the pointer is over it.
 func (m *Model) wheel(msg tea.MouseWheelMsg) {
-	if m.m == nil || m.picker != nil || m.switcher != nil || m.settings != nil || m.showKeys || msg.Y < paneHeader {
+	if m.m == nil || m.picker != nil || m.switcher != nil || m.settings != nil || m.review != nil || m.showKeys || msg.Y < paneHeader {
 		return
 	}
 	switch {
@@ -1298,6 +1329,8 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			return nil
 		case pickOverrideAccount:
 			return m.pickOverrideAccount(choice)
+		case pickReviewSend:
+			return m.sendReview(m.reviewSend[choice])
 		case pickMCPProject:
 			return m.editMCP(choice)
 		case pickCleanup:
@@ -1474,6 +1507,10 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		return cmd
 	}
 	switch kind {
+	case ui.PromptComment:
+		return m.commentDone(text)
+	case ui.PromptClearSent:
+		return m.clearSent(target)
 	case ui.PromptAddRepoForce:
 		return m.addStoryRepos(target, m.addRepos, true)
 	case ui.PromptRename:
@@ -1828,7 +1865,7 @@ func (m *Model) View() tea.View {
 	if !m.target.Zero() {
 		v.MouseMode = tea.MouseModeCellMotion // the wheel scrolls the Claude pane
 	}
-	if m.claudeFocused && m.picker == nil && m.settings == nil && m.m != nil && !m.showKeys && !m.prompt.Active() && m.cleanIDs == nil && m.switcher == nil {
+	if m.claudeFocused && m.picker == nil && m.settings == nil && m.review == nil && m.m != nil && !m.showKeys && !m.prompt.Active() && m.cleanIDs == nil && m.switcher == nil {
 		if x, y := m.term.Cursor(); x >= 0 {
 			off := 0
 			if !m.focusMode && !m.narrow {
@@ -1863,6 +1900,8 @@ func (m *Model) screen() string {
 	switch {
 	case m.picker != nil:
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
+	case m.review != nil:
+		return m.review.Render(m.width, m.height-1, false, m.narrow) + "\n" + m.bar()
 	case m.settings != nil:
 		return m.settings.Render(m.width, m.height-1, false, m.settingsNote) + "\n" + m.bar()
 	case m.showKeys:
@@ -2038,6 +2077,10 @@ func (m *Model) bar() string {
 		text = m.prompt.Line()
 	case m.switcher != nil:
 		text = m.switcher.Line()
+	case m.review != nil && m.flash != "":
+		text = m.flash
+	case m.review != nil:
+		text = m.review.Bar(m.narrow)
 	case m.settings != nil && m.flash != "":
 		text = m.flash
 	case m.settings != nil && m.settingsOnMCPRow():

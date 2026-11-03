@@ -34,10 +34,12 @@ export const tile = (content, tone) => h('span', { class: `tile${tone ? ` tile-$
 // An open modal dialog makes the rest of the page inert and sits above it, so elements that
 // must work while one is open go inside it.
 const topEl = () => document.querySelector('dialog[open]') || document.body;
-export function toast(msg) {
-  const t = h('div', { class: 'toast' }, msg);
+// toast shows msg for 3 s; action {label, run} adds a button to it.
+export function toast(msg, action) {
+  const t = h('div', { class: 'toast' }, msg,
+    action ? h('button', { class: 'toast-act', onclick: () => { t.remove(); action.run(); } }, action.label) : null);
   topEl().append(t);
-  setTimeout(() => t.remove(), 3000);
+  setTimeout(() => t.remove(), action ? 5000 : 3000);
 }
 // copyText puts text on the clipboard and returns whether it worked (a promise of it in a
 // secure context). Call it synchronously inside a tap. Pattern from m-terminal's clipboard.ts:
@@ -107,6 +109,9 @@ export function ask(title, fields, ok = 'OK', opts = {}) {
         input = h('div', { class: 'checks' }, f.options.length
           ? f.options.map((o) => h('label', {}, h('input', { type: 'checkbox', value: o, checked: (f.value || []).includes(o) }), o))
           : h('span', { class: 'help' }, 'Nothing to pick'));
+      } else if (f.type === 'textarea') {
+        input = h('textarea', { rows: 5, placeholder: f.placeholder || '', autocapitalize: 'sentences' });
+        input.value = f.value || '';
       } else {
         const listId = f.list ? `l${Math.random().toString(36).slice(2)}` : null;
         input = h('input', { type: 'text', value: f.value || '', placeholder: f.placeholder || '', list: listId,

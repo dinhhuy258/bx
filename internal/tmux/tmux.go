@@ -36,10 +36,16 @@ func (r *Runner) args(args []string) []string {
 }
 
 // Run implements Exec.
-func (r *Runner) Run(args ...string) ([]byte, error) {
+func (r *Runner) Run(args ...string) ([]byte, error) { return r.RunInput(nil, args...) }
+
+// RunInput implements Inputter: in is the command's stdin (nil = none).
+func (r *Runner) RunInput(in []byte, args ...string) ([]byte, error) {
 	var out, errb bytes.Buffer
 	cmd := exec.Command("tmux", r.args(args)...)
 	cmd.Stdout, cmd.Stderr = &out, &errb
+	if in != nil {
+		cmd.Stdin = bytes.NewReader(in)
+	}
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("tmux %s: %s", strings.Join(args, " "), strings.TrimSpace(errb.String()))
 	}
@@ -53,6 +59,11 @@ func (r *Runner) Command(args ...string) *exec.Cmd { return exec.Command("tmux",
 // Commander is implemented by an Exec that can start a real tmux client.
 type Commander interface {
 	Command(args ...string) *exec.Cmd
+}
+
+// Inputter is implemented by an Exec that can feed stdin to a tmux command (load-buffer -).
+type Inputter interface {
+	RunInput(in []byte, args ...string) ([]byte, error)
 }
 
 // Session is one row of list-sessions.
@@ -184,6 +195,23 @@ func IsNoServer(err error) bool {
 // KillSession kills a session by id.
 func (t *Tmux) KillSession(sid string) error {
 	_, err := t.x.Run("kill-session", "-t", sid)
+	return err
+}
+
+// Paste puts text in the input of a session's pane without pressing Enter. load-buffer reads
+// it from stdin (no command-line length limit); paste-buffer -p sends it as a bracketed paste
+// when the program asked for one, so Claude takes the newlines as text, and -d deletes the
+// buffer. The buffer is named after the session so two pastes don't mix.
+func (t *Tmux) Paste(sid, text string) error {
+	in, ok := t.x.(Inputter)
+	if !ok {
+		return errors.New("tmux executor cannot paste")
+	}
+	buf := "bx-review-" + strings.TrimPrefix(sid, "$")
+	if _, err := in.RunInput([]byte(text), "load-buffer", "-b", buf, "-"); err != nil {
+		return err
+	}
+	_, err := t.x.Run("paste-buffer", "-p", "-d", "-b", buf, "-t", sid)
 	return err
 }
 

@@ -50,6 +50,12 @@ export const api = {
   closeShell: (p, story, k) => call('POST', `/api/projects/${enc(p)}/shells/close`, { story, k }),
   // an empty title goes back to showing the command
   renameShell: (p, story, k, title) => call('POST', `/api/projects/${enc(p)}/shells/rename`, { story, k, title }),
+  // the story's diff with its review comments; saveReview sends {version, comments} back whole
+  review: (p, s) => call('GET', `/api/projects/${enc(p)}/stories/${enc(s)}/review`),
+  saveReview: (p, s, body) => call('PUT', `/api/projects/${enc(p)}/stories/${enc(s)}/review`, body),
+  // body is {session: n} or {new: true}; the reply's .message says what happened
+  sendReview: (p, s, body) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/send`, body),
+  clearSent: (p, s) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/clear-sent`, {}),
   shellStreamURL: (p, story, k, cols, rows) =>
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/shells/stream?story=${enc(story)}&k=${k}&cols=${cols}&rows=${rows}`,
 };

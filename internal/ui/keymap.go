@@ -40,6 +40,7 @@ var keymapGroups = []keymapGroup{
 		{"new_session", "new session in it"},
 		{"add_repo", "add repositories (workspace)"},
 		{"close_story", "close · stop its sessions, remove worktree"},
+		{"review", "review the diff, comment, send to Claude"},
 	}},
 	{"PROJECT", "the one on screen", []keymapItem{
 		{"new_story", "new story · a branch and worktree"},
