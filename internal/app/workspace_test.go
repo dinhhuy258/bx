@@ -260,9 +260,19 @@ func TestWorkspaceSessionGetsGuard(t *testing.T) {
 	}
 	story := a.options(p, 1, &state.Session{Story: "login"})
 	chat := a.options(p, 2, &state.Session{})
-	if !strings.Contains(story.Settings, `"PreToolUse"`) || !strings.Contains(story.Settings, "/usr/local/bin/bx guard "+a.Dir(p, "login")) || chat.Settings != "" {
+	if !strings.Contains(story.Settings, `"PreToolUse"`) || !strings.Contains(story.Settings, "/usr/local/bin/bx guard "+a.Dir(p, "login")) ||
+		strings.Contains(chat.Settings, `"PreToolUse"`) {
 		t.Fatalf("story %q chat %q", story.Settings, chat.Settings)
 	}
+	const status = `"statusLine":{"command":"/usr/local/bin/bx statusline","type":"command"}`
+	if !strings.Contains(story.Settings, status) || !strings.Contains(chat.Settings, status) {
+		t.Fatalf("no status line: story %q chat %q", story.Settings, chat.Settings)
+	}
+	a.Self = ""
+	if none := a.options(p, 2, &state.Session{}); none.Settings != "" {
+		t.Fatalf("no bx binary: %q", none.Settings)
+	}
+	a.Self = "/usr/local/bin/bx"
 	a.PluginDir = "/opt/bx-plugin"
 	both := a.options(p, 1, &state.Session{Story: "login"})
 	if !strings.Contains(both.Settings, `"PreToolUse"`) || !strings.Contains(both.Settings, `"permissions"`) {

@@ -91,12 +91,16 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 	return num, a.SaveProject(p)
 }
 
-// options are the settings a session started with, for its command line. A session of a
-// workspace story also gets the guard hook, which keeps edits out of the original repositories.
+// options are the settings a session started with, for its command line. With Self set, every
+// session gets the bx status line, and a session of a workspace story also gets the guard hook,
+// which keeps edits out of the original repositories.
 // With PluginDir set, every session also gets its artifacts folder (see artifacts.go).
 func (a *App) options(p *state.Project, num int, s *state.Session) claude.Options {
 	o := claude.Options{Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
-	var hooks, perms map[string]any
+	var hooks, perms, status map[string]any
+	if a.Self != "" {
+		status = statusLine(a.Self)
+	}
 	if p.IsWorkspace() && s.Story != "" && a.Self != "" {
 		hooks = guardHooks(a.Self, a.Dir(p, s.Story))
 	}
@@ -108,7 +112,7 @@ func (a *App) options(p *state.Project, num int, s *state.Session) claude.Option
 		o.AppendSystemPrompt = artifactsPrompt(dir, a.ArtifactsLink(p.Name, num))
 		perms = artifactPermissions(dir)
 	}
-	o.Settings = settingsJSON(hooks, perms)
+	o.Settings = settingsJSON(hooks, perms, status)
 	return o
 }
 
