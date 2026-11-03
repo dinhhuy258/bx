@@ -307,6 +307,74 @@ func TestListScreens(t *testing.T) {
 	runJS(t, listScreensScript)
 }
 
+// closeStoryScript checks that Close story is a red row in its own group, asks with a red
+// button, and asks again, red, before discarding uncommitted files.
+const closeStoryScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; this.hidden = false; this.className = ''; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  removeEventListener() {}
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+  replaceChildren(...c) { this.children = c; }
+  showModal() { this.open = true; }
+  close(v) { if (v !== undefined) this.returnValue = v; this.open = false; (this.on.close || []).forEach((f) => f()); }
+  remove() { this.removed = true; }
+  click() { (this.on.click || []).forEach((f) => f({ target: this })); }
+}
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => new El(t), createElementNS: (_, t) => new El(t),
+  addEventListener() {}, removeEventListener() {}, body: new El('body') };
+const { showProject } = await import(process.argv[2] + '/project.js');
+const { api } = await import(process.argv[2] + '/api.js');
+const fail = (m) => { console.error(m); process.exit(1); };
+const all = (e, out = []) => { if (e instanceof El) { out.push(e); e.children.forEach((c) => all(c, out)); } return out; };
+const text = (e) => typeof e === 'string' ? e : e.children.map(text).join('');
+const byClass = (root, c) => all(root).filter((e) => e.className.split(' ').includes(c));
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const top = () => document.body.children.filter((d) => d.open).at(-1);
+
+api.snapshot = async () => ({
+  project: { kind: '', stories: { 'fix/login': {} }, sessions: { 3: { title: 'login', story: 'fix/login', done: false } } },
+  live: { branch: 'master', dirty_files: 0, diff: {} }, session_states: {}, shells: [],
+});
+const calls = [];
+api.action = async (p, a, body) => {
+  calls.push(a + (body.force ? ' force' : ''));
+  if (!body.force) { const e = new Error('dirty'); e.status = 409; e.result = { dirty: 2, detail: 'a.go, b.go' }; throw e; }
+  return {};
+};
+const root = new El('main');
+const s = showProject(root, 'bx');
+await tick(); s.stop();
+all(root).find((e) => e['aria-label'] === 'Story actions').click();
+const sheet = top();
+const groups = byClass(sheet, 'sheet-group');
+const close = byClass(sheet, 'sheet-row').find((r) => text(r).startsWith('Close story'));
+if (!close || !close.className.includes('is-danger')) fail('close story is not red: ' + (close && close.className));
+if (!byClass(groups.at(-1), 'sheet-row').includes(close) || byClass(groups.at(-1), 'sheet-row').length !== 1) fail('close story is not alone in the last group');
+close.click();
+await tick();
+let dlg = top();
+let ok = all(dlg).find((e) => e.value === 'ok');
+if (text(all(dlg).find((e) => e.tag === 'h2')) !== 'Close fix/login?' || ok.className !== 'danger' || text(ok) !== 'Close story') fail('first ask: ' + text(dlg) + ' ok=' + ok.className);
+if (!text(dlg).includes('Its sessions stop and its worktree is removed.')) fail('first ask text: ' + text(dlg));
+if (calls.length) fail('closed before the answer: ' + calls);
+dlg.close('ok');
+await tick(); await tick();
+dlg = top();
+ok = all(dlg).find((e) => e.value === 'ok');
+if (!text(dlg).includes('fix/login has 2 uncommitted files (a.go, b.go). They are lost with its worktree.') || ok.className !== 'danger' || text(ok) !== 'Discard and close') fail('second ask: ' + text(dlg) + ' ok=' + ok.className);
+dlg.close('ok');
+await tick(); await tick();
+if (calls.join() !== 'stories/close,stories/close force') fail('calls: ' + calls);
+`
+
+func TestCloseStoryIsRedAndConfirmed(t *testing.T) {
+	runJS(t, closeStoryScript)
+}
+
 // runJS runs an ES-module script with node; the script gets the file:// URL of static/js as
 // its first argument and fails by exiting non-zero.
 func runJS(t *testing.T, src string) {

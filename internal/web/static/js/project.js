@@ -95,12 +95,15 @@ export function showProject(root, name) {
     if (!story) { sheet('Chats', [{ label: 'New session', run: () => newSession('') }, shellItem]); return; }
     const items = [{ label: 'New session', run: () => newSession(story) }, shellItem];
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
-    items.push({ label: 'Close story', run: async () => {
+    // closing removes the worktree: red, in its own group, and asked twice when files would be lost
+    items.push({ label: 'Close story', icon: 'trash', hint: 'Stops its sessions and removes its worktree', danger: true, run: async () => {
       const n = shellsOf(story).length;
       const shells = n ? ` and ${n} ${n === 1 ? 'shell' : 'shells'}` : '';
-      if (await confirmBox(`Close ${story}? Its sessions${shells} stop and the worktree is removed.`, 'Close')) {
-        force('stories/close', { name: story }, `Close ${story}`);
-      }
+      if (!(await confirmBox(`Close ${story}?`, 'Close story', { danger: true, text: `Its sessions${shells} stop and its worktree is removed.` }))) return;
+      force('stories/close', { name: story }, `Close ${story}`, {
+        ok: 'Discard and close', danger: true,
+        message: (r) => `${story} has ${r.dirty} uncommitted ${r.dirty === 1 ? 'file' : 'files'}${r.detail ? ` (${r.detail})` : ''}. They are lost with its worktree.`,
+      });
     } });
     sheet(story, items);
   }
