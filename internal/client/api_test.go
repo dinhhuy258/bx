@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -53,6 +54,17 @@ func TestAPIAgainstServe(t *testing.T) {
 	f.Replies["list-sessions -F "+tmux.ShellFormat] = "$9\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tzsh\n"
 	if _, err := c.Do(ctx, "home-network", "shells/close", api.Action{Story: "s1", K: 1}); err != nil {
 		t.Fatalf("close shell: %v", err)
+	}
+}
+
+func TestUploadAgainstServe(t *testing.T) {
+	_, _, ts := servetest.New(t)
+	res, err := NewAPI(ts.URL).Upload(context.Background(), "home-network", 1, "shot.png", []byte("\x89PNG"))
+	if err != nil || !strings.HasSuffix(res.Path, "-shot.png") {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if b, err := os.ReadFile(res.Path); err != nil || string(b) != "\x89PNG" {
+		t.Fatalf("saved %q %v", b, err)
 	}
 }
 

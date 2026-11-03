@@ -27,6 +27,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/ui"
+	"github.com/dinhhuy258/bx/internal/uploads"
 )
 
 // Backend is what the model needs from the server; *API implements it.
@@ -51,6 +52,7 @@ type Backend interface {
 	Cleanup(ctx context.Context) (api.Cleanup, error)
 	CleanupApply(ctx context.Context, ids []string) (api.CleanupResult, error)
 	Artifacts(ctx context.Context, project string, num int) (api.ArtifactList, error)
+	Upload(ctx context.Context, project string, num int, name string, content []byte) (api.UploadResult, error)
 }
 
 // Conn is one open session stream.
@@ -113,6 +115,13 @@ type (
 		num  int
 		list api.ArtifactList
 		err  error
+	}
+	// attachedMsg is the end of an attach: the clipboard's file uploaded to session num as path.
+	attachedMsg struct {
+		project    string
+		num        int
+		name, path string
+		err        error
 	}
 )
 
@@ -199,6 +208,7 @@ type Model struct {
 	syncDone     bool                                                          // a sync succeeded since the screen opened or the last r
 	override     overrideDraft                                                 // the base override being picked in settings › git; see story.go
 	edit         func(path string, line int, done func(error) tea.Msg) tea.Cmd // runs the editor on path; tests replace it
+	clipboard    func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
 	mcpDrafts    map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
 
 	activity bool        // the list pane shows the inbox: what needs you in every project
@@ -223,7 +233,7 @@ type Model struct {
 // it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, browse: openBrowser, edit: openEditor, mcpDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -444,6 +454,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case artifactsMsg:
 		m.gotArtifacts(msg)
 		return m, nil
+	case attachedMsg:
+		m.gotAttached(msg)
+		return m, nil
 	case cleanedMsg:
 		if msg.err != nil {
 			m.setFlash("error: " + msg.err.Error())
@@ -466,6 +479,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.PasteMsg: // ⌘V: the terminal sends the clipboard as a paste, not as keys
 		switch {
+		// a terminal pastes only text: with an image on the clipboard the paste is empty, so
+		// attach it, as the attach key does
+		case msg.Content == "" && m.claudeFocused && m.conn != nil && !m.copying && !m.target.Shell():
+			return m, m.attach()
 		case m.prompt.Active():
 			m.prompt.Paste(msg.Content)
 		case m.picker != nil:
@@ -718,6 +735,11 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case m.cfg.Client.PaneRight:
 			return m, m.tmux("R")
+		}
+		// C-v is Claude Code's image paste, but Claude reads the server's clipboard: attach
+		// brings this machine's instead. A shell gets C-v as it is.
+		if key == "C-v" && !m.target.Shell() && m.conn != nil {
+			return m, m.attach()
 		}
 		if m.conn != nil {
 			m.live()
@@ -1561,6 +1583,44 @@ func (m *Model) loadArtifacts(num int) tea.Cmd {
 		list, err := be.Artifacts(ctx, project, num)
 		return artifactsMsg{num, list, err}
 	}
+}
+
+// attach uploads the image or file on this machine's clipboard to the session in the pane, as
+// the phone's attach button does: Claude Code runs on the server and only sees its clipboard.
+func (m *Model) attach() tea.Cmd {
+	be, ctx, project, num, clip := m.be, m.ctx, m.project, m.target.Num, m.clipboard
+	m.setFlash("attaching the clipboard…")
+	return func() tea.Msg {
+		f, err := clip()
+		if err != nil {
+			return attachedMsg{project: project, num: num, err: err}
+		}
+		if len(f.data) > uploads.MaxFile {
+			return attachedMsg{project: project, num: num, err: fmt.Errorf("%s is over 20 MB", f.name)}
+		}
+		res, err := be.Upload(ctx, project, num, f.name, f.data)
+		return attachedMsg{project: project, num: num, name: f.name, path: res.Path, err: err}
+	}
+}
+
+// gotAttached types the uploaded file's server path into Claude, which reads the image from
+// there, if the pane still shows that session; otherwise it only says where the file went.
+func (m *Model) gotAttached(msg attachedMsg) {
+	switch {
+	case errors.Is(msg.err, errNoClip):
+		m.setFlash("nothing to attach · copy an image, or a file with ⌘C in Finder")
+		return
+	case msg.err != nil:
+		m.setFlash("attach: " + msg.err.Error())
+		return
+	}
+	if m.project != msg.project || m.target != sessionTarget(msg.num) || m.conn == nil || m.copying {
+		m.setFlash("uploaded " + msg.path)
+		return
+	}
+	m.live()
+	m.term.Paste(msg.path + " ")
+	m.setFlash("attached " + msg.name)
 }
 
 // gotArtifacts opens the picker of a session's pages, newest first.

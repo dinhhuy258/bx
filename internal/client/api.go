@@ -28,6 +28,7 @@ const (
 	reposTimeout  = 30 * time.Second
 	createTimeout = 10 * time.Minute
 	syncTimeout   = 2 * time.Minute
+	uploadTimeout = 2 * time.Minute
 )
 
 // NewAPI builds a client for base.
@@ -178,6 +179,14 @@ func (c *API) Artifacts(ctx context.Context, project string, num int) (api.Artif
 	var out api.ArtifactList
 	path := fmt.Sprintf("/api/projects/%s/sessions/%d/artifacts", url.PathEscape(project), num)
 	return out, c.call(ctx, pollTimeout, http.MethodGet, path, nil, &out)
+}
+
+// Upload is POST /api/projects/{name}/sessions/{num}/files: one file for the session, saved on
+// the server, which replies with its absolute path there.
+func (c *API) Upload(ctx context.Context, project string, num int, name string, content []byte) (api.UploadResult, error) {
+	var out api.UploadResult
+	path := fmt.Sprintf("/api/projects/%s/sessions/%d/files", url.PathEscape(project), num)
+	return out, c.call(ctx, uploadTimeout, http.MethodPost, path, api.UploadRequest{Name: name, Content: content}, &out)
 }
 
 // StreamURL is the WebSocket address of one session's terminal at a given size.

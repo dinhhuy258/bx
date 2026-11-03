@@ -20,6 +20,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
+	"github.com/dinhhuy258/bx/internal/uploads"
 )
 
 // fakeBackend serves fixed projects and snapshots and records every action.
@@ -58,6 +59,17 @@ type fakeBackend struct {
 	mcpDocs  map[string]string // by scope ("" = global)
 	mcpSaves []string          // "<scope>=<text>"
 	mcpErr   *api.Result       // SaveMCPDoc refuses with it
+	// attach
+	uploads   []string // "<project> <num> <name> <bytes>"
+	uploadErr error
+}
+
+func (f *fakeBackend) Upload(_ context.Context, project string, num int, name string, content []byte) (api.UploadResult, error) {
+	f.uploads = append(f.uploads, fmt.Sprintf("%s %d %s %d", project, num, name, len(content)))
+	if f.uploadErr != nil {
+		return api.UploadResult{}, f.uploadErr
+	}
+	return api.UploadResult{Path: "/srv/uploads/" + name}, nil
 }
 
 func (f *fakeBackend) StoryInfo(context.Context, string) (api.StoryInfo, error) {
@@ -396,7 +408,7 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyTab}
 		case "PgUp":
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
-		case "C-h", "C-l":
+		case "C-h", "C-l", "C-v":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModCtrl}
 		default:
 			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
@@ -612,6 +624,93 @@ func TestClosingAStreamLeavesCopyMode(t *testing.T) {
 		t.Fatalf("closed=%v scroll frames %v: a live stream closes without one", c.closed, c.scrolled)
 	}
 }
+
+// termInput is what the model sent to Claude since the last call.
+func termInput(h *harness) string {
+	var got []byte
+	for {
+		select {
+		case b := <-h.m.term.Input():
+			got = append(got, b...)
+		case <-time.After(100 * time.Millisecond):
+			return string(got)
+		}
+	}
+}
+
+func TestAttachUploadsTheClipboardAndTypesItsPath(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter")
+	h.m.clipboard = func() (clipFile, error) { return clipFile{name: "shot.png", data: []byte("png")}, nil }
+	h.press("C-v")
+	if len(h.be.uploads) != 1 || h.be.uploads[0] != "home-network 1 shot.png 3" {
+		t.Fatalf("uploads %v", h.be.uploads)
+	}
+	if got := termInput(h); got != "/srv/uploads/shot.png " {
+		t.Fatalf("typed %q", got)
+	}
+	if h.m.flash != "attached shot.png" {
+		t.Fatalf("flash %q", h.m.flash)
+	}
+}
+
+func TestEmptyPasteAttachesTheClipboardImage(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter")
+	h.m.clipboard = func() (clipFile, error) { return clipFile{name: "clipboard.png", data: []byte("png")}, nil }
+	h.update(tea.PasteMsg{Content: ""}) // ⌘V with only an image on the clipboard
+	if len(h.be.uploads) != 1 || termInput(h) != "/srv/uploads/clipboard.png " {
+		t.Fatalf("uploads %v", h.be.uploads)
+	}
+	h.update(tea.PasteMsg{Content: "text"})
+	if len(h.be.uploads) != 1 || termInput(h) != "text" {
+		t.Fatalf("a text paste must go to Claude as text: %v", h.be.uploads)
+	}
+	h.press("C-h")
+	h.update(tea.PasteMsg{Content: ""})
+	if len(h.be.uploads) != 1 {
+		t.Fatalf("an empty paste on the list must not attach: %v", h.be.uploads)
+	}
+}
+
+func TestAttachWithNothingToAttach(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter")
+	h.m.clipboard = func() (clipFile, error) { return clipFile{}, errNoClip }
+	h.press("C-v")
+	if len(h.be.uploads) != 0 || termInput(h) != "" {
+		t.Fatalf("nothing must be uploaded or typed: %v", h.be.uploads)
+	}
+	if !strings.HasPrefix(h.m.flash, "nothing to attach") {
+		t.Fatalf("flash %q", h.m.flash)
+	}
+}
+
+func TestAttachRefusals(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter")
+	h.m.clipboard = func() (clipFile, error) { return clipFile{name: "big.mov", data: make([]byte, uploads.MaxFile+1)}, nil }
+	h.press("C-v")
+	if len(h.be.uploads) != 0 || h.m.flash != "attach: big.mov is over 20 MB" {
+		t.Fatalf("uploads %v flash %q", h.be.uploads, h.m.flash)
+	}
+	h.m.clipboard = func() (clipFile, error) { return clipFile{name: "a.png", data: []byte("x")}, nil }
+	h.be.uploadErr = errors.New("disk full")
+	h.press("C-v")
+	if termInput(h) != "" || h.m.flash != "attach: disk full" {
+		t.Fatalf("flash %q", h.m.flash)
+	}
+}
+
+func TestAttachAfterLeavingTheSessionOnlySaysWhere(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("Enter")
+	h.m.gotAttached(attachedMsg{project: "home-network", num: 7, name: "a.png", path: "/srv/uploads/a.png"})
+	if termInput(h) != "" || h.m.flash != "uploaded /srv/uploads/a.png" {
+		t.Fatalf("flash %q", h.m.flash)
+	}
+}
+
 func TestPasteGoesToClaude(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.press("Enter")
