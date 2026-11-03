@@ -26,6 +26,7 @@ button.icon, a.icon { background: none; border: none; font-size: 22px; padding: 
 .sec-label .story { font-family: Menlo, monospace; text-transform: none; letter-spacing: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; }
 .sec-label .st.wait { color: var(--wait); }
 .sec-head .ib { width: 32px; height: 32px; }
+.behind { flex: none; font-family: Menlo, monospace; color: var(--wait); background: rgba(245, 166, 35, .14); border-radius: 99px; padding: 1px 7px; }
 .diff { display: flex; gap: 6px; white-space: nowrap; font-family: Menlo, monospace; }
 .diff .add, .ttl-meta .add, .sheet-hint .add { color: var(--run); }
 .diff .del, .ttl-meta .del, .sheet-hint .del { color: var(--gone); }

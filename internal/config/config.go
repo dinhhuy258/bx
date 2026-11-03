@@ -70,7 +70,7 @@ func Default(root string) *Config {
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
 				"settings": {"P"}, "stop_session": {"S"}, "delete_session": {"D"}, "close_shell": {"D"}, "cleanup": {"C"}, "artifacts": {"V"},
-				"review": {"G"},
+				"review": {"G"}, "sync": {"U"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},

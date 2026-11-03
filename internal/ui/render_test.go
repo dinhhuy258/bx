@@ -107,7 +107,7 @@ func TestKeyBar(t *testing.T) {
 		t.Error("the bar names the session, then its keys, then the global ones:", kb)
 	}
 	m.SelectStory("guest-vlan-fix")
-	if kb = KeyBar(m, cfg, BarContext{}); !strings.HasPrefix(kb, "story guest-vlan-fix › ⏎ collapse  D close  G review  │") || strings.Contains(kb, "D delete") {
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.HasPrefix(kb, "story guest-vlan-fix › ⏎ collapse  U sync  D close  G review  │") || strings.Contains(kb, "D delete") {
 		t.Error(kb)
 	}
 	m.SelectStory("zigbee-map-docs")
@@ -274,5 +274,31 @@ func TestActivityRowsAndRender(t *testing.T) {
 	}
 	if out := RenderActivity(nil, &a, 46, 10, RenderOptions{Plain: true}, "A back"); !strings.Contains(out, "Nothing needs you.") {
 		t.Fatal(out)
+	}
+}
+
+func TestRenderShowsCommitsBehindOrigin(t *testing.T) {
+	m, _ := sampleModel()
+	live := m.Live
+	live.Behind = 5
+	d := live.Diff["guest-vlan-fix"]
+	d.Behind = 3
+	live.Diff["guest-vlan-fix"] = d
+	m.SetLive(live)
+	got := Render(m, 60, 30, RenderOptions{Plain: true})
+	var chats, story string
+	for _, l := range strings.Split(got, "\n") {
+		switch {
+		case strings.Contains(l, "▾ chats"):
+			chats = l
+		case strings.Contains(l, "guest-vlan-fix"):
+			story = l
+		}
+	}
+	if !strings.HasSuffix(chats, "main ↓5 · 2 changed") {
+		t.Errorf("chats row: %q", chats)
+	}
+	if !strings.HasSuffix(story, "↓3 3 changed +42 -7") {
+		t.Errorf("story row: %q", story)
 	}
 }

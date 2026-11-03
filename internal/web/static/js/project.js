@@ -46,6 +46,10 @@ export function showProject(root, name) {
     body.replaceChildren(...[...groups].map(([story, rows]) => group(story, rows.sort(order))));
   }
 
+  // behindOf is the commits origin has that a story's branch ('' = the project folder's) lacks,
+  // as last fetched: what a sync would bring in
+  const behindOf = (story) => (story ? ((snap.live.diff || {})[story] || {}).behind : snap.live.behind) || 0;
+
   // shellsOf lists a story's shells ('' = Chats), by number (the server sorts them)
   const shellsOf = (story) => (snap.shells || []).filter((s) => s.story === story);
 
@@ -54,9 +58,11 @@ export function showProject(root, name) {
   function group(story, rows) {
     const d = story && snap.live.diff ? snap.live.diff[story] : null;
     const shells = shellsOf(story);
+    const n = behindOf(story);
     return h('section', { class: 'sec' },
       h('div', { class: 'sec-head' },
         h('span', { class: 'sec-label' }, story ? [icon('branch'), h('span', { class: 'story' }, story)] : [icon('chat'), 'Chats']),
+        n ? h('span', { class: 'behind', title: `origin has ${n} new ${n === 1 ? 'commit' : 'commits'}` }, `↓${n}`) : null,
         d ? h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${d.add}`), h('span', { class: 'del' }, `−${d.del}`),
           d.dirty ? h('span', {}, `· ${d.dirty} uncommitted`) : null) : null,
         h('button', { class: 'ib', 'aria-label': story ? 'Story actions' : 'Chats actions', onclick: () => storyMenu(story) }, icon('more'))),
@@ -92,13 +98,20 @@ export function showProject(root, name) {
 
   function storyMenu(story) {
     const shellItem = { label: 'New shell', run: () => newShell(story) };
-    if (!story) { sheet('Chats', [{ label: 'New session', run: () => newSession('') }, shellItem]); return; }
+    const n = behindOf(story);
+    const syncItem = { label: 'Sync with origin', icon: 'sync', hint: n ? `${n} new ${n === 1 ? 'commit' : 'commits'} on origin` : 'Fast-forward from origin', run: () => sync(story) };
+    if (!story) {
+      const items = [{ label: 'New session', run: () => newSession('') }, shellItem];
+      if (snap.project.kind !== 'workspace') items.push(syncItem); // a workspace folder is no repository
+      sheet('Chats', items);
+      return;
+    }
     const rv = ((snap.live && snap.live.review) || {})[story] || 0, d = ((snap.live && snap.live.diff) || {})[story];
     const hint = rv || d ? [rv ? `${rv} to send` : null, rv && d ? ' · ' : null,
       d ? h('span', { class: 'add' }, `+${d.add}`) : null, d ? ' ' : null, d ? h('span', { class: 'del' }, `−${d.del}`) : null]
       .filter(Boolean) : '';
     const items = [{ label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } },
-      { label: 'New session', run: () => newSession(story) }, shellItem];
+      { label: 'New session', run: () => newSession(story) }, shellItem, syncItem];
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
     // closing removes the worktree: red, in its own group, and asked twice when files would be lost
     items.push({ label: 'Close story', icon: 'trash', hint: 'Stops its sessions and removes its worktree', danger: true, run: async () => {
@@ -114,6 +127,22 @@ export function showProject(root, name) {
       if (r) toast(r.message ? `Closed ${story} · ${r.message}` : `Closed ${story}`);
     } });
     sheet(story, items);
+  }
+
+  // sync fast-forwards a story ('' = the project folder) to origin; the server says what it did.
+  // While Claude works there it asks first.
+  async function sync(story) {
+    const what = story || snap.live.branch || 'main';
+    toast(`Syncing ${what} with origin…`);
+    const r = await force('sync', { story }, `Sync ${what}`, {
+      ok: 'Sync',
+      message: (res) => {
+        const s = (snap.project.sessions || {})[res.num];
+        const who = s && s.title ? `${s.title} is running` : 'Claude is working';
+        return `Sync ${story || 'Chats'} while Claude works in it? ${who}. Files can change under it.`;
+      },
+    });
+    if (r && r.message) toast(r.message);
   }
 
   async function newSession(story) {

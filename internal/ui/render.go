@@ -182,7 +182,7 @@ func (m *Model) storyLine(r Row, width int, pal palette) string {
 	name := "chats"
 	// Each group row is one folder: chats run in the project folder, a story in its worktree.
 	// A workspace is no repository: its folder has no branch nor changes of its own.
-	right := pal.dim.Render(m.branch()) + changed(m.Live.DirtyFiles, pal, "", " · ")
+	right := pal.dim.Render(m.branch()) + behind(m.Live.Behind, pal, " ") + changed(m.Live.DirtyFiles, pal, "", " · ")
 	if m.P.IsWorkspace() {
 		right = pal.dim.Render("workspace")
 	}
@@ -190,6 +190,9 @@ func (m *Model) storyLine(r Row, width int, pal palette) string {
 		name = r.Story
 		d := m.Live.Diff[r.Story]
 		var parts []string
+		if d.Behind > 0 {
+			parts = append(parts, behind(d.Behind, pal, ""))
+		}
 		if d.Dirty > 0 {
 			parts = append(parts, changed(d.Dirty, pal, "", ""))
 		}
@@ -229,6 +232,15 @@ func (m *Model) shellLine(r Row, guide string, width int, pal palette, selected 
 		right = pal.dim.Render(sh.Command)
 	}
 	return fit(" "+guide+pal.cyan.Render(fmt.Sprintf("$%d", r.K))+" "+label, right, width)
+}
+
+// behind is the amber "↓N" for the commits origin has that a folder's branch lacks, after
+// before, or "" when there are none: what a sync would bring in.
+func behind(n int, pal palette, before string) string {
+	if n == 0 {
+		return ""
+	}
+	return before + pal.amber.Render(fmt.Sprintf("↓%d", n))
 }
 
 // changed is the amber "N changed" for uncommitted files in a folder, between before and after,

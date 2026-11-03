@@ -37,6 +37,7 @@ type Backend interface {
 	Snapshot(ctx context.Context, project string) (api.Snapshot, error)
 	Do(ctx context.Context, project, action string, a api.Action) (api.Result, error)
 	NewStory(ctx context.Context, project string, a api.Action) (api.Result, error)
+	Sync(ctx context.Context, project string, a api.Action) (api.Result, error)
 	StoryInfo(ctx context.Context, project string) (api.StoryInfo, error)
 	Branches(ctx context.Context, project string, fetch bool) (api.BranchList, error)
 	PullRequests(ctx context.Context, project, q string) (api.PRList, error)
@@ -443,6 +444,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.gotPRs(msg)
 	case storyMsg:
 		return m, m.gotStory(msg)
+	case storySyncMsg:
+		return m, m.gotStorySync(msg)
 	case overrideBranchesMsg:
 		m.gotOverrideBranches(msg)
 		return m, nil
@@ -896,6 +899,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "artifacts":
 		if sess != nil {
 			return m, m.loadArtifacts(num)
+		}
+	case "sync":
+		if row.Kind == ui.RowStory {
+			return m, m.syncStory(row.Story, false)
 		}
 	case "close_story":
 		if row.Kind == ui.RowStory && row.Story != "" {
@@ -1537,6 +1544,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			m.setFlash(flash)
 			return m.poll()
 		}
+	case ui.PromptSyncBusy:
+		return m.syncStory(target, true)
 	case ui.PromptStop:
 		num, _ := strconv.Atoi(target)
 		return m.stop(num)

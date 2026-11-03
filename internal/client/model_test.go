@@ -72,6 +72,9 @@ type fakeBackend struct {
 	accSaves []accounts.Config
 	accErr   error // the next SaveGitAccounts fails with it
 	logins   int   // shells/login calls
+	// story sync
+	syncRes api.Result
+	syncErr error // refuses a sync without force
 	// attach
 	uploads   []string // "<project> <num> <name> <bytes>"
 	uploadErr error
@@ -83,6 +86,20 @@ func (f *fakeBackend) Upload(_ context.Context, project string, num int, name st
 		return api.UploadResult{}, f.uploadErr
 	}
 	return api.UploadResult{Path: "/srv/uploads/" + name}, nil
+}
+
+// Sync records "<project> sync <story> [force]" and replies with syncRes, or refuses with
+// syncErr (syncRes filled in too, as the API does on a 409).
+func (f *fakeBackend) Sync(_ context.Context, project string, a api.Action) (api.Result, error) {
+	act := project + " sync " + a.Story
+	if a.Force {
+		act += " force"
+	}
+	f.actions = append(f.actions, act)
+	if f.syncErr != nil && !a.Force {
+		return f.syncRes, f.syncErr
+	}
+	return f.syncRes, nil
 }
 
 func (f *fakeBackend) StoryInfo(context.Context, string) (api.StoryInfo, error) {
@@ -2224,4 +2241,26 @@ func (f *fakeBackend) SaveMCPDoc(_ context.Context, scope, text string) (api.Res
 		return *f.mcpErr, &StatusError{Code: 400, Text: f.mcpErr.Error}
 	}
 	return api.Result{}, nil
+}
+
+func TestSyncFlashesAndAsksWhileClaudeWorks(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("U") // on a session row: nothing
+	if len(h.be.actions) != 0 {
+		t.Fatalf("U on a session synced: %q", h.be.actions)
+	}
+	h.be.syncRes = api.Result{Running: true, Num: 1}
+	h.be.syncErr = errors.New("Claude is working in s1 (session [1])")
+	h.press("k", "U")
+	if v := view(h); !strings.Contains(v, "Sync s1 while Claude works in it?") || !strings.Contains(v, "[1] Add lease time is running.") {
+		t.Fatal(h.m.View().Content)
+	}
+	h.be.syncRes = api.Result{Message: "s1 synced · 3 new commits from origin"}
+	h.press("y")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network sync s1|home-network sync s1 force" {
+		t.Fatalf("actions = %q", got)
+	}
+	if h.m.flash != "s1 synced · 3 new commits from origin" || h.m.busy != "" {
+		t.Fatalf("flash = %q busy = %q", h.m.flash, h.m.busy)
+	}
 }
