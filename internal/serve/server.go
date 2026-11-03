@@ -68,6 +68,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/github/repos", s.githubRepos)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	mux.HandleFunc("GET /api/git/accounts", s.getAccounts)
+	mux.HandleFunc("PUT /api/git/accounts", s.putAccounts)
 	mux.HandleFunc("GET /api/mcp", s.getMCP)
 	mux.HandleFunc("GET /api/mcp/doc", s.getMCPDoc)
 	mux.HandleFunc("PUT /api/mcp/doc", s.putMCPDoc)
@@ -513,7 +515,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			if settings.TUIOnlyKey(k) || settings.WebReadOnlyKey(k) {
+			if settings.TUIOnlyKey(k) {
 				httpError(w, 400, fmt.Errorf("%s can only be changed from the TUI", k))
 				return
 			}

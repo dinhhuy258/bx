@@ -2,11 +2,27 @@ bx settings                          dev
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  Claude · Git · MCP · Notifications
 
- git · base branch overrides
+ Base branches ────────────────────────
+ New stories start from the repo's defa…
 
    No overrides. New stories start from
    each repo's default branch.
  › + add override
+
+
+ GitHub accounts ──────────────────────
+ The gh login, commit name and email ea…
+
+ accounts · from gh auth status
+   No accounts. Sessions use gh's active
+   login and your git config.
+   + add account
+
+ rules · by origin owner · first match …
+   + add rule
+
+ project overrides · 0 of 0 projects
+   + add project override
 
 
 

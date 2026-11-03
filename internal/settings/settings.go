@@ -38,8 +38,8 @@ func (k Kind) Typed() bool { return k == Text || k == Line }
 
 // Field is one setting. Key is the section id, a dot, then the field id. For a choice, ""
 // first means no value: the program's own default. A choice with a Default has no "": no value
-// means Default. A TUIOnly field and its value are left out of what the web client gets, and a
-// WebReadOnly one is sent Locked (see Visible).
+// means Default. A TUIOnly field and its value are left out of what the web client gets (see
+// Visible).
 type Field struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
@@ -48,9 +48,6 @@ type Field struct {
 	Choices []string `json:"choices,omitempty"`
 	Default string   `json:"default,omitempty"`
 	TUIOnly bool     `json:"-"`
-	// WebReadOnly: the web client shows the field disabled (Locked) and may not change it.
-	WebReadOnly bool `json:"-"`
-	Locked      bool `json:"locked,omitempty"` // set by Visible for the web client
 	// Claude is the path in Claude's settings.json the value is sent as, in the session's
 	// --settings, such as "attribution.commit"; "" is a setting bx uses itself. See ClaudeValue.
 	Claude string `json:"-"`
@@ -89,7 +86,7 @@ var Sections = []Section{{
 }, {
 	ID: "mcp", Title: "MCP", Help: "For new and resumed sessions. Running ones keep what they started with.",
 	Fields: []Field{
-		{Key: "mcp.mode", Label: "Mode", Kind: Choice, Default: "merge", WebReadOnly: true,
+		{Key: "mcp.mode", Label: "Mode", Kind: Choice, Default: "merge", TUIOnly: true,
 			Help:    "Mode: merge = your Claude servers + these · strict = only these (--strict-mcp-config) · off",
 			Choices: []string{"merge", "strict", "off"}},
 	},
@@ -119,7 +116,6 @@ func Visible(tui bool, values map[string]string) ([]Section, map[string]string) 
 			if f.TUIOnly {
 				continue
 			}
-			f.Locked = f.WebReadOnly
 			fields = append(fields, f)
 			if v, ok := values[f.Key]; ok {
 				out[f.Key] = v
@@ -184,12 +180,6 @@ func ClaudeValue(f Field, values map[string]string) (any, bool) {
 func TUIOnlyKey(key string) bool {
 	f, ok := field(key)
 	return ok && f.TUIOnly
-}
-
-// WebReadOnlyKey reports whether key is a WebReadOnly field.
-func WebReadOnlyKey(key string) bool {
-	f, ok := field(key)
-	return ok && f.WebReadOnly
 }
 
 func field(key string) (Field, bool) {

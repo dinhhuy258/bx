@@ -185,7 +185,7 @@ func TestNotificationsEnabled(t *testing.T) {
 func TestVisibleHidesTUIOnly(t *testing.T) {
 	values := map[string]string{"claude.model": "opus", "notifications.enabled": "off", "notifications.ntfy_url": "https://ntfy.sh/secret", "notifications.open_url": "https://bx.example"}
 	secs, got := Visible(false, values)
-	if len(secs) != 3 || secs[0].ID != "claude" || secs[2].ID != "notifications" || len(secs[2].Fields) != 1 || secs[2].Fields[0].Key != "notifications.enabled" {
+	if len(secs) != 2 || secs[0].ID != "claude" || secs[1].ID != "notifications" || len(secs[1].Fields) != 1 || secs[1].Fields[0].Key != "notifications.enabled" {
 		t.Fatalf("web sections = %+v", secs)
 	}
 	if len(got) != 2 || got["claude.model"] != "opus" || got["notifications.enabled"] != "off" {
@@ -227,33 +227,27 @@ func TestReadNeverMovesOrWrites(t *testing.T) {
 	}
 }
 
-func TestMCPModeIsLockedOnTheWeb(t *testing.T) {
+func TestWebSeesOnlyItsFields(t *testing.T) {
 	if err := Validate("mcp.mode", "strict"); err != nil {
 		t.Fatal(err)
 	}
 	if err := Validate("mcp.mode", "on"); err == nil {
 		t.Fatal("want an error for an unknown mode")
 	}
+	var keys, titles []string
 	web, _ := Visible(false, nil)
-	tui, _ := Visible(true, nil)
-	find := func(secs []Section) (Field, bool) {
-		for _, s := range secs {
-			for _, f := range s.Fields {
-				if f.Key == "mcp.mode" {
-					return f, true
-				}
-			}
+	for _, s := range web {
+		titles = append(titles, s.Title)
+		for _, f := range s.Fields {
+			keys = append(keys, f.Key)
 		}
-		return Field{}, false
 	}
-	if f, ok := find(web); !ok || !f.Locked {
-		t.Fatalf("web field = %+v %v, want locked", f, ok)
+	want := []string{"claude.model", "claude.effort", "claude.permission_mode", "notifications.enabled"}
+	if !slices.Equal(keys, want) || !slices.Equal(titles, []string{"Claude", "Notifications"}) {
+		t.Fatalf("web sees %v in %v, want %v in [Claude Notifications]", keys, titles, want)
 	}
-	if f, _ := find(tui); f.Locked {
-		t.Fatal("the TUI edits the mode")
-	}
-	if !WebReadOnlyKey("mcp.mode") || WebReadOnlyKey("claude.model") {
-		t.Fatal("WebReadOnlyKey")
+	if !TUIOnlyKey("mcp.mode") || TUIOnlyKey("claude.model") {
+		t.Fatal("TUIOnlyKey")
 	}
 }
 

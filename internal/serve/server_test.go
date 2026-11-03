@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dinhhuy258/bx/internal/accounts"
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/claude"
@@ -184,11 +185,11 @@ func put(t *testing.T, ts *httptest.Server, path string, body any) (api.Settings
 func TestSettingsGetPutAndFlags(t *testing.T) {
 	s, f, ts := newServer(t)
 	got, code := get[api.Settings](t, ts, "/api/settings")
-	if code != 200 || len(got.Sections) != 3 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
+	if code != 200 || len(got.Sections) != 2 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
 		t.Fatalf("%d %+v", code, got)
 	}
 	// the phone gets only the on/off switch of the notifications, never the URLs
-	if n := got.Sections[2]; n.ID != "notifications" || len(n.Fields) != 1 || n.Fields[0].Key != "notifications.enabled" {
+	if n := got.Sections[1]; n.ID != "notifications" || len(n.Fields) != 1 || n.Fields[0].Key != "notifications.enabled" {
 		t.Fatalf("web notifications: %+v", n)
 	}
 	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.effort": "huge"}}); code != 400 ||
@@ -199,7 +200,7 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 		t.Fatal("a refused PUT saved a value")
 	}
 	saved, _, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.permission_mode": "acceptEdits"}})
-	if code != 200 || saved.Values["claude.model"] != "opus" || len(saved.Sections) != 3 {
+	if code != 200 || saved.Values["claude.model"] != "opus" || len(saved.Sections) != 2 {
 		t.Fatalf("%d %+v", code, saved)
 	}
 	if _, err := os.Stat(s.Cfg.SettingsFile()); err != nil {
@@ -235,7 +236,7 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 	if code != 200 || s.App.Settings.Get("notifications.enabled") != "off" || web.Values["notifications.enabled"] != "off" || web.Values["notifications.ntfy_url"] != "" {
 		t.Fatalf("web PUT of enabled: %d %+v", code, web)
 	}
-	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 3 || len(web.Values) != 3 || web.Values["notifications.ntfy_url"] != "" {
+	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 2 || len(web.Values) != 3 || web.Values["notifications.ntfy_url"] != "" {
 		t.Fatalf("web GET: %+v", web)
 	}
 	tui, _ := get[api.Settings](t, ts, "/api/settings?tui=1")
@@ -1007,4 +1008,45 @@ func TestMCPModeOnlyFromTheTUI(t *testing.T) {
 	if out, _, code := put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"mcp.mode": "strict"}}); code != 200 || out.Values["mcp.mode"] != "strict" {
 		t.Fatalf("tui: %d %v", code, out.Values)
 	}
+}
+
+func TestGitAccountsOnlyFromTheTUI(t *testing.T) {
+	s, _, ts := newServer(t)
+	if _, code := get[api.Result](t, ts, "/api/git/accounts"); code != 403 {
+		t.Fatalf("web GET: %d", code)
+	}
+	s.App.GH = func(_ context.Context, _ string, args ...string) (string, error) {
+		return `{"hosts":{"github.com":[{"state":"success","host":"github.com","login":"huy-acme"}]}}`, nil
+	}
+	got, code := get[api.GitAccounts](t, ts, "/api/git/accounts?tui=1")
+	if code != 200 || !got.Config.Empty() || len(got.Logins) != 1 || len(got.Projects) != 1 || got.Projects[0].Account != "" {
+		t.Fatalf("empty: %d %+v", code, got)
+	}
+	c := accounts.Config{Default: "work", Accounts: []accounts.Account{{ID: "work", Login: "huy-acme"}}}
+	var out api.GitAccounts
+	if code := putJSON(t, ts, "/api/git/accounts?tui=1", c, &out); code != 200 || out.Projects[0].Account != "work" || out.Projects[0].Reason != accounts.ByDefault {
+		t.Fatalf("put: %d %+v", code, out)
+	}
+	c.Default = "nope"
+	var res api.Result
+	if code := putJSON(t, ts, "/api/git/accounts?tui=1", c, &res); code != 400 || !strings.Contains(res.Error, `no account "nope"`) {
+		t.Fatalf("bad put: %d %+v", code, res)
+	}
+	if code := putJSON(t, ts, "/api/git/accounts", c, &res); code != 403 {
+		t.Fatalf("web put: %d", code)
+	}
+}
+
+func putJSON(t *testing.T, ts *httptest.Server, path string, body, out any) int {
+	t.Helper()
+	data, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+path, bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	_ = json.NewDecoder(r.Body).Decode(out)
+	return r.StatusCode
 }

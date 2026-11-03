@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/coder/websocket"
 
+	"github.com/dinhhuy258/bx/internal/accounts"
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/claudesync"
@@ -47,6 +48,8 @@ type Backend interface {
 	MCP(ctx context.Context) (api.MCP, error)
 	MCPDoc(ctx context.Context, project string) (api.MCPDoc, error)
 	SaveMCPDoc(ctx context.Context, project, text string) (api.Result, error)
+	GitAccounts(ctx context.Context) (api.GitAccounts, error)
+	SaveGitAccounts(ctx context.Context, c accounts.Config) (api.GitAccounts, error)
 	SyncPlan(ctx context.Context, r api.SyncPlanRequest) (api.SyncPlan, error)
 	SyncApply(ctx context.Context, r api.SyncApplyRequest) (api.SyncResult, error)
 	Cleanup(ctx context.Context) (api.Cleanup, error)
@@ -139,6 +142,10 @@ const (
 	pickOverrideBranch           // settings › git: the base branch of a project
 	pickArtifact                 // a page of the selected session, opened in the browser
 	pickMCPProject               // settings › mcp: the project of new servers
+	pickAccountLogin             // settings › git: the gh login of a new account
+	pickRuleAccount              // settings › git: the account of a rule
+	pickAccountProject           // settings › git: the project of a new account override
+	pickOverrideAccount          // settings › git: the account of a project override
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -202,6 +209,7 @@ type Model struct {
 	edit         func(path string, line int, done func(error) tea.Msg) tea.Cmd // runs the editor on path; tests replace it
 	clipboard    func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
 	mcpDrafts    map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
+	accDraft     accountDraft                                                  // settings › git: the rule or override being picked; see accounts.go
 
 	activity bool        // the list pane shows the inbox: what needs you in every project
 	act      ui.Activity // its cursor
@@ -425,6 +433,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.switchProject(msg.res.Name), m.loadProjects())
 	case settingsMsg:
 		m.gotSettings(msg)
+		return m, nil
+	case accountsMsg:
+		m.gotAccounts(msg)
 		return m, nil
 	case mcpMsg:
 		m.gotMCP(msg)
@@ -1276,6 +1287,17 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			return m.chooseOverrideBranch(choice)
 		case pickOverrideBranch:
 			return m.setOverride(choice)
+		case pickAccountLogin:
+			m.pickAccountLogin(choice)
+			return nil
+		case pickRuleAccount:
+			return m.pickRuleAccount(choice)
+		case pickAccountProject:
+			m.accDraft = accountDraft{project: choice}
+			m.openAccountPicker(choice+" uses…", pickOverrideAccount)
+			return nil
+		case pickOverrideAccount:
+			return m.pickOverrideAccount(choice)
 		case pickMCPProject:
 			return m.editMCP(choice)
 		case pickCleanup:
@@ -1306,7 +1328,7 @@ func (m *Model) openSettings() tea.Cmd {
 	m.settings, m.settingsNote, m.syncDone = ui.NewSettings(host), "loading settings…", false
 	m.settings.SetGitOverrides(m.gitOverrides())
 	m.settings.SetMCPTotal(len(m.projects))
-	return tea.Batch(m.loadSettings(), m.scanSync(), m.loadMCP())
+	return tea.Batch(m.loadSettings(), m.scanSync(), m.loadMCP(), m.loadAccounts())
 }
 
 func (m *Model) loadSettings() tea.Cmd {
@@ -1381,13 +1403,22 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 	case ui.SettingsMCPReload:
 		return m.loadMCP()
 	case ui.SettingsGitChoose:
-		if project, add := m.settings.GitChoice(); !add {
-			return m.chooseOverrideBranch(project)
-		}
-		m.openOverrideProjects()
+		return m.gitChoose()
 	case ui.SettingsGitRemove:
-		project, _ := m.settings.GitChoice()
-		m.ask(ui.PromptRemoveOverride, project, "Remove base override?", fmt.Sprintf("New stories in %s stop starting from %s", project, m.baseOverride(project)), "and use the detected base again.")
+		m.gitRemove()
+	case ui.SettingsRuleUp:
+		return m.moveRule(-1)
+	case ui.SettingsRuleDown:
+		return m.moveRule(1)
+	case ui.SettingsAccountsReload:
+		m.setFlash("checking gh logins…")
+		return m.loadAccounts()
+	case ui.SettingsAccountText:
+		m.editAccountText()
+	case ui.SettingsAccountSave:
+		return m.saveAccountForm()
+	case ui.SettingsAccountBack:
+		m.accountFormBack()
 	}
 	return nil
 }
@@ -1438,6 +1469,9 @@ func (m *Model) newSession(story string) tea.Cmd {
 }
 
 func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
+	if cmd, ok := m.submitAccounts(kind, text, target); ok {
+		return cmd
+	}
 	switch kind {
 	case ui.PromptAddRepoForce:
 		return m.addStoryRepos(target, m.addRepos, true)
@@ -2008,7 +2042,7 @@ func (m *Model) bar() string {
 	case m.settings != nil && m.settingsOnMCPRow():
 		text = ui.SettingsMCPBar(m.narrow)
 	case m.settings != nil && m.settings.GitShown():
-		text = ui.SettingsGitBar(m.narrow)
+		text = m.settings.SettingsGitBar(m.narrow)
 	case m.settings != nil:
 		_, onText := m.settings.TextField()
 		text = ui.SettingsBar(len(m.settings.Changes()), m.settings.SyncChanges(), m.narrow, onText)

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -84,7 +85,11 @@ func (a *App) NewShell(p *state.Project, story string) (int, error) {
 	for used[k] {
 		k++
 	}
-	id, err := a.Tmux.NewShell(ShellName(p.Name, story, k), a.Dir(p, story))
+	env, err := a.accountEnv(context.Background(), p.Name, a.Dir(p, story))
+	if err != nil {
+		return 0, err
+	}
+	id, err := a.Tmux.NewShell(ShellName(p.Name, story, k), a.Dir(p, story), env...)
 	if err != nil {
 		return 0, err
 	}

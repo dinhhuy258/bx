@@ -183,6 +183,9 @@ func (c *Config) ArtifactsDir() string { return filepath.Join(c.Root, "artifacts
 // PluginDir is <root>/claude-plugin: the Claude Code plugin bx gives every session it starts.
 func (c *Config) PluginDir() string { return filepath.Join(c.Root, "claude-plugin") }
 
+// AccountsFile is <root>/git-accounts.json: the GitHub accounts of the Git settings.
+func (c *Config) AccountsFile() string { return filepath.Join(c.Root, "git-accounts.json") }
+
 // MCPFile is <root>/mcp.json: the MCP servers every new session gets.
 func (c *Config) MCPFile() string { return filepath.Join(c.Root, "mcp.json") }
 

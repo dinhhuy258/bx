@@ -19,6 +19,9 @@ func (g *Git) runCtx(ctx context.Context, dir string, args ...string) (string, e
 	cmd := exec.CommandContext(ctx, g.Bin, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	if g.Env != nil {
+		cmd.Env = append(cmd.Env, g.Env(dir)...)
+	}
 	cmd.WaitDelay = time.Second // a killed git's helpers (ssh, git-remote-https) may hold the pipe
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -286,6 +289,12 @@ func (g *Git) OriginSlug(repo string) string {
 		return ""
 	}
 	return slugOf(u)
+}
+
+// OriginURL is origin's URL, "" when there is none.
+func (g *Git) OriginURL(repo string) string {
+	u, _ := g.run(repo, "remote", "get-url", "origin")
+	return u
 }
 
 func slugOf(raw string) string {

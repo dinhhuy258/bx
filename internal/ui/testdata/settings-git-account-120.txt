@@ -1,0 +1,29 @@
+bx settings                                                                                                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Claude            │ Git › account work
+ › Git               │ gh login huy-acme on github.com · token scopes repo, read:org, workflow
+   MCP               │
+   Notifications     │    Label         work
+                     │    gh login      ◂ huy-acme            github.com ▸
+                     │    Commit name   Huy Duong
+                     │  › Commit email  huy.duong@acme.io
+                     │    SSH key       ~/.ssh/id_ed25519_acme
+                     │    Signing key   not set
+                     │    Default       ◂ no ▸
+                     │
+                     │  A session in a work project starts with
+                     │    GH_TOKEN                  gh auth token --user huy-acme
+                     │    GIT_AUTHOR / COMMITTER    Huy Duong <huy.duong@acme.io>
+                     │    credential helper         !gh auth git-credential  (https origins)
+                     │    GIT_SSH_COMMAND           ssh -i ~/.ssh/id_ed25519_acme -o IdentitiesOnly=yes
+                     │
+                     │ Commit email: the author and committer email of every commit. Empty = your git config
+
+
+
+
+
+
+
+
+

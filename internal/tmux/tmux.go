@@ -73,8 +73,13 @@ func (t *Tmux) run(args ...string) (string, error) {
 }
 
 // NewSession creates a detached session named name running cmd in dir and returns its id ($n).
-func (t *Tmux) NewSession(name, dir, cmd string) (string, error) {
-	return t.run("new-session", "-d", "-s", name, "-c", dir, "-P", "-F", "#{session_id}", cmd)
+// env (KEY=value) is set in the session's environment, out of the command line.
+func (t *Tmux) NewSession(name, dir, cmd string, env ...string) (string, error) {
+	args := []string{"new-session", "-d", "-s", name, "-c", dir}
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
+	return t.run(append(args, "-P", "-F", "#{session_id}", cmd)...)
 }
 
 // Sessions lists every session with its id and name. No server running means no sessions.
@@ -117,9 +122,13 @@ type Shell struct {
 // returns its id ($n). Pagers are off (PAGER and GIT_PAGER are cat): on a phone a pager
 // like less hides the rest of the output and has no obvious way out, so output prints
 // straight to the terminal instead.
-func (t *Tmux) NewShell(name, dir string) (string, error) {
-	return t.run("new-session", "-d", "-s", name, "-c", dir,
-		"-e", "PAGER=cat", "-e", "GIT_PAGER=cat", "-P", "-F", "#{session_id}")
+// env is set too, as in NewSession.
+func (t *Tmux) NewShell(name, dir string, env ...string) (string, error) {
+	args := []string{"new-session", "-d", "-s", name, "-c", dir, "-e", "PAGER=cat", "-e", "GIT_PAGER=cat"}
+	for _, e := range env {
+		args = append(args, "-e", e)
+	}
+	return t.run(append(args, "-P", "-F", "#{session_id}")...)
 }
 
 // SetOption sets a session option (a user option starts with @) on target.

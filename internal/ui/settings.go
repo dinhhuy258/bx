@@ -28,6 +28,12 @@ const (
 	SettingsMCPEdit                               // Enter on an MCP row: edit MCPChoice's servers (or add a project)
 	SettingsMCPRemove                             // Backspace on an MCP row: remove its servers, or drop its draft
 	SettingsMCPReload                             // r on an MCP row: read the servers again
+	SettingsRuleUp                                // K on an account rule: move it up
+	SettingsRuleDown                              // J on an account rule: move it down
+	SettingsAccountsReload                        // r in the git section: read the accounts and gh's logins again
+	SettingsAccountText                           // Enter on a text field of the account form: edit AccountFormText in a prompt
+	SettingsAccountSave                           // C-s in the account form: save AccountForm
+	SettingsAccountBack                           // Esc in the account form: the caller asks first when it has edits
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
@@ -41,7 +47,10 @@ type Settings struct {
 	edits    map[string]string // changed keys only
 	sec, fld int
 	sync     syncList
-	git      []GitOverride     // the git section's rows, by project
+	git      []GitOverride     // the git section's base overrides, by project
+	acc      GitAccounts       // the git section's GitHub accounts
+	accErr   string            // why the accounts could not be read or saved
+	form     *accountForm      // the account being edited in the git section; nil shows the rows
 	mcp      MCP               // the MCP section's rows (see mcp.go)
 	mcpTotal int               // every project, for "3 of 34"
 	mcpErrs  map[string]string // by scope ("" = global): why the last save was refused
@@ -77,7 +86,7 @@ func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 // rowCount is the number of rows the cursor moves through in the open section.
 func (s *Settings) rowCount() int {
 	if s.GitShown() {
-		return len(s.git) + 1
+		return len(s.gitRows())
 	}
 	return len(s.fields()) + len(s.syncRows()) + s.mcpRowCount()
 }
@@ -241,8 +250,10 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 		}
 		lines = append(lines, truncate(" "+strings.Join(tabs, pal.dim.Render(" · ")), w), "")
 		if s.GitShown() {
-			git := s.gitLines(w, h-len(lines), pal)
-			git[0] = truncate(" "+git[0], w) // under the tabs
+			git := s.gitLines(w, h-len(lines), true, pal)
+			if s.form != nil {
+				git[0] = truncate(" "+git[0], w) // under the tabs
+			}
 			return pad(append(lines, git...), h)
 		}
 		if s.sync.confirm {
@@ -278,7 +289,7 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 	}
 	switch {
 	case s.GitShown():
-		r = s.gitLines(right, h-len(lines), pal)
+		r = s.gitLines(right, h-len(lines), false, pal)
 	case s.sync.confirm:
 		r = append(r, s.confirmLines(right, h-len(lines)-len(r), pal)...)
 	default:

@@ -12,8 +12,12 @@ import (
 	"strings"
 )
 
-// Git runs git. Bin defaults to "git".
-type Git struct{ Bin string }
+// Git runs git. Bin defaults to "git". Env, when set, gives the commands that talk to origin
+// (runCtx) extra environment for the repository in dir: the GitHub account of its project.
+type Git struct {
+	Bin string
+	Env func(dir string) []string
+}
 
 // New returns a Git using PATH.
 func New() *Git { return &Git{Bin: "git"} }

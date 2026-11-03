@@ -1,0 +1,39 @@
+bx settings                                                                                                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Claude            │ Git
+ › Git               │ Base branches and GitHub accounts. For new and resumed sessions, and bx's own fetch and clone.
+   MCP               │
+   Notifications     │  Base branches ─────────────────────────────────────────────────────────────────────────────────
+                     │  New stories start from the repo's default branch, except:
+                     │
+                     │    api-server  develop
+                     │    infra       release/1.4
+                     │    + add override
+                     │
+                     │
+                     │  GitHub accounts ───────────────────────────────────────────────────────────────────────────────
+                     │  The gh login, commit name and email each project uses.
+                     │
+                     │  accounts · from gh auth status
+                     │    personal  dinhhuy258    github.com   Huy Duong <alicuche@gmail.com>      ✓ default
+                     │    work      huy-acme      github.com   Huy Duong <huy.duong@acme.io>       ✓
+                     │    oss-bot   acme-release  ghe.acme.io  acme-release <release@acme.io>      ✗ not logged in to gh
+                     │    + add account
+                     │
+                     │  rules · by origin owner · first match wins
+                     │    acme-corp/*    → work
+                     │    acme-infra/*   → work
+                     │    ghe.acme.io/*  → oss-bot
+                     │    + add rule
+                     │
+                     │  project overrides · 2 of 3 projects
+                     │  › dotfiles      → work      origin acme-corp/dotfiles would use work anyway
+                     │    side-project  → personal  origin acme-corp/side-project · else work
+                     │    + add project override
+
+
+
+
+
+
+

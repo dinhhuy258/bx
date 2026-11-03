@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/coder/websocket"
 
+	"github.com/dinhhuy258/bx/internal/accounts"
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
@@ -60,6 +61,9 @@ type fakeBackend struct {
 	mcpDocs  map[string]string // by scope ("" = global)
 	mcpSaves []string          // "<scope>=<text>"
 	mcpErr   *api.Result       // SaveMCPDoc refuses with it
+	// settings › git: GitHub accounts
+	acc      api.GitAccounts
+	accSaves []accounts.Config
 	// attach
 	uploads   []string // "<project> <num> <name> <bytes>"
 	uploadErr error
@@ -411,7 +415,7 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyTab}
 		case "PgUp":
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
-		case "C-h", "C-l", "C-v":
+		case "C-h", "C-l", "C-v", "C-s":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModCtrl}
 		default:
 			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
@@ -2012,7 +2016,7 @@ func TestSettingsGitAddsAnOverride(t *testing.T) {
 	// develop is checked out in the project folder: still a base to pick
 	h := gitSettings(t, api.Branch{Name: "develop", Local: true, Remote: true, CheckedOut: true}, api.Branch{Name: "main", Remote: true})
 	v := ansi.Strip(h.m.View().Content)
-	if !strings.Contains(v, "No overrides. New stories start from each repo's default branch.") || !strings.Contains(v, "j/k move · ⏎ choose · ⌫ remove · esc back") {
+	if !strings.Contains(v, "No overrides. New stories start from each repo's default branch.") || !strings.Contains(v, "j/k move · ⏎ add · r recheck gh · tab section · esc close") {
 		t.Fatalf("empty git section:\n%s", v)
 	}
 	h.press("Enter") // + add override
@@ -2040,7 +2044,7 @@ func TestSettingsGitAddsAnOverride(t *testing.T) {
 	if len(h.be.saves) != 0 {
 		t.Fatalf("Enter in settings › git must not save the Claude fields: %v", h.be.saves)
 	}
-	h.press("j", "Enter") // the add row again: lab is left out now
+	h.press("Enter") // still on the add row: lab is left out now
 	if v = ansi.Strip(h.m.picker.Render(120, 10)); h.m.pickKind != pickOverrideProject || strings.Contains(v, "lab") {
 		t.Fatalf("the picker must leave out lab:\n%s", v)
 	}
@@ -2147,6 +2151,14 @@ func TestArtifactsWithFileServerOff(t *testing.T) {
 }
 
 func (f *fakeBackend) MCP(context.Context) (api.MCP, error) { return f.mcp, nil }
+
+func (f *fakeBackend) GitAccounts(context.Context) (api.GitAccounts, error) { return f.acc, nil }
+
+func (f *fakeBackend) SaveGitAccounts(_ context.Context, c accounts.Config) (api.GitAccounts, error) {
+	f.accSaves = append(f.accSaves, c)
+	f.acc.Config = c
+	return f.acc, nil
+}
 
 func (f *fakeBackend) MCPDoc(_ context.Context, scope string) (api.MCPDoc, error) {
 	return api.MCPDoc{Text: f.mcpDocs[scope]}, nil

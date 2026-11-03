@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dinhhuy258/bx/internal/accounts"
 	"github.com/dinhhuy258/bx/internal/api"
 )
 
@@ -134,6 +135,19 @@ func (c *API) SaveSettings(ctx context.Context, values map[string]string) (api.S
 func (c *API) MCP(ctx context.Context) (api.MCP, error) {
 	var out api.MCP
 	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/mcp?tui=1", nil, &out)
+}
+
+// GitAccounts is GET /api/git/accounts?tui=1: the GitHub accounts, gh's logins and the
+// account of every project.
+func (c *API) GitAccounts(ctx context.Context) (api.GitAccounts, error) {
+	var out api.GitAccounts
+	return out, c.call(ctx, reposTimeout, http.MethodGet, "/api/git/accounts?tui=1", nil, &out)
+}
+
+// SaveGitAccounts is PUT /api/git/accounts?tui=1 with the whole config.
+func (c *API) SaveGitAccounts(ctx context.Context, x accounts.Config) (api.GitAccounts, error) {
+	var out api.GitAccounts
+	return out, c.call(ctx, reposTimeout, http.MethodPut, "/api/git/accounts?tui=1", x, &out)
 }
 
 // MCPDoc is GET /api/mcp/doc: the text of project's servers ("" = the global ones).

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/dinhhuy258/bx/internal/accounts"
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
@@ -79,7 +81,12 @@ func (a *App) CloneProject(repo string) (string, error) {
 	if _, err := os.Stat(dest); err == nil {
 		return "", fmt.Errorf("%s already exists", dest)
 	}
-	if _, err := a.GH(context.Background(), "", "repo", "clone", repo, dest); err != nil {
+	owner, rest, _ := strings.Cut(repo, "/")
+	env, err := a.cloneEnv(name, accounts.Origin{Host: accounts.DefaultHost, Owner: owner, Repo: rest})
+	if err != nil {
+		return "", err
+	}
+	if _, err := a.GH(withEnv(context.Background(), env), "", "repo", "clone", repo, dest); err != nil {
 		return "", err
 	}
 	return name, a.register(name, dest, state.KindRepo)
@@ -100,17 +107,63 @@ func (a *App) NewProject(name string) (string, error) {
 	return name, a.register(name, dest, state.KindRepo)
 }
 
-// GitHubRepos lists up to 100 repositories of the gh user, as owner/repo.
-func (a *App) GitHubRepos() ([]string, error) {
-	out, err := a.GH(context.Background(), "", "repo", "list", "--limit", "100", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner")
+// cloneEnv is the account environment of a clone of o into the new project name.
+func (a *App) cloneEnv(name string, o accounts.Origin) ([]string, error) {
+	c, err := a.Accounts()
 	if err != nil {
 		return nil, err
 	}
-	var repos []string
-	for _, l := range strings.Split(out, "\n") {
-		if l = strings.TrimSpace(l); l != "" {
-			repos = append(repos, l)
+	r := c.Resolve(name, o)
+	if !r.OK {
+		return nil, nil
+	}
+	return a.envOf(context.Background(), r.Account)
+}
+
+// GitHubRepos lists up to 100 repositories of the gh user, as owner/repo. With GitHub accounts
+// set, it lists those of every github.com account, so a clone can pick any of them; an account
+// gh has no token for is skipped.
+func (a *App) GitHubRepos() ([]string, error) {
+	c, err := a.Accounts()
+	if err != nil {
+		return nil, err
+	}
+	envs := [][]string{nil}
+	if !c.Empty() {
+		envs = nil
+		for _, acct := range c.Accounts {
+			if acct.HostOrDefault() != accounts.DefaultHost {
+				continue
+			}
+			env, err := a.envOf(context.Background(), acct)
+			if err != nil {
+				a.logf("repos: %v", err)
+				continue
+			}
+			envs = append(envs, env)
 		}
+		if len(envs) == 0 {
+			envs = [][]string{nil}
+		}
+	}
+	seen := map[string]bool{}
+	var repos []string
+	var firstErr error
+	for _, env := range envs {
+		out, err := a.GH(withEnv(context.Background(), env), "", "repo", "list", "--limit", "100", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner")
+		if err != nil {
+			firstErr = cmp.Or(firstErr, err)
+			continue
+		}
+		for _, l := range strings.Split(out, "\n") {
+			if l = strings.TrimSpace(l); l != "" && !seen[l] {
+				seen[l] = true
+				repos = append(repos, l)
+			}
+		}
+	}
+	if len(repos) == 0 && firstErr != nil {
+		return nil, firstErr
 	}
 	return repos, nil
 }

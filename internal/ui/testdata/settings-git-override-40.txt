@@ -1,0 +1,30 @@
+bx settings                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Claude · Git · MCP · Notifications
+
+     … 2 more
+
+   api-server  develop
+   infra       release/1.4
+   + add override
+
+
+ GitHub accounts ──────────────────────
+ The gh login, commit name and email ea…
+
+ accounts · from gh auth status
+   personal  dinhhuy258    ✓ default
+   work      huy-acme      ✓
+   oss-bot   acme-release  ✗ not logged…
+   + add account
+
+ rules · by origin owner · first match …
+   acme-corp/*    → work
+   acme-infra/*   → work
+   ghe.acme.io/*  → oss-bot
+   + add rule
+
+ project overrides · 2 of 3 projects
+ › dotfiles      → work
+   side-project  → personal
+   + add project override

@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -41,6 +42,7 @@ type App struct {
 	Settings *settings.Store
 	// Log records best-effort failures that do not fail the operation; nil is silent.
 	Log func(format string, args ...any)
+	tok tokens // gh tokens of the GitHub accounts, see accounts.go
 }
 
 // logf calls Log when it is set.
@@ -50,15 +52,24 @@ func (a *App) logf(format string, args ...any) {
 	}
 }
 
-// New returns an App on bx's private tmux server, with the real git and gh.
+// New returns an App on bx's private tmux server, with the real git and gh. Both run as the
+// GitHub account of the project they work in (see accounts.go).
 func New(cfg *config.Config) *App {
 	r := &tmux.Runner{Socket: cfg.TmuxSocket(), Config: cfg.TmuxConf()}
-	return &App{Cfg: cfg, Tmux: tmux.New(r), Git: git.New(), UUID: uuid.NewString, GH: runGH}
+	a := &App{Cfg: cfg, Tmux: tmux.New(r), Git: git.New(), UUID: uuid.NewString}
+	a.GH = func(ctx context.Context, dir string, args ...string) (string, error) {
+		return runGH(ctx, dir, a.ghEnv(ctx, dir), args...)
+	}
+	a.Git.Env = func(dir string) []string { return a.envForDir(context.Background(), dir) }
+	return a
 }
 
-func runGH(ctx context.Context, dir string, args ...string) (string, error) {
+func runGH(ctx context.Context, dir string, env []string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "gh", args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
 		return "", ctx.Err()

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dinhhuy258/bx/internal/accounts"
 	"github.com/dinhhuy258/bx/internal/settings"
 )
 
@@ -56,7 +57,10 @@ func TestSettingsGitRowsAndKeys(t *testing.T) {
 	if s.Key("BSpace") != SettingsGitRemove {
 		t.Fatal("Backspace on an override removes it")
 	}
-	for _, k := range []string{"l", "h", "Space", "s", "r"} {
+	if s.Key("r") != SettingsAccountsReload {
+		t.Fatal("r rechecks gh's logins")
+	}
+	for _, k := range []string{"l", "h", "Space", "s"} {
 		if got := s.Key(k); got != SettingsKeep {
 			t.Fatalf("%s in the git section = %v", k, got)
 		}
@@ -69,7 +73,6 @@ func TestSettingsGitRowsAndKeys(t *testing.T) {
 		t.Fatalf("j → %q", p)
 	}
 	s.Key("Down")
-	s.Key("j") // stays on the last row
 	if p, add := s.GitChoice(); p != "" || !add {
 		t.Fatalf("last row = %q %v, want the add row", p, add)
 	}
@@ -122,24 +125,101 @@ func TestSettingsGitCursorFollowsItsRow(t *testing.T) {
 func TestSettingsGitEmpty(t *testing.T) {
 	s := sampleSettings()
 	s.Key("Tab")
-	got := s.Render(120, 14, true, "")
-	for _, want := range []string{"git · base branch overrides", gitEmpty, "› + add override"} {
+	got := s.Render(120, 30, true, "")
+	for _, want := range []string{"Base branches", gitEmpty, "› + add override", "GitHub accounts", accountsEmpty} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("no %q:\n%s", want, got)
 		}
 	}
 	if s.Key("BSpace") != SettingsKeep || s.Key("Enter") != SettingsGitChoose {
-		t.Fatal("with no override only the add row is there")
+		t.Fatal("with no override the add row is first")
+	}
+}
+
+// sampleAccounts is the mockup's accounts: oss-bot's login is not in gh.
+func sampleAccounts() GitAccounts {
+	gh := func(owner, repo string) accounts.Origin {
+		return accounts.Origin{Host: "github.com", Owner: owner, Repo: repo}
+	}
+	return GitAccounts{
+		Config: accounts.Config{
+			Default: "personal",
+			Accounts: []accounts.Account{
+				{ID: "personal", Login: "dinhhuy258", Name: "Huy Duong", Email: "alicuche@gmail.com"},
+				{ID: "work", Login: "huy-acme", Name: "Huy Duong", Email: "huy.duong@acme.io", SSHKey: "~/.ssh/id_ed25519_acme"},
+				{ID: "oss-bot", Login: "acme-release", Host: "ghe.acme.io", Name: "acme-release", Email: "release@acme.io"},
+			},
+			Rules:     []accounts.Rule{{Owner: "acme-corp/*", Account: "work"}, {Owner: "acme-infra/*", Account: "work"}, {Owner: "ghe.acme.io/*", Account: "oss-bot"}},
+			Overrides: map[string]string{"dotfiles": "work", "side-project": "personal"},
+		},
+		Logins: []accounts.Login{{Host: "github.com", Login: "dinhhuy258", OK: true}, {Host: "github.com", Login: "huy-acme", OK: true, Scopes: "repo, read:org, workflow"}},
+		Projects: []ProjectAccount{
+			{Project: "api-server", Origin: gh("acme-corp", "api-server"), Account: "work", Reason: "rule"},
+			{Project: "dotfiles", Origin: gh("acme-corp", "dotfiles"), Account: "work", Reason: "override"},
+			{Project: "side-project", Origin: gh("acme-corp", "side-project"), Account: "personal", Reason: "override"},
+		},
 	}
 }
 
 func TestSettingsGitGolden(t *testing.T) {
 	s := gitSettings()
+	s.SetAccounts(sampleAccounts())
 	s.Key("j") // infra
-	golden(t, "settings-git-120", s.Render(120, 14, true, ""), 120)
+	golden(t, "settings-git-120", s.Render(120, 40, true, ""), 120)
+	for range 10 {
+		s.Key("j")
+	}
+	if r, _ := s.GitRow(); r.Kind != RowAccountOverride || r.Key != "dotfiles" {
+		t.Fatalf("row %+v", r)
+	}
+	golden(t, "settings-git-override-120", s.Render(120, 40, true, ""), 120)
+	golden(t, "settings-git-override-40", s.Render(40, 30, true, ""), 40)
 	e := sampleSettings()
 	e.Key("Tab")
-	golden(t, "settings-git-empty-40", e.Render(40, 14, true, ""), 40)
+	golden(t, "settings-git-empty-40", e.Render(40, 30, true, ""), 40)
+}
+
+func TestSettingsGitAccountForm(t *testing.T) {
+	s := gitSettings()
+	x := sampleAccounts()
+	s.SetAccounts(x)
+	s.OpenAccountForm(x.Config.Accounts[1], false, false)
+	for _, k := range []string{"j", "j", "j"} {
+		s.Key(k)
+	}
+	if key, label, v, ok := s.AccountFormText(); !ok || key != formEmail || label != "Commit email" || v != "huy.duong@acme.io" {
+		t.Fatalf("text field %d %q %q %v", key, label, v, ok)
+	}
+	if s.Key("Enter") != SettingsAccountText || s.Key("C-s") != SettingsAccountSave || s.Key("Esc") != SettingsAccountBack {
+		t.Fatal("form keys")
+	}
+	golden(t, "settings-git-account-120", s.Render(120, 30, true, ""), 120)
+	if s.AccountFormChanged() {
+		t.Fatal("no edit yet")
+	}
+	s.SetAccountFormText(formEmail, "x@acme.io")
+	s.Key("k")
+	s.Key("k") // gh login
+	s.Key("l")
+	a, _, _, orig, _ := s.AccountForm()
+	if !s.AccountFormChanged() || a.Email != "x@acme.io" || a.Login == "huy-acme" || orig != "work" {
+		t.Fatalf("form %+v", a)
+	}
+	s.CloseAccountForm()
+	if r, _ := s.GitRow(); r.Kind != RowBase {
+		t.Fatalf("the rows are back: %+v", r)
+	}
+}
+
+func TestSettingsRuleMatches(t *testing.T) {
+	s := gitSettings()
+	s.SetAccounts(sampleAccounts())
+	if n := len(s.RuleMatches("acme-corp/*")); n != 3 {
+		t.Fatal(n)
+	}
+	if n := len(s.RuleMatches("nope")); n != 0 {
+		t.Fatal(n)
+	}
 }
 
 // Thirty overrides scroll with the cursor; the header stays.
@@ -159,7 +239,7 @@ func TestSettingsGitWindow(t *testing.T) {
 		if lines := strings.Split(got, "\n"); len(lines) != 16 {
 			t.Fatalf("width %d: %d lines", w, len(lines))
 		}
-		for _, want := range []string{"git · base branch overrides", "› p20", "more"} {
+		for _, want := range []string{"› p20", "more"} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("width %d: no %q:\n%s", w, want, got)
 			}
@@ -168,10 +248,16 @@ func TestSettingsGitWindow(t *testing.T) {
 }
 
 func TestSettingsGitBar(t *testing.T) {
-	if got := SettingsGitBar(false); got != "j/k move · ⏎ choose · ⌫ remove · esc back" {
+	s := gitSettings()
+	if got := s.SettingsGitBar(false); got != "j/k move · ⏎ choose · ⌫ remove · r recheck gh · tab section · esc close" {
 		t.Fatal(got)
 	}
-	if got := SettingsGitBar(true); got != "⏎ choose · ⌫ remove · esc" {
+	if got := s.SettingsGitBar(true); got != "⏎ choose · ⌫ remove · esc" {
+		t.Fatal(got)
+	}
+	s.Key("j")
+	s.Key("j")
+	if got := s.SettingsGitBar(false); got != "j/k move · ⏎ add · r recheck gh · tab section · esc close" {
 		t.Fatal(got)
 	}
 }

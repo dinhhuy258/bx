@@ -27,6 +27,11 @@ type Shell = ui.Shell
 // TUI may ask: a server's config may hold a token.
 type MCP = ui.MCP
 
+// GitAccounts is GET /api/git/accounts?tui=1: the GitHub accounts, gh's logins and the account
+// of every project. PUT with the whole Config saves it and returns the same. Only the TUI may
+// ask.
+type GitAccounts = ui.GitAccounts
+
 // MCPDoc is GET and PUT /api/mcp/doc?tui=1&project=<name> ("" = the global servers): the
 // servers as the .mcp.json text the TUI edits. PUT with empty text removes them. A refused PUT
 // is a 400 whose Result has the error and its Line.

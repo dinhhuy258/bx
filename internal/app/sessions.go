@@ -129,14 +129,19 @@ func (a *App) options(p *state.Project, num int, s *state.Session) claude.Option
 // the tmux server up after its last session ends, so bx serve can tell that Claude exited.
 // With PluginDir set it first makes the session's artifacts folder and sets $BX_ARTIFACTS.
 func (a *App) launch(p *state.Project, num int, args []string) error {
+	dir := a.Dir(p, p.Sessions[num].Story)
+	env, err := a.accountEnv(context.Background(), p.Name, dir)
+	if err != nil {
+		return err
+	}
 	if a.PluginDir != "" {
-		dir, err := uploads.MakeDir(a.Cfg.ArtifactsDir(), p.Name, num)
+		art, err := uploads.MakeDir(a.Cfg.ArtifactsDir(), p.Name, num)
 		if err != nil {
 			return fmt.Errorf("artifacts folder: %w", err)
 		}
-		args = append([]string{"env", "BX_ARTIFACTS=" + dir}, args...)
+		args = append([]string{"env", "BX_ARTIFACTS=" + art}, args...)
 	}
-	if _, err := a.Tmux.NewSession(TmuxName(p.Name, num), a.Dir(p, p.Sessions[num].Story), shellJoin(args)); err != nil {
+	if _, err := a.Tmux.NewSession(TmuxName(p.Name, num), dir, shellJoin(args), env...); err != nil {
 		return err
 	}
 	// best effort: a Claude that exits at once may take the server with it

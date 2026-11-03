@@ -18,19 +18,25 @@ const (
 	PromptAddFolder  // an absolute folder path on the server
 	PromptNewProject // a project name
 	PromptDiscardSettings
-	PromptAddRepoForce   // y/n: add repositories whose originals have uncommitted files
-	PromptStop           // y/n: stop a live session (Target is its number)
-	PromptDelete         // y/n: delete a session's record (Target is its number)
-	PromptDeleteForce    // y/n: the session is still open; kill it and delete
-	PromptRemoveOverride // y/n: remove a project's base override (Target is the project)
-	PromptSettingText    // a text setting's new value (Target is its key)
-	PromptNewShell       // y/n: open a shell (Target is "story/k")
-	PromptCloseShell     // y/n: close a shell, killing what runs in it (Target is "story/k")
-	PromptRenameShell    // a shell's new title, empty = its command (Target is "story/k")
-	PromptRemoveMCP      // y/n: remove the MCP servers of a scope (Target is the project, "" = global)
-	PromptNewSession     // y/n: start a session (Target is the story, "" = a chat)
-	PromptCloseProject   // y/n: take the open project off this client's list (Target is the project)
-	PromptResume         // y/n: start Claude again in a done or gone session (Target is its number)
+	PromptAddRepoForce          // y/n: add repositories whose originals have uncommitted files
+	PromptStop                  // y/n: stop a live session (Target is its number)
+	PromptDelete                // y/n: delete a session's record (Target is its number)
+	PromptDeleteForce           // y/n: the session is still open; kill it and delete
+	PromptRemoveOverride        // y/n: remove a project's base override (Target is the project)
+	PromptSettingText           // a text setting's new value (Target is its key)
+	PromptNewShell              // y/n: open a shell (Target is "story/k")
+	PromptCloseShell            // y/n: close a shell, killing what runs in it (Target is "story/k")
+	PromptRenameShell           // a shell's new title, empty = its command (Target is "story/k")
+	PromptRemoveMCP             // y/n: remove the MCP servers of a scope (Target is the project, "" = global)
+	PromptNewSession            // y/n: start a session (Target is the story, "" = a chat)
+	PromptCloseProject          // y/n: take the open project off this client's list (Target is the project)
+	PromptResume                // y/n: start Claude again in a done or gone session (Target is its number)
+	PromptAccountText           // a text field of the account form (Target is its field number)
+	PromptRuleOwner             // the owner of an account rule (Target is its index, -1 = new)
+	PromptRemoveAccount         // y/n: remove a GitHub account and its rules and overrides (Target is its id)
+	PromptRemoveRule            // y/n: remove an account rule (Target is its index)
+	PromptRemoveAccountOverride // y/n: remove a project's account override (Target is the project)
+	PromptDiscardAccount        // y/n: drop the edits of the account form
 )
 
 // PromptResult is what a key did to the prompt.
@@ -119,7 +125,8 @@ func (p *Prompt) YesNo() bool {
 	switch p.Kind {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
 		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
-		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume:
+		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume,
+		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount:
 		return true
 	}
 	return false
@@ -130,7 +137,7 @@ func (p *Prompt) YesNo() bool {
 func (p *Prompt) Danger() bool {
 	switch p.Kind {
 	case PromptDelete, PromptDeleteForce, PromptCloseStory, PromptCloseStoryForce,
-		PromptDiscardSettings, PromptCloseShell, PromptRemoveMCP:
+		PromptDiscardSettings, PromptCloseShell, PromptRemoveMCP, PromptRemoveAccount, PromptDiscardAccount:
 		return true
 	}
 	return false
@@ -206,6 +213,7 @@ func (p *Prompt) Line() string {
 var titles = map[PromptKind]string{
 	PromptNewStory: "New story", PromptRename: "Rename session", PromptRenameShell: "Rename shell",
 	PromptAddFolder: "Add existing folder", PromptNewProject: "New empty project", PromptSettingText: "Edit setting",
+	PromptAccountText: "Edit account", PromptRuleOwner: "Account rule · owner/*, host/* or host/owner/*",
 }
 
 // Dialog is the prompt's dialog: a form with its one field, or a question with its buttons.
@@ -245,7 +253,7 @@ func (p *Prompt) verb() string {
 	switch p.Kind {
 	case PromptCloseStory:
 		return "close"
-	case PromptCloseStoryForce, PromptDiscardSettings:
+	case PromptCloseStoryForce, PromptDiscardSettings, PromptDiscardAccount:
 		return "discard"
 	case PromptAddRepoForce, PromptAddFolder:
 		return "add"
@@ -255,7 +263,7 @@ func (p *Prompt) verb() string {
 		return "delete"
 	case PromptDeleteForce:
 		return "kill and delete"
-	case PromptRemoveOverride, PromptRemoveMCP:
+	case PromptRemoveOverride, PromptRemoveMCP, PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride:
 		return "remove"
 	case PromptNewShell:
 		return "open"
@@ -269,8 +277,10 @@ func (p *Prompt) verb() string {
 		return "create"
 	case PromptRename, PromptRenameShell:
 		return "rename"
-	case PromptSettingText:
+	case PromptSettingText, PromptAccountText:
 		return "save"
+	case PromptRuleOwner:
+		return "next"
 	}
 	return "yes"
 }

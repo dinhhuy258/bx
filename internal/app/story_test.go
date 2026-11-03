@@ -656,7 +656,7 @@ func TestRunGHIsKilledWithItsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	_, err := runGH(ctx, t.TempDir(), "pr", "list")
+	_, err := runGH(ctx, t.TempDir(), nil, "pr", "list")
 	if !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 10*time.Second {
 		t.Fatalf("err %v after %v", err, time.Since(start))
 	}
