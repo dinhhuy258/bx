@@ -111,12 +111,6 @@ func (g *Git) DirtyCount(dir string) (int, error) {
 	return len(strings.Split(out, "\n")), nil
 }
 
-// Clone clones url into dest.
-func (g *Git) Clone(url, dest string) error {
-	_, err := g.run(filepath.Dir(dest), "clone", url, dest)
-	return err
-}
-
 // Init creates a repo with branch main and an empty first commit, so main exists for stories
 // to branch from. Without a configured identity the commit is made as bx.
 func (g *Git) Init(dest string) error {

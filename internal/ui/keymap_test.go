@@ -19,17 +19,16 @@ func TestKeymapGroupsByWhatTheKeysActOn(t *testing.T) {
 		t.Fatal(v)
 	}
 	for _, want := range []string{
-		"d      delete · transcript stays in ~/.claude",
+		"d      delete · removes uploads and artifacts; transcript stays in ~/.claude",
 		"d      close · kills what runs in it",
 		"X      close · off this client, keeps running",
 		"zM     my macro",
-		"e      nvim · not available yet",
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}
 	}
-	if strings.Contains(v, "artifacts") || strings.Contains(v, "delete_session") {
+	if strings.Contains(v, "the pages it made") || strings.Contains(v, "delete_session") {
 		t.Error(v)
 	}
 	if strings.Contains(v[:shell], "close · kills") {

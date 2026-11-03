@@ -10,7 +10,6 @@ import (
 // BarContext tells the key bar which pane has focus and whether a key sequence is pending.
 type BarContext struct {
 	ClaudeFocused bool
-	FocusMode     bool
 	Session       int    // the session in the Claude pane; 0 = none
 	Seq           string // pending first key of a sequence, "" when none
 	Flash         string // message shown instead of the keys
@@ -20,9 +19,9 @@ type BarContext struct {
 }
 
 var labels = map[string]string{
-	"focus": "focus mode", "inbox": "inbox", "projects": "projects",
-	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
-	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "nvim": "nvim", "shell": "new shell", "prs": "PRs",
+	"inbox": "inbox", "projects": "projects",
+	"new_session": "new session", "new_story": "new story", "keymap": "keymap",
+	"fold_all": "fold all", "shell": "new shell",
 	"close_project": "close project", "settings": "settings", "cleanup": "cleanup",
 }
 
@@ -51,9 +50,6 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 	}
 	if ctx.ClaudeFocused {
 		back := k(cfg.Client.PaneLeft, "to list")
-		if ctx.FocusMode {
-			back = k(cfg.Client.PaneLeft, "exit focus, to list")
-		}
 		if n := ctx.Session; n != 0 && strings.HasPrefix(m.StateText(n), "asks:") {
 			parts = []string{"CLAUDE", "↑↓ move", "⏎ confirm", "esc no", back}
 		} else {
@@ -62,7 +58,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		return join(parts)
 	}
 	row, rowKeys := rowPart(m, cfg, ctx)
-	global := []string{"j/k move", lk("shell"), lk("fold_all"), lk("new_chat"), lk("new_session"), lk("new_story")}
+	global := []string{"j/k move", lk("shell"), lk("fold_all"), lk("new_session"), lk("new_story")}
 	if r := m.Selected(); r.Kind == RowStory {
 		global = append(global, lk("cleanup"))
 	}

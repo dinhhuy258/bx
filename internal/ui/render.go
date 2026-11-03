@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/dinhhuy258/bx/internal/claude"
+	"github.com/dinhhuy258/bx/internal/config"
 )
 
 // ListWidth is the width of the list pane next to the Claude pane. app.ListWidth is the same number.
@@ -18,6 +19,7 @@ const ListWidth = 46
 type RenderOptions struct {
 	Plain, Focused bool
 	Projects       []ProjectTab
+	NewKey         string // the new_session key, for "no chats · n to start one"; "" = unbound
 }
 
 type palette struct {
@@ -75,11 +77,14 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 		if r.Kind == RowStory {
 			lines = append(lines, m.storyLine(r, cursor, width, pal, i == selIdx))
 			if len(m.P.SessionsOf(r.Story)) == 0 && m.IsOpen(r.Story) {
-				what, key := "no sessions", "n"
+				what := "no sessions"
 				if r.Story == "" {
-					what, key = "no chats", "c"
+					what = "no chats"
 				}
-				lines = append(lines, truncate("      "+pal.dim.Render(what+" · "+key+" to start one"), width))
+				if o.NewKey != "" {
+					what += " · " + config.Pretty(o.NewKey) + " to start one"
+				}
+				lines = append(lines, truncate("      "+pal.dim.Render(what), width))
 			}
 			continue
 		}

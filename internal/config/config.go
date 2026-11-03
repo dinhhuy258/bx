@@ -1,5 +1,5 @@
 // Package config loads ~/.bx/config.toml and provides the paths under the bx root.
-// Missing keys fall back to the defaults from docs/keymap.md. An empty string unbinds a key.
+// Missing keys fall back to the defaults in Default. An empty string unbinds a key.
 package config
 
 import (
@@ -62,8 +62,8 @@ func Default(root string) *Config {
 		Keys: Keys{
 			List: map[string][]string{
 				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
-				"new_chat": {"c"}, "new_session": {"n"}, "new_story": {"w"},
-				"nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
+				"new_session": {"n"}, "new_story": {"w"},
+				"shell": {"t"}, "keymap": {"?"},
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
 				"inbox": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
@@ -133,40 +133,7 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 }
 
-// renamed maps old list action names to the ones that replaced them, so a config that binds an
-// old name still works. "waiting" and "activity" were merged into "inbox"; "delete" did both
-// what delete_session and close_shell do now.
-var renamed = []struct{ old, new string }{
-	{"waiting", "inbox"}, {"activity", "inbox"},
-	{"stop", "stop_session"},
-	{"delete", "delete_session"}, {"delete", "close_shell"},
-}
-
-// removedActions are list actions bx no longer has: a config that still binds one is ignored,
-// so its key does not stay bound to nothing.
-var removedActions = []string{"lazygit"}
-
 func applyBinds(dst map[string][]string, src map[string]bind) {
-	// an old name binds its new ones unless the config also names the new one; an empty old
-	// bind unbinds them
-	merged := map[string]bind{}
-	for _, r := range renamed {
-		if _, set := src[r.new]; set {
-			continue
-		}
-		if keys, ok := src[r.old]; ok {
-			merged[r.new] = append(merged[r.new], keys...)
-		}
-	}
-	for _, r := range renamed {
-		delete(src, r.old)
-	}
-	for _, old := range removedActions {
-		delete(src, old)
-	}
-	for action, keys := range merged {
-		src[action] = keys
-	}
 	for action, b := range src {
 		if len(b) == 0 {
 			delete(dst, action)

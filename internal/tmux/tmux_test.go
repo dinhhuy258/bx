@@ -34,9 +34,6 @@ func TestNewSessionAndSessions(t *testing.T) {
 	if err != nil || len(ss) != 2 || ss[0] != (Session{ID: "$4", Name: "bx-p-1"}) {
 		t.Fatalf("%+v %v", ss, err)
 	}
-	if err := tm.SendKeys("$4", "Enter"); err != nil {
-		t.Fatal(err)
-	}
 	if err := tm.KillSession("$4"); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +42,7 @@ func TestNewSessionAndSessions(t *testing.T) {
 		calls = append(calls, strings.Join(c, " "))
 	}
 	// the fake records every call it has a reply for, queries included
-	want := "new-session -d -s bx-p-1 -c /w -P -F #{session_id} claude --session-id u|list-sessions -F #{session_id}\t#{session_name}|send-keys -t $4 Enter|kill-session -t $4"
+	want := "new-session -d -s bx-p-1 -c /w -P -F #{session_id} claude --session-id u|list-sessions -F #{session_id}\t#{session_name}|kill-session -t $4"
 	if strings.Join(calls, "|") != want {
 		t.Fatalf("calls:\n%s", strings.Join(calls, "\n"))
 	}

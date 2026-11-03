@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -26,9 +25,9 @@ var keymapGroups = []keymapGroup{
 	{"SESSION", "the selected [n] row", []keymapItem{
 		{"open", "type in Claude"},
 		{"focus", "focus mode · Claude full screen"},
-		{"stop_session", "stop · end Claude, keep the session"},
+		{"stop_session", "stop · Claude exits; resume picks it up"},
 		{"resume", "resume a stopped or gone session"},
-		{"delete_session", "delete · transcript stays in ~/.claude"},
+		{"delete_session", "delete · removes uploads and artifacts; transcript stays in ~/.claude"},
 		{"rename", "rename"},
 		{"artifacts", "artifacts · the pages it made"},
 	}},
@@ -39,12 +38,11 @@ var keymapGroups = []keymapGroup{
 	}},
 	{"STORY", "a branch and its worktree", []keymapItem{
 		{"open", "fold or unfold"},
-		{"new_session", "new session in it"},
+		{"new_session", "new session in it · in chats, a new chat"},
 		{"add_repo", "add repositories (workspace)"},
 		{"close_story", "close · stop its sessions, remove worktree"},
 	}},
 	{"PROJECT", "the one on screen", []keymapItem{
-		{"new_chat", "new chat · a session in no story"},
 		{"new_story", "new story · a branch and worktree"},
 		{"shell", "new shell"},
 		{"projects", "open another project"},
@@ -124,11 +122,7 @@ func Keymap(cfg *config.Config, width int) string {
 	if len(other) > 0 {
 		b := block{head: pal.bold.Render("OTHER")}
 		for _, a := range other {
-			does := strings.ReplaceAll(a, "_", " ")
-			if slices.Contains([]string{"nvim", "prs"}, a) {
-				does += " · not available yet"
-			}
-			b.lines = append(b.lines, line{keys(cfg.Keys.List[a]...), does})
+			b.lines = append(b.lines, line{keys(cfg.Keys.List[a]...), strings.ReplaceAll(a, "_", " ")})
 		}
 		blocks = append(blocks, b)
 	}

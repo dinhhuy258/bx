@@ -707,17 +707,16 @@ func TestPaneKeysPastTheEdgeGoToTmux(t *testing.T) {
 
 func TestPromptsCallTheBackend(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
-	h.press("c")
+	h.press("k", "k") // session 1 → story s1 → chats
+	h.press("n")      // n on chats is a new chat
 	if bar := ansi.Strip(h.m.bar()); len(h.opened) != 0 || !strings.Contains(bar, "New chat  /p/home-network   y start  n cancel") {
-		t.Fatalf("c asks first: opened=%q bar=%q", h.opened, bar)
+		t.Fatalf("n on chats asks for a new chat: opened=%q bar=%q", h.opened, bar)
 	}
 	h.press("y") // no title prompt: the chat opens and takes the focus
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a new chat should open and focus: %q", h.opened)
 	}
-	h.press("C-h", "y")                      // back to the list; y on the waiting session 1 does nothing
-	h.m.cfg.Keys.List["yes"] = []string{"y"} // an old bind in config.toml: an unknown action, ignored
-	h.press("y")
+	h.press("C-h", "y")   // back to the list; y on the waiting session 1 does nothing
 	h.press("w", "Enter") // new branch
 	h.typeText("guest")
 	h.press("Enter", "Enter") // the name, then feat
@@ -1334,14 +1333,6 @@ func TestNarrowShowsOnePaneAtATime(t *testing.T) {
 	// the list (its "◆ 1 needs you" header) is hidden; the pane's title line names the session
 	if !strings.Contains(v, "CLAUDE SAYS HI") || strings.Contains(v, "◆ 1 needs you") || !strings.Contains(v, "[1] Add lease time") || h.m.term.Cols() != 80 {
 		t.Fatalf("narrow Claude view (%d cols):\n%s", h.m.term.Cols(), v)
-	}
-}
-
-func TestToolKeysExplainThemselves(t *testing.T) {
-	h := start(t, 120, 30, "waiting")
-	h.press("e")
-	if len(h.be.actions) != 0 || !strings.Contains(h.m.View().Content, "not available yet") {
-		t.Fatalf("actions=%q\n%s", h.be.actions, h.m.View().Content)
 	}
 }
 

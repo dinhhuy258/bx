@@ -791,8 +791,6 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.focusMode = true
 			return m, m.enterClaude()
 		}
-	case "new_chat":
-		m.askNewSession("")
 	case "new_session":
 		m.askNewSession(row.Story)
 	case "new_story":
@@ -852,8 +850,6 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.openSettings()
 	case "shell":
 		m.askNewShell(row.Story)
-	case "nvim", "prs":
-		m.setFlash(action + " is not available yet")
 	case "keymap":
 		m.showKeys = true
 	case "scroll_up":
@@ -1728,7 +1724,7 @@ func (m *Model) body() string {
 
 // list is the list pane: the open project's list with the project strip, or the inbox.
 func (m *Model) list(width int, focused bool) string {
-	o := ui.RenderOptions{Focused: focused}
+	o := ui.RenderOptions{Focused: focused, NewKey: m.cfg.Keys.First(m.cfg.Keys.List, "new_session")}
 	if m.activity {
 		back := fmt.Sprintf("%s back to %s · %s projects", config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "inbox")), m.project, config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "projects")))
 		return ui.RenderActivity(m.activityModels(), &m.act, width, m.height-1, o, back)
@@ -1796,7 +1792,10 @@ func (m *Model) pane() string {
 		}
 		return m.paneTitle() + "\n" + rule + "\n" + screen
 	}
-	hint := "\n  No session open.\n  Enter on a session shows it here; c starts a chat."
+	hint := "\n  No session open.\n  Enter on a session shows it here."
+	if key := m.cfg.Keys.First(m.cfg.Keys.List, "new_session"); key != "" {
+		hint += " " + config.Pretty(key) + " starts one."
+	}
 	return strings.Repeat(" ", m.term.Cols()) + "\n" + rule + "\n" + lipgloss.NewStyle().Width(m.term.Cols()).Height(m.term.Rows()).Foreground(lipgloss.Color("#565f89")).Render(hint)
 }
 

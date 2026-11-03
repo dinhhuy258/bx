@@ -39,66 +39,13 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	}
 }
 
-// "stop" became stop_session and "delete" became delete_session and close_shell: a config that
-// binds an old name still works, unless it also names the new one.
-func TestRenamedActions(t *testing.T) {
-	root := t.TempDir()
-	cfg := "[keys.list]\nstop = \"K\"\ndelete = [\"x\", \"Delete\"]\nclose_shell = \"q\"\n"
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	c, err := Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(c.Keys.List["stop_session"], ","); got != "K" {
-		t.Errorf("stop_session = %s", got)
-	}
-	if got := strings.Join(c.Keys.List["delete_session"], ","); got != "x,Delete" {
-		t.Errorf("delete_session = %s", got)
-	}
-	if got := strings.Join(c.Keys.List["close_shell"], ","); got != "q" {
-		t.Errorf("close_shell = %s", got)
-	}
-	if _, ok := c.Keys.List["delete"]; ok {
-		t.Errorf("list keys: %+v", c.Keys.List)
-	}
-}
-
-// lazygit was removed: a config that still binds it loads, and the key binds nothing.
-func TestRemovedLazygitBindIsIgnored(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[keys.list]\nlazygit = \"g\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	c, err := Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := c.Keys.List["lazygit"]; ok || c.Keys.ListAction("g") != "" {
-		t.Fatalf("list keys: %+v", c.Keys.List)
-	}
-}
-
 func TestFileOverridesAndUnbind(t *testing.T) {
 	root := t.TempDir()
 	toml := `
-[tmux]
-prefix = "C-a"
-
-[tmux.keys]
-menu = "m"
-
 [keys.list]
 down = ["n"]
-nvim = ""
+shell = ""
 fold_all = "z M"
-
-[list]
-auto_expand_waiting = false
-
-[notify]
-ntfy_url = "https://ntfy.example/bx-secret"
 `
 	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
@@ -110,29 +57,11 @@ ntfy_url = "https://ntfy.example/bx-secret"
 	if got := c.Keys.List["down"]; len(got) != 1 || got[0] != "n" {
 		t.Errorf("down = %v", got)
 	}
-	if _, bound := c.Keys.List["nvim"]; bound {
-		t.Error("nvim should be unbound")
+	if _, bound := c.Keys.List["shell"]; bound {
+		t.Error("shell should be unbound")
 	}
 	if c.Keys.List["fold_all"][0] != "z M" {
 		t.Errorf("fold_all = %v", c.Keys.List["fold_all"])
-	}
-}
-
-// The old "waiting" and "activity" actions became "inbox": a config that binds them still works.
-func TestOldInboxActions(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[keys.list]\nwaiting = \"g\"\nactivity = \"G\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	c, err := Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := c.Keys.List["inbox"]; len(got) != 2 || got[0] != "g" || got[1] != "G" {
-		t.Fatalf("inbox = %v", got)
-	}
-	if _, ok := c.Keys.List["waiting"]; ok {
-		t.Fatalf("list keys: %+v", c.Keys.List)
 	}
 }
 
@@ -202,30 +131,6 @@ func TestServeAndClientSections(t *testing.T) {
 	d := Default(root)
 	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.PaneLeft != "C-h" || d.Client.PaneRight != "C-l" || d.Client.CopyMode != "M-c" {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
-	}
-}
-
-func TestOldNotifySectionIsIgnored(t *testing.T) {
-	root := t.TempDir()
-	toml := "[notify]\nntfy_url = \"https://ntfy.example/x\"\nopen_url = \"https://bx.tail1234.ts.net\"\n"
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(root); err != nil {
-		t.Fatalf("an old [notify] must still load: %v", err)
-	}
-}
-
-func TestLeftoverYesBindLoads(t *testing.T) {
-	root := t.TempDir()
-	if _, ok := Default(root).Keys.List["yes"]; ok {
-		t.Fatal("yes is no longer an action")
-	}
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[keys.list]\nyes = \"y\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(root); err != nil {
-		t.Fatalf("an old yes bind must load: %v", err)
 	}
 }
 

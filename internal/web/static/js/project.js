@@ -13,7 +13,7 @@ export function showProject(root, name) {
   const body = h('div', { class: 'page' });
   root.append(topBar(h('a', { href: '#/', class: 'ib', 'aria-label': 'Back' }, icon('back')),
     h('span', { class: 'ttl-name' }, name), metaEl,
-    h('button', { class: 'ib', 'aria-label': 'New', onclick: () => addMenu() }, icon('plus'))), err, body);
+    h('button', { class: 'ib', 'aria-label': 'New story', onclick: () => { if (snap) newStoryMenu({ project: name, snap, refresh }); } }, icon('plus'))), err, body);
   let snap = null;
 
   async function refresh() {
@@ -103,13 +103,6 @@ export function showProject(root, name) {
       }
     } });
     sheet(story, items);
-  }
-
-  function addMenu() {
-    sheet(name, [
-      { label: 'New chat', run: () => newSession('') },
-      { label: 'New story', run: () => newStoryMenu({ project: name, snap, refresh }) },
-    ]);
   }
 
   async function newSession(story) {

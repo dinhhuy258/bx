@@ -54,15 +54,15 @@ export function sessionMenu({ project, num, session, state, act, refresh, ask, w
     if (v && v.title) act('rename', { num, title: v.title });
   } });
   if (['starting', 'running', 'waiting', 'idle'].includes(state)) {
-    items.push({ label: 'Stop', icon: 'stop', hint: 'Claude exits; Resume picks it up', run: async () => {
-      if (await confirmBox(`Stop ${title}?`, 'Stop', { text: 'Claude exits; Resume picks it up again.' })) act('stop', { num });
+    items.push({ label: 'Stop', icon: 'stop', hint: 'Claude exits; resume picks it up', run: async () => {
+      if (await confirmBox(`Stop ${title}?`, 'Stop', { text: 'Claude exits; resume picks it up again.' })) act('stop', { num });
     } });
   }
   if (state === 'gone' || state === 'done') {
     items.push({ label: 'Resume', icon: 'play', hint: 'Start Claude again where it left off', run: () => act('resume', { num }) });
   }
   items.push(...view);
-  items.push({ label: 'Delete session', icon: 'trash', hint: 'Removes its uploads and artifacts', danger: true, run: async () => {
+  items.push({ label: 'Delete session', icon: 'trash', hint: 'Removes uploads and artifacts; transcript stays in ~/.claude', danger: true, run: async () => {
     if (!(await confirmBox(`Delete ${title}?`, 'Delete',
       { danger: true, text: 'bx forgets it. The Claude transcript in ~/.claude is kept.' }))) return;
     try {

@@ -174,12 +174,6 @@ func (t *Tmux) KillSession(sid string) error {
 	return err
 }
 
-// SendKeys sends keys to a target (a session id targets its active pane).
-func (t *Tmux) SendKeys(target string, keys ...string) error {
-	_, err := t.x.Run(append([]string{"send-keys", "-t", target}, keys...)...)
-	return err
-}
-
 // Scroll moves a session's view through its history with copy-mode: lines < 0 goes back,
 // lines > 0 goes toward the live screen, 0 leaves copy-mode. copy-mode -e leaves by itself on
 // reaching the bottom, so moving down or leaving when not in copy-mode is not an error.
