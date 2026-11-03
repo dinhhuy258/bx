@@ -34,11 +34,11 @@ func runNotify(args []string, out, errOut io.Writer) int {
 	if err != nil {
 		return 0
 	}
-	project, num, title, ok := findSession(cfg, h.SessionID)
+	project, num, sess, ok := findSession(cfg, h.SessionID)
 	if !ok {
 		return 0 // a Claude started outside bx; not ours to announce
 	}
-	t, b := notify.Message(h, project, num, title)
+	t, b := notify.Message(h, project, sess.Story, sess.Title)
 	base, err := notify.ClickBase(openURL, cfg.Serve.Listen, serve.ResolveListen)
 	if err != nil {
 		fmt.Fprintln(errOut, "bx notify:", err)
@@ -64,7 +64,7 @@ func notifyTargets(cfg *config.Config) (ntfyURL, openURL string) {
 }
 
 // findSession scans every state file for the session uuid.
-func findSession(cfg *config.Config, uuid string) (project string, num int, title string, ok bool) {
+func findSession(cfg *config.Config, uuid string) (project string, num int, sess *state.Session, ok bool) {
 	names, _ := state.ListProjects(filepath.Join(cfg.Root, "state"))
 	for _, name := range names {
 		p, err := state.Load(cfg.StateFile(name), name)
@@ -73,9 +73,9 @@ func findSession(cfg *config.Config, uuid string) (project string, num int, titl
 		}
 		for n, s := range p.Sessions {
 			if s.UUID == uuid {
-				return name, n, s.Title, true
+				return name, n, s, true
 			}
 		}
 	}
-	return "", 0, "", false
+	return "", 0, nil, false
 }

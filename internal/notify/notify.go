@@ -33,8 +33,9 @@ func ParseHook(r io.Reader) (Hook, error) {
 	return h, err
 }
 
-// Message builds the ntfy title and body. Body shows the kind of wait, not the question.
-func Message(h Hook, project string, num int, title string) (string, string) {
+// Message builds the ntfy title and body: the session's title, as the list names it, then its
+// project, its story ("chats" for a chat) and the kind of wait. Never the question itself.
+func Message(h Hook, project, story, title string) (string, string) {
 	kind := "needs you"
 	switch {
 	case h.Event == "PermissionRequest", h.Type == "permission_prompt":
@@ -46,7 +47,13 @@ func Message(h Hook, project string, num int, title string) (string, string) {
 	case h.Event == "Stop":
 		kind = "finished"
 	}
-	return fmt.Sprintf("%s [%d] needs you", project, num), fmt.Sprintf("%s · %s", title, kind)
+	if story == "" {
+		story = "chats"
+	}
+	if title == "" {
+		title = "A session needs you"
+	}
+	return title, fmt.Sprintf("%s · %s · %s", project, story, kind)
 }
 
 // SessionURL is the web client's page for one session: <base>/#/p/<project>/s/<num>.

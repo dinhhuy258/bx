@@ -163,19 +163,19 @@ func TestRenderShellRows(t *testing.T) {
 			t.Errorf("line %d is %d cells wide: %q", i, w, line)
 		}
 		switch {
-		case strings.Contains(line, "$1  zsh"):
+		case strings.Contains(line, "$1 zsh"):
 			one = line
-		case strings.Contains(line, "$2  dev server"):
+		case strings.Contains(line, "$2 dev server"):
 			two = line
 		}
 	}
-	if one == "" || strings.TrimRight(one, " ") != "   ├ $1  zsh" {
+	if one == "" || strings.TrimRight(one, " ") != " ├ $1 zsh" {
 		t.Errorf("no $1 row with only its command:\n%s", out)
 	}
 	if !strings.HasSuffix(two, "npm") {
 		t.Errorf("the $2 row shows its title and the command on the right, got %q:\n%s", two, out)
 	}
-	if i, j := strings.Index(out, "Shorter lease for the IoT VLAN"), strings.Index(out, "$1  zsh"); i < 0 || j < i {
+	if i, j := strings.Index(out, "Shorter lease for the IoT VLAN"), strings.Index(out, "$1 zsh"); i < 0 || j < i {
 		t.Errorf("shells come after the story's sessions:\n%s", out)
 	}
 }

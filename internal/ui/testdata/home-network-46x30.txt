@@ -1,17 +1,17 @@
 bx  home-network                      ● 2  ◆ 1
 ──────────────────────────────────────────────
  ▾ chats                      main · 2 changed
-   ├ ○ 6  What does pmxcfs do?              5m
-   └ ○ 7  Explain the fasttrack rule       40m
+ ├ ○ What does pmxcfs do?                   5m
+ └ ○ Explain the fasttrack rule            40m
  ▾ fstrim-cron
-   └ no sessions
+ └ no sessions
  ▾ guest-vlan-fix             3 changed +42 -7
-▌  ├ ● 1  Fix guest DHCP lease time         6m
-   ├ ◆ 2  Write the test checklist          2m
-   │      asks: permission prompt
-   └ ○ 3  Shorter lease for the IoT VLAN    1h
+▌├ ● Fix guest DHCP lease time              6m
+ ├ ◆ Write the test checklist               2m
+ │   asks: permission prompt
+ └ ○ Shorter lease for the IoT VLAN         1h
  ▾ ups-nut-alerts                       +31 -2
-   └ ● 4  Alert when the UPS is on battery 18m
+ └ ● Alert when the UPS is on battery      18m
  ▸ zigbee-map-docs                     ✓1  +58
 
 

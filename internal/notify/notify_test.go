@@ -21,12 +21,15 @@ func TestParseHookInput(t *testing.T) {
 
 func TestMessageNeverIncludesPromptText(t *testing.T) {
 	h := Hook{SessionID: "u2", Event: "Notification", Type: "permission_prompt", Message: "Allow Bash to run rm -rf?"}
-	title, body := Message(h, "home-network", 2, "Check RouterOS syntax")
-	if title != "home-network [2] needs you" {
+	title, body := Message(h, "home-network", "guest-vlan-fix", "Check RouterOS syntax")
+	if title != "Check RouterOS syntax" {
 		t.Fatal(title)
 	}
-	if body != "Check RouterOS syntax · permission" {
+	if body != "home-network · guest-vlan-fix · permission" {
 		t.Fatal(body)
+	}
+	if _, body := Message(h, "home-network", "", "x"); body != "home-network · chats · permission" {
+		t.Fatal("a chat names chats:", body)
 	}
 	if strings.Contains(body, "rm -rf") {
 		t.Fatal("prompt text leaked")

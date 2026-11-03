@@ -22,28 +22,27 @@ type RenderOptions struct {
 
 type palette struct {
 	dim, blue, amber, green, red, bold, sel, brand, cyan, group, arrow lipgloss.Style
-	selBG, groupBG                                                     string // SGR of the selection and group-row bands, "" when plain
+	selBG                                                              string // SGR of the selection band, "" when plain
 }
 
 func newPalette(plain bool) palette {
 	if plain {
 		s := lipgloss.NewStyle()
-		return palette{s, s, s, s, s, s, s, s, s, s, s, "", ""}
+		return palette{s, s, s, s, s, s, s, s, s, s, s, ""}
 	}
 	return palette{
-		cyan:    lipgloss.NewStyle().Foreground(lipgloss.Color("#7dcfff")),
-		dim:     lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89")),
-		blue:    lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
-		amber:   lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")),
-		green:   lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")),
-		red:     lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
-		bold:    lipgloss.NewStyle().Bold(true),
-		sel:     lipgloss.NewStyle().Background(lipgloss.Color("#292e42")),
-		brand:   lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true),
-		group:   lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true),
-		arrow:   lipgloss.NewStyle().Foreground(lipgloss.Color("#9d7cd8")),
-		selBG:   "\x1b[48;2;41;46;66m", // #292e42
-		groupBG: "\x1b[48;2;31;35;53m", // #1f2335
+		cyan:  lipgloss.NewStyle().Foreground(lipgloss.Color("#7dcfff")),
+		dim:   lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89")),
+		blue:  lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
+		amber: lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")),
+		green: lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")),
+		red:   lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
+		bold:  lipgloss.NewStyle().Bold(true),
+		sel:   lipgloss.NewStyle().Background(lipgloss.Color("#292e42")),
+		brand: lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true),
+		group: lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true),
+		arrow: lipgloss.NewStyle().Foreground(lipgloss.Color("#9d7cd8")),
+		selBG: "\x1b[48;2;41;46;66m", // #292e42
 	}
 }
 
@@ -62,9 +61,11 @@ func band(line string, width int, sgr string) string {
 // Render draws the list pane at width x height. Lines never exceed width cells.
 //
 // The header holds the brand, the project (or the strip of opened projects) and what runs or
-// waits; the rule stays on the second line, level with the Claude pane's. Under it each story is
-// a band with its name, and its sessions and shells hang off it on tree guides, one line each.
-// A session takes a second line only when it says something to act on: a question, or gone.
+// waits; the rule stays on the second line, level with the Claude pane's. Under it each story
+// names itself in violet, and its sessions and shells hang off its arrow on tree guides, one
+// line each: the state's dot, the title, the age. A session takes a second line only when it
+// says something to act on: a question, or gone. The number is left to the pane title, the
+// key bar and the dialogs, so the title has the room.
 func Render(m *Model, width, height int, o RenderOptions) string {
 	if width < 30 {
 		return "bx: terminal too narrow"
@@ -89,7 +90,6 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 
 	rows := m.Rows()
 	selIdx := m.SelIndex()
-	numW := len(fmt.Sprint(m.maxNum()))
 	var body []string
 	selLine := 0
 	for i, r := range rows {
@@ -97,11 +97,11 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 		if sel {
 			selLine = len(body)
 		}
-		mark := func(line string, bg string) string {
+		mark := func(line string) string {
 			if sel {
 				return band(pal.blue.Render("▌")+line[1:], width, pal.selBG)
 			}
-			return band(line, width, bg)
+			return line
 		}
 		last := i+1 >= len(rows) || rows[i+1].Kind == RowStory
 		guide, under := "├ ", "│ "
@@ -110,21 +110,21 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 		}
 		switch r.Kind {
 		case RowStory:
-			body = append(body, mark(m.storyLine(r, width, pal), pal.groupBG))
+			body = append(body, mark(m.storyLine(r, width, pal)))
 			if len(m.P.SessionsOf(r.Story)) == 0 && len(m.ShellsOf(r.Story)) == 0 && m.IsOpen(r.Story) {
 				what := "no sessions"
 				if r.Story == "" {
 					what = "no chats"
 				}
-				body = append(body, truncate("   "+pal.dim.Render("└ "+what), width))
+				body = append(body, truncate(" "+pal.dim.Render("└ "+what), width))
 			}
 		case RowShell:
-			body = append(body, mark(m.shellLine(r, pal.dim.Render(guide), width, pal, sel), ""))
+			body = append(body, mark(m.shellLine(r, pal.dim.Render(guide), width, pal, sel)))
 		default:
-			line, note := m.sessionLine(r.Num, numW, pal.dim.Render(guide), width, showAge, pal, sel)
-			body = append(body, mark(line, ""))
+			line, note := m.sessionLine(r.Num, pal.dim.Render(guide), width, showAge, pal, sel)
+			body = append(body, mark(line))
 			if note != "" {
-				body = append(body, truncate("   "+pal.dim.Render(under)+strings.Repeat(" ", numW+4)+note, width))
+				body = append(body, truncate(" "+pal.dim.Render(under)+"  "+note, width))
 			}
 		}
 	}
@@ -137,19 +137,9 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 	return pad(append(top, body[off:]...), height)
 }
 
-// maxNum is the highest session number, to right-align the numbers in one column.
-func (m *Model) maxNum() int {
-	n := 1
-	for k := range m.P.Sessions {
-		n = max(n, k)
-	}
-	return n
-}
-
-// sessionLine is a session's row, "▌  ├ ●  1  Fix guest DHCP lease time   6m", and its note
-// for the line under it: the question it asks, or that it is gone; "" when there is nothing
-// to act on.
-func (m *Model) sessionLine(num, numW int, guide string, width int, showAge bool, pal palette, selected bool) (string, string) {
+// sessionLine is a session's row, " ├ ● Fix guest DHCP lease time   6m", and its note for the
+// line under it: the question it asks, or that it is gone; "" when there is nothing to act on.
+func (m *Model) sessionLine(num int, guide string, width int, showAge bool, pal palette, selected bool) (string, string) {
 	s := m.P.Sessions[num]
 	dot := m.Dot(num)
 	switch m.State(num) {
@@ -172,7 +162,7 @@ func (m *Model) sessionLine(num, numW int, guide string, width int, showAge bool
 	if showAge {
 		right = pal.dim.Render(m.Age(num))
 	}
-	line := fit("   "+guide+dot+" "+pal.dim.Render(fmt.Sprintf("%*d", numW, num))+"  "+title, right, width)
+	line := fit(" "+guide+dot+" "+title, right, width)
 	note := ""
 	switch {
 	case m.State(num) == claude.Waiting:
@@ -238,7 +228,7 @@ func (m *Model) shellLine(r Row, guide string, width int, pal palette, selected 
 	if sh.Title != "" {
 		right = pal.dim.Render(sh.Command)
 	}
-	return fit("   "+guide+pal.cyan.Render(fmt.Sprintf("$%d", r.K))+"  "+label, right, width)
+	return fit(" "+guide+pal.cyan.Render(fmt.Sprintf("$%d", r.K))+" "+label, right, width)
 }
 
 // changed is the amber "N changed" for uncommitted files in a folder, between before and after,
