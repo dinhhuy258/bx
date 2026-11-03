@@ -54,7 +54,7 @@ export function showProject(root, name) {
   const shellsOf = (story) => (snap.shells || []).filter((s) => s.story === story);
 
   // group lists a story's sessions, then its shells, in a card under the story's label. An empty
-  // story offers its first session.
+  // group is just its label; its ⋯ menu starts the first session.
   function group(story, rows) {
     const d = story && snap.live.diff ? snap.live.diff[story] : null;
     const shells = shellsOf(story);
@@ -66,9 +66,9 @@ export function showProject(root, name) {
         d ? h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${d.add}`), h('span', { class: 'del' }, `−${d.del}`),
           d.dirty ? h('span', {}, `· ${d.dirty} uncommitted`) : null) : null,
         h('button', { class: 'ib', 'aria-label': story ? 'Story actions' : 'Chats actions', onclick: () => storyMenu(story) }, icon('more'))),
-      h('div', { class: 'card' }, rows.length || shells.length
-        ? [rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow)]
-        : h('button', { class: 'card-add', onclick: () => newSession(story) }, icon('plus'), 'New session')));
+      rows.length || shells.length
+        ? h('div', { class: 'card' }, rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow))
+        : null);
   }
 
   // shellRow is [$k][ label / command or "shell" ][busy][⋯]: the command shows after a rename,

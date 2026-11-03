@@ -299,8 +299,7 @@ if (!byClass(items[0], 'tile-wait').length || text(byClass(items[0], 'item-meta'
 if (!byClass(items[2], 'tile-shell').length || !byClass(items[2], 'busy').length || text(byClass(items[2], 'item-meta')[0]) !== 'npm') fail('shell row');
 if (text(byClass(ps[1], 'diff')[0]) !== '+5−1' || !byClass(ps[1], 'tile-unread').length) fail('story diff/tile');
 if (text(byClass(ps[1], 'item-meta')[0]) !== 'idle · unread') fail('unread row: ' + text(byClass(ps[1], 'item-meta')[0]));
-const add = byClass(ps[2], 'card-add');
-if (add.length !== 1 || text(add[0]) !== 'New session') fail('empty story add row');
+if (byClass(ps[2], 'card').length || byClass(ps[2], 'item').length) fail('empty story shows a card');
 `
 
 func TestListScreens(t *testing.T) {

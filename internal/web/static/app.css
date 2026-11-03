@@ -56,7 +56,6 @@ svg.chev { color: var(--dim); flex: none; }
 .tile-shell { background: rgba(95, 215, 215, .12); color: #5fd7d7; }
 .pill { flex: none; font-size: 12px; padding: 2px 8px; border-radius: 99px; margin-right: 4px; }
 .pill.busy { color: var(--wait); background: rgba(245, 166, 35, .14); }
-.card-add { width: 100%; min-height: 52px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: none; border: none; border-radius: 0; color: var(--accent); }
 .ttl-meta .warn { color: var(--wait); }
 .ttl-meta svg.i { width: 13px; height: 13px; margin-right: 4px; }
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 24px; text-align: center; color: var(--dim); }
