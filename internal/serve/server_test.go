@@ -1019,12 +1019,12 @@ func TestGitAccountsOnlyFromTheTUI(t *testing.T) {
 		return `{"hosts":{"github.com":[{"state":"success","host":"github.com","login":"huy-acme"}]}}`, nil
 	}
 	got, code := get[api.GitAccounts](t, ts, "/api/git/accounts?tui=1")
-	if code != 200 || !got.Config.Empty() || len(got.Logins) != 1 || len(got.Projects) != 1 || got.Projects[0].Account != "" {
+	if code != 200 || !got.Config.Empty() || len(got.Logins) != 1 || len(got.Projects) != 1 {
 		t.Fatalf("empty: %d %+v", code, got)
 	}
 	c := accounts.Config{Default: "work", Accounts: []accounts.Account{{ID: "work", Login: "huy-acme"}}}
 	var out api.GitAccounts
-	if code := putJSON(t, ts, "/api/git/accounts?tui=1", c, &out); code != 200 || out.Projects[0].Account != "work" || out.Projects[0].Reason != accounts.ByDefault {
+	if code := putJSON(t, ts, "/api/git/accounts?tui=1", c, &out); code != 200 || out.Config.Default != "work" || len(out.Projects) != 1 {
 		t.Fatalf("put: %d %+v", code, out)
 	}
 	c.Default = "nope"

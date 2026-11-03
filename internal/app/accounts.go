@@ -64,28 +64,30 @@ func (a *App) ProjectOrigin(p *state.Project) accounts.Origin {
 	return accounts.ParseRemote(a.Git.OriginURL(p.Path))
 }
 
-// accountFor is the account of project for the folder dir, whose origin the rules match.
-func (a *App) accountFor(project, dir string) (accounts.Resolved, error) {
+// accountFor is the account of project for the folder dir, whose origin the rules match;
+// false when none applies.
+func (a *App) accountFor(project, dir string) (accounts.Account, bool, error) {
 	c, err := a.Accounts()
 	if err != nil || c.Empty() {
-		return accounts.Resolved{}, err
+		return accounts.Account{}, false, err
 	}
 	var o accounts.Origin
 	if a.Git.IsRepo(dir) {
 		o = accounts.ParseRemote(a.Git.OriginURL(dir))
 	}
-	return c.Resolve(project, o), nil
+	acct, ok := c.Resolve(project, o)
+	return acct, ok, nil
 }
 
 // accountEnv is the environment of a process of project in dir: its account's token and
 // identity (see accounts.Env). nil when no account applies; an error when gh has no token for
 // it, so nothing runs as the wrong person.
 func (a *App) accountEnv(ctx context.Context, project, dir string) ([]string, error) {
-	r, err := a.accountFor(project, dir)
-	if err != nil || !r.OK {
+	acct, ok, err := a.accountFor(project, dir)
+	if err != nil || !ok {
 		return nil, err
 	}
-	return a.envOf(ctx, r.Account)
+	return a.envOf(ctx, acct)
 }
 
 func (a *App) envOf(ctx context.Context, acct accounts.Account) ([]string, error) {

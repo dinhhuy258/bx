@@ -23,7 +23,7 @@ func accountsTUIOnly(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// getAccounts sends the accounts, gh's logins and the account of every project.
+// getAccounts sends the accounts, gh's logins and the origin of every project.
 func (s *Server) getAccounts(w http.ResponseWriter, r *http.Request) {
 	if !accountsTUIOnly(w, r) {
 		return
@@ -94,12 +94,7 @@ func (s *Server) accountsView(r *http.Request, c accounts.Config) (api.GitAccoun
 			s.Log("accounts: %s: %v", name, err)
 			continue
 		}
-		o := s.App.ProjectOrigin(p)
-		pa := ui.ProjectAccount{Project: name, Origin: o}
-		if res := c.Resolve(name, o); res.OK {
-			pa.Account, pa.Reason, pa.Rule = res.Account.ID, res.Reason, res.Rule
-		}
-		out.Projects = append(out.Projects, pa)
+		out.Projects = append(out.Projects, ui.ProjectAccount{Project: name, Origin: s.App.ProjectOrigin(p)})
 	}
 	return out, nil
 }

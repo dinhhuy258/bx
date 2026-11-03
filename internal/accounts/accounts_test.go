@@ -69,23 +69,22 @@ func TestResolve(t *testing.T) {
 	for _, tc := range []struct {
 		project string
 		o       Origin
-		id, why string
+		id      string
 	}{
-		{"dotfiles", gh("someone"), "work", ByOverride},
-		{"side", gh("acme-corp"), "personal", ByOverride},
-		{"api", gh("ACME-corp"), "work", ByRule},
-		{"tool", Origin{"ghe.acme.io", "x", "y"}, "bot", ByRule},
-		{"bx", gh("dinhhuy258"), "personal", ByDefault},
-		{"ws", Origin{}, "personal", ByDefault},
+		{"dotfiles", gh("someone"), "work"},
+		{"side", gh("acme-corp"), "personal"},
+		{"api", gh("ACME-corp"), "work"},
+		{"tool", Origin{"ghe.acme.io", "x", "y"}, "bot"},
+		{"bx", gh("dinhhuy258"), "personal"},
+		{"ws", Origin{}, "personal"},
 	} {
-		r := c.Resolve(tc.project, tc.o)
-		if !r.OK || r.Account.ID != tc.id || r.Reason != tc.why {
-			t.Errorf("%s: %+v, want %s by %s", tc.project, r, tc.id, tc.why)
+		if a, ok := c.Resolve(tc.project, tc.o); !ok || a.ID != tc.id {
+			t.Errorf("%s: %+v %v, want %s", tc.project, a, ok, tc.id)
 		}
 	}
 	c.Default = ""
-	if r := c.Resolve("bx", gh("dinhhuy258")); r.OK {
-		t.Errorf("no default: %+v", r)
+	if a, ok := c.Resolve("bx", gh("dinhhuy258")); ok {
+		t.Errorf("no default: %+v", a)
 	}
 }
 

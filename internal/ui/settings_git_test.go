@@ -38,8 +38,8 @@ func TestSettingsGitSectionIsTheClients(t *testing.T) {
 	if s.GitShown() {
 		t.Fatal("the Claude section opens first")
 	}
-	if p, add := s.GitChoice(); p != "" || add {
-		t.Fatalf("GitChoice outside the section = %q %v", p, add)
+	if p, add := baseRow(s); p != "" || add {
+		t.Fatalf("base row outside the section = %q %v", p, add)
 	}
 }
 
@@ -48,7 +48,7 @@ func TestSettingsGitRowsAndKeys(t *testing.T) {
 	if !s.GitShown() {
 		t.Fatal("Tab opens the git section")
 	}
-	if p, add := s.GitChoice(); p != "api-server" || add {
+	if p, add := baseRow(s); p != "api-server" || add {
 		t.Fatalf("first row = %q %v, want api-server (sorted)", p, add)
 	}
 	if s.Key("Enter") != SettingsGitChoose {
@@ -69,11 +69,11 @@ func TestSettingsGitRowsAndKeys(t *testing.T) {
 		t.Fatalf("h/l must not edit the hidden fields: %v", s.Changes())
 	}
 	s.Key("j")
-	if p, _ := s.GitChoice(); p != "infra" {
+	if p, _ := baseRow(s); p != "infra" {
 		t.Fatalf("j → %q", p)
 	}
 	s.Key("Down")
-	if p, add := s.GitChoice(); p != "" || !add {
+	if p, add := baseRow(s); p != "" || !add {
 		t.Fatalf("last row = %q %v, want the add row", p, add)
 	}
 	if s.Key("BSpace") != SettingsKeep {
@@ -85,7 +85,7 @@ func TestSettingsGitRowsAndKeys(t *testing.T) {
 	s.Key("k")
 	s.Key("Up")
 	s.Key("k")
-	if p, _ := s.GitChoice(); p != "api-server" {
+	if p, _ := baseRow(s); p != "api-server" {
 		t.Fatalf("k → %q", p)
 	}
 	if s.Key("Esc") != SettingsClose {
@@ -101,23 +101,23 @@ func TestSettingsGitCursorFollowsItsRow(t *testing.T) {
 	s := gitSettings()
 	s.Key("j") // infra
 	s.SetGitOverrides([]GitOverride{{Project: "web", Base: "main"}, {Project: "infra", Base: "release/1.4"}, {Project: "api-server", Base: "develop"}})
-	if p, _ := s.GitChoice(); p != "infra" {
+	if p, _ := baseRow(s); p != "infra" {
 		t.Fatalf("cursor on %q after an update", p)
 	}
 	s.Key("j")
 	s.Key("j") // the add row
 	s.SetGitOverrides([]GitOverride{{Project: "a", Base: "main"}, {Project: "web", Base: "main"}, {Project: "infra", Base: "release/1.4"}, {Project: "api-server", Base: "develop"}})
-	if _, add := s.GitChoice(); !add {
+	if _, add := baseRow(s); !add {
 		t.Fatal("the cursor stays on the add row")
 	}
 	s.Key("k") // web
 	s.SetGitOverrides([]GitOverride{{Project: "a", Base: "main"}})
-	if _, add := s.GitChoice(); !add {
+	if _, add := baseRow(s); !add {
 		t.Fatal("its row is gone: the cursor is kept in range")
 	}
 	s.SyncFailed("offline") // a sync reply does not move the git cursor
 	s.Load(nil, nil)
-	if _, add := s.GitChoice(); !add {
+	if _, add := baseRow(s); !add {
 		t.Fatal("a sync reply or a load moved the git cursor")
 	}
 }
@@ -154,9 +154,9 @@ func sampleAccounts() GitAccounts {
 		},
 		Logins: []accounts.Login{{Host: "github.com", Login: "dinhhuy258", OK: true}, {Host: "github.com", Login: "huy-acme", OK: true, Scopes: "repo, read:org, workflow"}},
 		Projects: []ProjectAccount{
-			{Project: "api-server", Origin: gh("acme-corp", "api-server"), Account: "work", Reason: "rule"},
-			{Project: "dotfiles", Origin: gh("acme-corp", "dotfiles"), Account: "work", Reason: "override"},
-			{Project: "side-project", Origin: gh("acme-corp", "side-project"), Account: "personal", Reason: "override"},
+			{Project: "api-server", Origin: gh("acme-corp", "api-server")},
+			{Project: "dotfiles", Origin: gh("acme-corp", "dotfiles")},
+			{Project: "side-project", Origin: gh("acme-corp", "side-project")},
 		},
 	}
 }
@@ -260,4 +260,16 @@ func TestSettingsGitBar(t *testing.T) {
 	if got := s.SettingsGitBar(false); got != "j/k move · ⏎ add · r recheck gh · tab section · esc close" {
 		t.Fatal(got)
 	}
+}
+
+// baseRow is the base override row under the cursor: its project, or add on its add row.
+func baseRow(s *Settings) (project string, add bool) {
+	r, _ := s.GitRow()
+	switch r.Kind {
+	case RowBase:
+		return r.Key, false
+	case RowBaseAdd:
+		return "", true
+	}
+	return "", false
 }

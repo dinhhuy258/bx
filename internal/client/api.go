@@ -138,7 +138,7 @@ func (c *API) MCP(ctx context.Context) (api.MCP, error) {
 }
 
 // GitAccounts is GET /api/git/accounts?tui=1: the GitHub accounts, gh's logins and the
-// account of every project.
+// origin of every project.
 func (c *API) GitAccounts(ctx context.Context) (api.GitAccounts, error) {
 	var out api.GitAccounts
 	return out, c.call(ctx, reposTimeout, http.MethodGet, "/api/git/accounts?tui=1", nil, &out)

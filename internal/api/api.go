@@ -27,7 +27,7 @@ type Shell = ui.Shell
 // TUI may ask: a server's config may hold a token.
 type MCP = ui.MCP
 
-// GitAccounts is GET /api/git/accounts?tui=1: the GitHub accounts, gh's logins and the account
+// GitAccounts is GET /api/git/accounts?tui=1: the GitHub accounts, gh's logins and the origin
 // of every project. PUT with the whole Config saves it and returns the same. Only the TUI may
 // ask.
 type GitAccounts = ui.GitAccounts

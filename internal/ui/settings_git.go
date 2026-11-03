@@ -151,21 +151,6 @@ func (s *Settings) GitRow() (GitRow, bool) {
 	return rows[min(s.fld, len(rows)-1)], true
 }
 
-// GitChoice is the base override row under the cursor: its project, or add on its add row.
-// Both are empty off those rows.
-func (s *Settings) GitChoice() (project string, add bool) {
-	r, ok := s.GitRow()
-	switch {
-	case !ok:
-		return "", false
-	case r.Kind == RowBase:
-		return r.Key, false
-	case r.Kind == RowBaseAdd:
-		return "", true
-	}
-	return "", false
-}
-
 // gitKey handles a key in the git section: j/k move, Enter chooses, Backspace removes the row
 // under the cursor, K/J move a rule up or down, r reloads the accounts, Tab goes to the next
 // section and Esc closes. The account form has its own keys.
@@ -386,7 +371,7 @@ func (s *Settings) overrideNote(project string) string {
 	o := s.acc.Projects[i].Origin
 	c := s.acc.Config
 	c.Overrides = without(c.Overrides, project)
-	r := c.Resolve(project, o)
+	acct, ok := c.Resolve(project, o)
 	origin := o.String()
 	if origin == "" {
 		origin = "no origin"
@@ -394,12 +379,12 @@ func (s *Settings) overrideNote(project string) string {
 		origin = "origin " + origin
 	}
 	switch {
-	case !r.OK:
+	case !ok:
 		return origin
-	case r.Account.ID == s.acc.Config.Overrides[project]:
-		return origin + " would use " + r.Account.ID + " anyway"
+	case acct.ID == s.acc.Config.Overrides[project]:
+		return origin + " would use " + acct.ID + " anyway"
 	}
-	return origin + " · else " + r.Account.ID
+	return origin + " · else " + acct.ID
 }
 
 // without is m without key.
@@ -413,8 +398,7 @@ func without(m map[string]string, key string) map[string]string {
 	return out
 }
 
-// RuleMatches are the projects whose origin owner would match owner, and the account each
-// uses now.
+// RuleMatches are the projects whose origin would match the rule owner.
 func (s *Settings) RuleMatches(owner string) []ProjectAccount {
 	p, err := accounts.ParseOwner(owner)
 	if err != nil {

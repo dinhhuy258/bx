@@ -200,39 +200,20 @@ func ParseRemote(raw string) Origin {
 	return Origin{Host: strings.ToLower(host), Owner: parts[0], Repo: parts[1]}
 }
 
-// Why a project got its account.
-const (
-	ByOverride = "override"
-	ByRule     = "rule"
-	ByDefault  = "default"
-)
-
-// Resolved is the account a project uses and why: Reason is ByOverride, ByRule (Rule is its
-// owner) or ByDefault. OK is false when no account applies.
-type Resolved struct {
-	Account Account
-	Reason  string
-	Rule    string
-	OK      bool
-}
-
 // Resolve picks the account of project, whose origin is o: its override, else the first rule
-// that matches o, else the default.
-func (c Config) Resolve(project string, o Origin) Resolved {
+// that matches o, else the default. false when none applies.
+func (c Config) Resolve(project string, o Origin) (Account, bool) {
 	if id, ok := c.Overrides[project]; ok {
 		if a, ok := c.Account(id); ok {
-			return Resolved{Account: a, Reason: ByOverride, OK: true}
+			return a, true
 		}
 	}
 	if r, ok := c.MatchRule(o); ok {
 		if a, ok := c.Account(r.Account); ok {
-			return Resolved{Account: a, Reason: ByRule, Rule: r.Owner, OK: true}
+			return a, true
 		}
 	}
-	if a, ok := c.Account(c.Default); ok {
-		return Resolved{Account: a, Reason: ByDefault, OK: true}
-	}
-	return Resolved{}
+	return c.Account(c.Default)
 }
 
 // MatchRule is the first rule that matches o.

@@ -113,11 +113,11 @@ func (a *App) cloneEnv(name string, o accounts.Origin) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := c.Resolve(name, o)
-	if !r.OK {
+	acct, ok := c.Resolve(name, o)
+	if !ok {
 		return nil, nil
 	}
-	return a.envOf(context.Background(), r.Account)
+	return a.envOf(context.Background(), acct)
 }
 
 // GitHubRepos lists up to 100 repositories of the gh user, as owner/repo. With GitHub accounts

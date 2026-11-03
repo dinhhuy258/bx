@@ -22,8 +22,8 @@ const (
 	SettingsUpToDate                              // s with nothing to sync
 	SettingsNothingSelected                       // s with no item selected
 	SettingsSyncApply                             // y in the confirmation: sync SyncScope
-	SettingsGitChoose                             // Enter in the git section: read GitChoice
-	SettingsGitRemove                             // Backspace on an override: remove GitChoice's
+	SettingsGitChoose                             // Enter in the git section: read GitRow
+	SettingsGitRemove                             // Backspace on a git row: remove GitRow's
 	SettingsEdit                                  // Enter on a text field: edit TextField in a prompt
 	SettingsMCPEdit                               // Enter on an MCP row: edit MCPChoice's servers (or add a project)
 	SettingsMCPRemove                             // Backspace on an MCP row: remove its servers, or drop its draft
