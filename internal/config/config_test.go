@@ -182,3 +182,10 @@ func TestArtifactsConfig(t *testing.T) {
 		t.Fatalf("override: %q %v", c.Serve.FilesListen, err)
 	}
 }
+
+func TestMCPPaths(t *testing.T) {
+	c := Default("/r")
+	if c.MCPFile() != "/r/mcp.json" || c.SessionMCPDir() != "/r/run/mcp" {
+		t.Fatalf("%q %q", c.MCPFile(), c.SessionMCPDir())
+	}
+}
