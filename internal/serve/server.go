@@ -501,7 +501,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			if settings.TUIOnlyKey(k) {
+			if settings.TUIOnlyKey(k) || settings.WebReadOnlyKey(k) {
 				httpError(w, 400, fmt.Errorf("%s can only be changed from the TUI", k))
 				return
 			}

@@ -2,8 +2,8 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
    Git               │ For new sessions. Running and resumed ones keep what they started with.
-   Notifications     │
-                     │   ╭────────────────────────────────────────────────────────────╮
+   MCP               │
+   Notifications     │   ╭────────────────────────────────────────────────────────────╮
                      │   │ Sync 4 changes to bx serve?                                │
                      │   │                                                            │
                      │   │   + skills/brainstorm                                      │

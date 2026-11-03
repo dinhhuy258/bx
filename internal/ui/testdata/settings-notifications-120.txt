@@ -2,8 +2,8 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Claude            │ Notifications
    Git               │ Push messages through ntfy when a session needs you. The URLs are not shown on the phone.
- › Notifications     │
-                     │  › Enabled   ◂ on  ▸
+   MCP               │
+ › Notifications     │  › Enabled   ◂ on  ▸
                      │    ntfy URL  https://ntfy.sh/bx-topic
                      │    Open URL  not set
                      │

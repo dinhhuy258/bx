@@ -168,8 +168,8 @@ func TestNotificationsEnabled(t *testing.T) {
 	if !ok || f.Kind != Choice || f.Label != "Enabled" || f.Default != "on" || !slices.Equal(f.Choices, []string{"on", "off"}) || f.TUIOnly {
 		t.Fatalf("field = %+v", f)
 	}
-	if Sections[1].ID != "notifications" || Sections[1].Fields[0].Key != "notifications.enabled" {
-		t.Fatalf("not first in notifications: %+v", Sections[1])
+	if Sections[2].ID != "notifications" || Sections[2].Fields[0].Key != "notifications.enabled" {
+		t.Fatalf("not first in notifications: %+v", Sections[2])
 	}
 	for _, v := range []string{"", "on", "off"} {
 		if err := Validate(f.Key, v); err != nil {
@@ -184,17 +184,17 @@ func TestNotificationsEnabled(t *testing.T) {
 func TestVisibleHidesTUIOnly(t *testing.T) {
 	values := map[string]string{"claude.model": "opus", "notifications.enabled": "off", "notifications.ntfy_url": "https://ntfy.sh/secret", "notifications.open_url": "https://bx.example"}
 	secs, got := Visible(false, values)
-	if len(secs) != 2 || secs[0].ID != "claude" || secs[1].ID != "notifications" || len(secs[1].Fields) != 1 || secs[1].Fields[0].Key != "notifications.enabled" {
+	if len(secs) != 3 || secs[0].ID != "claude" || secs[2].ID != "notifications" || len(secs[2].Fields) != 1 || secs[2].Fields[0].Key != "notifications.enabled" {
 		t.Fatalf("web sections = %+v", secs)
 	}
 	if len(got) != 2 || got["claude.model"] != "opus" || got["notifications.enabled"] != "off" {
 		t.Fatalf("web values = %v", got)
 	}
-	if len(Sections[1].Fields) != 3 {
+	if len(Sections[2].Fields) != 3 {
 		t.Fatal("Visible changed Sections")
 	}
 	secs, got = Visible(true, values)
-	if len(secs) != 2 || len(secs[1].Fields) != 3 || len(got) != 4 || got["notifications.ntfy_url"] != "https://ntfy.sh/secret" {
+	if len(secs) != 3 || len(secs[2].Fields) != 3 || len(got) != 4 || got["notifications.ntfy_url"] != "https://ntfy.sh/secret" {
 		t.Fatalf("tui = %v %v", secs, got)
 	}
 }
@@ -223,5 +223,35 @@ func TestReadNeverMovesOrWrites(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if data, _ := os.ReadFile(path); len(entries) != 1 || string(data) != "{not json" {
 		t.Fatalf("Read touched a corrupt file: %v %q", entries, data)
+	}
+}
+
+func TestMCPModeIsLockedOnTheWeb(t *testing.T) {
+	if err := Validate("mcp.mode", "strict"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate("mcp.mode", "on"); err == nil {
+		t.Fatal("want an error for an unknown mode")
+	}
+	web, _ := Visible(false, nil)
+	tui, _ := Visible(true, nil)
+	find := func(secs []Section) (Field, bool) {
+		for _, s := range secs {
+			for _, f := range s.Fields {
+				if f.Key == "mcp.mode" {
+					return f, true
+				}
+			}
+		}
+		return Field{}, false
+	}
+	if f, ok := find(web); !ok || !f.Locked {
+		t.Fatalf("web field = %+v %v, want locked", f, ok)
+	}
+	if f, _ := find(tui); f.Locked {
+		t.Fatal("the TUI edits the mode")
+	}
+	if !WebReadOnlyKey("mcp.mode") || WebReadOnlyKey("claude.model") {
+		t.Fatal("WebReadOnlyKey")
 	}
 }

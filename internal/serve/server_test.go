@@ -184,11 +184,11 @@ func put(t *testing.T, ts *httptest.Server, path string, body any) (api.Settings
 func TestSettingsGetPutAndFlags(t *testing.T) {
 	s, f, ts := newServer(t)
 	got, code := get[api.Settings](t, ts, "/api/settings")
-	if code != 200 || len(got.Sections) != 2 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
+	if code != 200 || len(got.Sections) != 3 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
 		t.Fatalf("%d %+v", code, got)
 	}
 	// the phone gets only the on/off switch of the notifications, never the URLs
-	if n := got.Sections[1]; n.ID != "notifications" || len(n.Fields) != 1 || n.Fields[0].Key != "notifications.enabled" {
+	if n := got.Sections[2]; n.ID != "notifications" || len(n.Fields) != 1 || n.Fields[0].Key != "notifications.enabled" {
 		t.Fatalf("web notifications: %+v", n)
 	}
 	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.effort": "huge"}}); code != 400 ||
@@ -199,7 +199,7 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 		t.Fatal("a refused PUT saved a value")
 	}
 	saved, _, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.permission_mode": "acceptEdits"}})
-	if code != 200 || saved.Values["claude.model"] != "opus" || len(saved.Sections) != 2 {
+	if code != 200 || saved.Values["claude.model"] != "opus" || len(saved.Sections) != 3 {
 		t.Fatalf("%d %+v", code, saved)
 	}
 	if _, err := os.Stat(s.Cfg.SettingsFile()); err != nil {
@@ -223,7 +223,7 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 		t.Fatalf("a refused web PUT saved: %v", s.App.Settings.Values())
 	}
 	web, _, code := put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"notifications.ntfy_url": secret}})
-	if code != 200 || len(web.Sections) != 2 || web.Values["notifications.ntfy_url"] != secret || web.Values["claude.model"] != "opus" {
+	if code != 200 || len(web.Sections) != 3 || web.Values["notifications.ntfy_url"] != secret || web.Values["claude.model"] != "opus" {
 		t.Fatalf("tui PUT reply: %d %+v", code, web)
 	}
 	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"notifications.ntfy_url": ""}}); code != 400 || res.Error == "" ||
@@ -235,11 +235,11 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 	if code != 200 || s.App.Settings.Get("notifications.enabled") != "off" || web.Values["notifications.enabled"] != "off" || web.Values["notifications.ntfy_url"] != "" {
 		t.Fatalf("web PUT of enabled: %d %+v", code, web)
 	}
-	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 2 || len(web.Values) != 3 || web.Values["notifications.ntfy_url"] != "" {
+	if web, _ = get[api.Settings](t, ts, "/api/settings"); len(web.Sections) != 3 || len(web.Values) != 3 || web.Values["notifications.ntfy_url"] != "" {
 		t.Fatalf("web GET: %+v", web)
 	}
 	tui, _ := get[api.Settings](t, ts, "/api/settings?tui=1")
-	if len(tui.Sections) != 2 || tui.Sections[1].ID != "notifications" || len(tui.Sections[1].Fields) != 3 ||
+	if len(tui.Sections) != 3 || tui.Sections[2].ID != "notifications" || len(tui.Sections[2].Fields) != 3 ||
 		tui.Values["notifications.ntfy_url"] != secret || tui.Values["notifications.enabled"] != "off" {
 		t.Fatalf("tui GET: %+v", tui)
 	}
@@ -996,5 +996,15 @@ func TestSnapshotWithoutShells(t *testing.T) {
 	}
 	if string(raw["shells"]) != "[]" {
 		t.Fatalf("shells = %s, want []", raw["shells"])
+	}
+}
+
+func TestMCPModeOnlyFromTheTUI(t *testing.T) {
+	_, _, ts := newServer(t)
+	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"mcp.mode": "off"}}); code != 400 || res.Error != "mcp.mode can only be changed from the TUI" {
+		t.Fatalf("web: %d %q", code, res.Error)
+	}
+	if out, _, code := put(t, ts, "/api/settings?tui=1", api.Settings{Values: map[string]string{"mcp.mode": "strict"}}); code != 200 || out.Values["mcp.mode"] != "strict" {
+		t.Fatalf("tui: %d %v", code, out.Values)
 	}
 }

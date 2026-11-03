@@ -2,8 +2,8 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Claude            │ git · base branch overrides
  › Git               │
-   Notifications     │    api-server  develop
-                     │  › infra       release/1.4
+   MCP               │    api-server  develop
+   Notifications     │  › infra       release/1.4
                      │    + add override
 
 

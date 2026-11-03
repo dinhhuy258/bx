@@ -13,7 +13,7 @@ export function showSettings(root) {
       h('header', {}, h('span', { class: 'title' }, sec.title)),
       sec.help ? h('p', { class: 'help' }, sec.help) : null,
       h('div', { style: 'padding: 0 14px' }, sec.fields.map((f) => {
-        const sel = h('select', { onchange: () => save(f.key, sel.value) },
+        const sel = h('select', { disabled: !!f.locked, onchange: () => save(f.key, sel.value) },
           (f.choices || []).map((c) => h('option', { value: c, selected: (s.values[f.key] || f.default || '') === c }, c || '(default)')));
         return h('label', { class: 'field' }, h('span', {}, f.label), sel, f.help ? h('small', {}, f.help) : null);
       })))));
