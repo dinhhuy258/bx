@@ -217,7 +217,7 @@ func (s *Server) putReview(w http.ResponseWriter, r *http.Request) {
 	}
 	p, story, f, err := s.editReview(r, func(f review.File) (review.File, error) {
 		if req.Version != f.Version {
-			return f, codeError{http.StatusConflict, errors.New("Comments changed on another device")}
+			return f, codeError{http.StatusConflict, errors.New("comments changed on another device")}
 		}
 		cs, err := review.Apply(f.Comments, req.Comments)
 		return review.File{Comments: cs}, err
@@ -266,7 +266,7 @@ func (s *Server) planSend(r *http.Request, req api.ReviewSend) (sendPlan, error)
 	}
 	unsent := review.Unsent(f.Comments)
 	if len(unsent) == 0 {
-		return sendPlan{}, codeError{http.StatusConflict, errors.New("Nothing to send")}
+		return sendPlan{}, codeError{http.StatusConflict, errors.New("nothing to send")}
 	}
 	pl := sendPlan{p: p}
 	if req.New {
@@ -314,7 +314,7 @@ func (s *Server) sendReview(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	if s.sending[key] {
 		s.mu.Unlock()
-		httpError(w, http.StatusConflict, errors.New("A send to this story is in progress"))
+		httpError(w, http.StatusConflict, errors.New("a send to this story is in progress"))
 		return
 	}
 	s.sending[key] = true
@@ -379,7 +379,7 @@ func (s *Server) waitReady(ctx context.Context, uuid string) error {
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("Claude was not ready after %s", readyTimeout)
+			return fmt.Errorf("claude was not ready after %s", readyTimeout)
 		case <-t.C:
 		}
 	}
