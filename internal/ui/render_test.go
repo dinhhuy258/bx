@@ -103,8 +103,11 @@ func TestKeyBar(t *testing.T) {
 	if i, j := strings.Index(kb, "s stop"), strings.Index(kb, "n new session"); i < 0 || j < 0 || i > j {
 		t.Error("lifecycle keys come before the global keys:", kb)
 	}
+	if !strings.HasPrefix(kb, "[2] Write the test") || !strings.Contains(kb, " › ⏎ type in Claude") || strings.Index(kb, "│") > strings.Index(kb, "j/k move") {
+		t.Error("the bar names the session, then its keys, then the global ones:", kb)
+	}
 	m.SelectStory("guest-vlan-fix")
-	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "D close story") || strings.Contains(kb, "d delete") {
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.HasPrefix(kb, "story guest-vlan-fix › ⏎ collapse  D close  │") || strings.Contains(kb, "d delete") {
 		t.Error(kb)
 	}
 	m.SelectStory("zigbee-map-docs")
@@ -136,7 +139,7 @@ func TestKeyBar(t *testing.T) {
 	m.SetShells([]Shell{{Story: "guest-vlan-fix", K: 1, Command: "zsh"}}, nil)
 	m.SelectShell("guest-vlan-fix", 1)
 	kb = KeyBar(m, cfg, BarContext{})
-	for _, want := range []string{"⏎ open shell", "R rename", "d close shell", "t new shell"} {
+	for _, want := range []string{"$1 zsh › ⏎ open  R rename  d close  │", "t new shell"} {
 		if !strings.Contains(kb, want) {
 			t.Errorf("shell bar missing %q: %s", want, kb)
 		}

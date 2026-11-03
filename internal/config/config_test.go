@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,8 +31,37 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if _, ok := c.Keys.List["activity"]; ok || c.Keys.First(c.Keys.List, "prev_project") != "[" || c.Keys.First(c.Keys.List, "next_project") != "]" {
 		t.Errorf("project keys: %+v", c.Keys.List)
 	}
-	if c.Keys.ListAction("X") != "close_project" || c.Keys.ListAction("d") != "delete" || c.Keys.ListAction("x") != "" {
-		t.Errorf("close_project/delete keys: %+v", c.Keys.List)
+	if got := strings.Join(c.Keys.ListActions("d"), ","); got != "close_shell,delete_session" {
+		t.Errorf("d = %s", got)
+	}
+	if c.Keys.ListAction("X") != "close_project" || c.Keys.ListAction("s") != "stop_session" || c.Keys.ListAction("x") != "" {
+		t.Errorf("list keys: %+v", c.Keys.List)
+	}
+}
+
+// "stop" became stop_session and "delete" became delete_session and close_shell: a config that
+// binds an old name still works, unless it also names the new one.
+func TestRenamedActions(t *testing.T) {
+	root := t.TempDir()
+	cfg := "[keys.list]\nstop = \"K\"\ndelete = [\"x\", \"Delete\"]\nclose_shell = \"q\"\n"
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(c.Keys.List["stop_session"], ","); got != "K" {
+		t.Errorf("stop_session = %s", got)
+	}
+	if got := strings.Join(c.Keys.List["delete_session"], ","); got != "x,Delete" {
+		t.Errorf("delete_session = %s", got)
+	}
+	if got := strings.Join(c.Keys.List["close_shell"], ","); got != "q" {
+		t.Errorf("close_shell = %s", got)
+	}
+	if _, ok := c.Keys.List["delete"]; ok {
+		t.Errorf("list keys: %+v", c.Keys.List)
 	}
 }
 

@@ -67,7 +67,7 @@ func Default(root string) *Config {
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
 				"inbox": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
-				"settings": {"S"}, "stop": {"s"}, "delete": {"d"}, "cleanup": {"C"}, "artifacts": {"v"},
+				"settings": {"S"}, "stop_session": {"s"}, "delete_session": {"d"}, "close_shell": {"d"}, "cleanup": {"C"}, "artifacts": {"v"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
@@ -133,26 +133,39 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 }
 
-// inboxWas are the list actions merged into "inbox" (jump to a waiting session, the activity
-// list): a config that binds one still works.
-var inboxWas = []string{"waiting", "activity"}
+// renamed maps old list action names to the ones that replaced them, so a config that binds an
+// old name still works. "waiting" and "activity" were merged into "inbox"; "delete" did both
+// what delete_session and close_shell do now.
+var renamed = []struct{ old, new string }{
+	{"waiting", "inbox"}, {"activity", "inbox"},
+	{"stop", "stop_session"},
+	{"delete", "delete_session"}, {"delete", "close_shell"},
+}
 
 // removedActions are list actions bx no longer has: a config that still binds one is ignored,
 // so its key does not stay bound to nothing.
 var removedActions = []string{"lazygit"}
 
 func applyBinds(dst map[string][]string, src map[string]bind) {
-	if _, ok := src["inbox"]; !ok {
-		var keys bind
-		for _, old := range inboxWas {
-			keys = append(keys, src[old]...)
+	// an old name binds its new ones unless the config also names the new one; an empty old
+	// bind unbinds them
+	merged := map[string]bind{}
+	for _, r := range renamed {
+		if _, set := src[r.new]; set {
+			continue
 		}
-		if len(keys) > 0 {
-			src["inbox"] = keys
+		if keys, ok := src[r.old]; ok {
+			merged[r.new] = append(merged[r.new], keys...)
 		}
 	}
-	for _, old := range append(inboxWas, removedActions...) {
+	for _, r := range renamed {
+		delete(src, r.old)
+	}
+	for _, old := range removedActions {
 		delete(src, old)
+	}
+	for action, keys := range merged {
+		src[action] = keys
 	}
 	for action, b := range src {
 		if len(b) == 0 {

@@ -749,7 +749,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.backToClaude()
 	}
-	action := m.cfg.Keys.ListAction(key)
+	action := m.listAction(key)
 	if action == "" && m.cfg.Keys.IsPrefixOfSequence(key) {
 		m.seq = key
 		return m, nil
@@ -809,18 +809,20 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if sess != nil && (m.m.Gone(num) || sess.Done) {
 			_ = m.do("resume", api.Action{Num: num})
 		}
-	case "stop":
+	case "stop_session":
 		if sess != nil && !sess.Done {
 			m.openPrompt(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("stop [%d] %s? y/n", num, sess.Title), "")
 		}
-	case "delete":
+	case "close_shell":
 		if onShell {
 			label := fmt.Sprintf("Close shell $%d %s?", sh.K, sh.Label())
 			if sh.Command != "" && !ui.PlainShell(sh.Command) {
 				label += " " + sh.Command + " is still running and will be killed."
 			}
 			m.openPrompt(ui.PromptCloseShell, shellKey(sh.Story, sh.K), label, "")
-		} else if sess != nil {
+		}
+	case "delete_session":
+		if sess != nil {
 			m.openPrompt(ui.PromptDelete, strconv.Itoa(num), fmt.Sprintf("delete [%d] %s? y/n", num, sess.Title), "")
 		}
 	case "add_repo":
@@ -860,6 +862,26 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.scroll(max(m.term.Rows()/2, 1))
 	}
 	return m, nil
+}
+
+// listAction is the list action of key for the selected row. One key can serve actions of
+// different rows (d: delete_session on a session, close_shell on a shell); the one for another
+// kind of row loses.
+func (m *Model) listAction(key string) string {
+	actions := m.cfg.Keys.ListActions(key)
+	if len(actions) < 2 || m.activity {
+		return m.cfg.Keys.ListAction(key)
+	}
+	_, onShell := m.m.SelectedShell()
+	num, _ := m.m.SelectedSession()
+	for _, a := range actions {
+		switch {
+		case a == "close_shell" && !onShell, (a == "delete_session" || a == "stop_session") && num == 0:
+			continue
+		}
+		return a
+	}
+	return actions[0]
 }
 
 // activityKey handles a list key while the inbox is shown. Keys that act on one project's
@@ -1672,7 +1694,7 @@ func (m *Model) body() string {
 	case m.settings != nil:
 		return m.settings.Render(m.width, m.height-1, false, m.settingsNote) + "\n" + m.bar()
 	case m.showKeys:
-		return "bx keymap · press any key to close\n\n" + keymapText(m.cfg)
+		return "bx keymap · press any key to close\n\n" + ui.Keymap(m.cfg, m.width)
 	case m.m == nil && m.prompt.Active():
 		return "bx · " + m.prompt.Line() + "\n" + m.flash
 	case m.m == nil && m.project == "" && m.loaded:
@@ -1883,20 +1905,4 @@ func (m *Model) bar() string {
 	// cut the text to one line: Width would wrap it and push the bar off the screen
 	text = ansi.Truncate(" "+text, max(m.width, 1), "…")
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6")).Background(lipgloss.Color("#1a1b26")).Width(m.width).Render(text)
-}
-
-func keymapText(cfg *config.Config) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "  %-12s %s\n", config.Pretty(cfg.Client.PaneLeft), "to the list; past it, the tmux pane on the left")
-	fmt.Fprintf(&b, "  %-12s %s\n", config.Pretty(cfg.Client.PaneRight), "to the Claude pane; past it, the tmux pane on the right")
-	fmt.Fprintf(&b, "  %-12s %s\n\n", config.Pretty(cfg.Client.CopyMode), "copy-mode: vi keys, v select, y copy, q quit")
-	actions := make([]string, 0, len(cfg.Keys.List))
-	for a := range cfg.Keys.List {
-		actions = append(actions, a)
-	}
-	sort.Strings(actions)
-	for _, a := range actions {
-		fmt.Fprintf(&b, "  %-12s %s\n", strings.Join(cfg.Keys.List[a], " / "), a)
-	}
-	return b.String()
 }

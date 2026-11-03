@@ -1411,7 +1411,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 2 {
 		t.Fatalf("selected %+v", h.m.m.Selected())
 	}
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "⏎ open shell") || !strings.Contains(bar, "d close shell") {
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "$2 npm › ⏎ open  R rename  d close  │") {
 		t.Fatalf("bar = %q", bar)
 	}
 	h.press("R")
@@ -1816,7 +1816,7 @@ func TestKeymapWithNoProjectOpen(t *testing.T) {
 		t.Fatal(v)
 	}
 	h.press("?")
-	if v := h.m.View().Content; !strings.Contains(v, "bx keymap") || !strings.Contains(v, "add_repo") {
+	if v := h.m.View().Content; !strings.Contains(v, "bx keymap") || !strings.Contains(v, "add repositories") {
 		t.Fatal(v)
 	}
 	h.press("x")

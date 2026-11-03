@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -34,9 +36,28 @@ func (b *bind) UnmarshalTOML(v any) error {
 	return nil
 }
 
-// ListAction returns the list action bound to key, or "" when none.
+// ListAction returns the list action bound to key, or "" when none. When several are, it is
+// the first by name; ListActions has them all.
 // key is a bx key name ("j", "Down", "Enter", "Z", "z M").
-func (k Keys) ListAction(key string) string { return actionFor(k.List, key) }
+func (k Keys) ListAction(key string) string {
+	if a := k.ListActions(key); len(a) > 0 {
+		return a[0]
+	}
+	return ""
+}
+
+// ListActions returns every list action bound to key, sorted by name. One key can serve
+// actions that apply to different rows: d deletes a session and closes a shell.
+func (k Keys) ListActions(key string) []string {
+	var out []string
+	for action, binds := range k.List {
+		if slices.Contains(binds, key) {
+			out = append(out, action)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
 
 // IsPrefixOfSequence reports whether some bound sequence starts with keys ("z" for "z M").
 func (k Keys) IsPrefixOfSequence(keys string) bool {
@@ -54,17 +75,6 @@ func (k Keys) IsPrefixOfSequence(keys string) bool {
 func (k Keys) First(section map[string][]string, action string) string {
 	if b := section[action]; len(b) > 0 {
 		return b[0]
-	}
-	return ""
-}
-
-func actionFor(section map[string][]string, key string) string {
-	for action, binds := range section {
-		for _, b := range binds {
-			if b == key {
-				return action
-			}
-		}
 	}
 	return ""
 }

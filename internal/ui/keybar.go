@@ -23,9 +23,7 @@ var labels = map[string]string{
 	"focus": "focus mode", "inbox": "inbox", "projects": "projects",
 	"new_chat": "new chat", "new_session": "new session", "new_story": "new story", "keymap": "keymap",
 	"fold_all": "fold all", "scroll_up": "scroll up", "scroll_down": "scroll down", "nvim": "nvim", "shell": "new shell", "prs": "PRs",
-	"rename": "rename", "resume": "resume", "close_story": "close story", "close_project": "close project",
-	"settings": "settings", "add_repo": "add repo", "stop": "stop", "delete": "delete",
-	"cleanup": "cleanup", "artifacts": "artifacts",
+	"close_project": "close project", "settings": "settings", "cleanup": "cleanup",
 }
 
 // KeyBar builds the bottom line of the client.
@@ -63,61 +61,77 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		}
 		return join(parts)
 	}
-	r := m.Selected()
-	parts = append(parts, "j/k move")
-	num, _ := m.SelectedSession()
-	if r.Kind == RowStory {
-		if m.IsOpen(r.Story) {
-			parts = append(parts, "⏎ collapse")
-		} else {
-			parts = append(parts, "⏎ expand")
-		}
-	} else if r.Kind == RowShell {
-		parts = append(parts, "⏎ open shell")
-	} else if num != 0 {
-		if ctx.Narrow {
-			parts = append(parts, "⏎ Claude")
-		} else {
-			parts = append(parts, "⏎ type in Claude")
-		}
+	row, rowKeys := rowPart(m, cfg, ctx)
+	global := []string{"j/k move", lk("shell"), lk("fold_all"), lk("new_chat"), lk("new_session"), lk("new_story")}
+	if r := m.Selected(); r.Kind == RowStory {
+		global = append(global, lk("cleanup"))
 	}
-	if num != 0 {
-		if sess := m.P.Sessions[num]; sess.Done {
-			parts = append(parts, lk("resume"))
-		} else {
-			parts = append(parts, lk("focus"))
-			if m.Gone(num) {
-				parts = append(parts, lk("resume"))
-			}
-			parts = append(parts, lk("stop"))
-		}
-		parts = append(parts, lk("rename"), lk("delete"), lk("artifacts"))
-	} else if r.Kind == RowShell {
-		parts = append(parts, lk("rename"))
-		if key := cfg.Keys.First(cfg.Keys.List, "delete"); key != "" {
-			parts = append(parts, k(key, "close shell"))
-		}
-	} else if r.Kind == RowStory {
-		if r.Story != "" {
-			parts = append(parts, lk("close_story"))
-		}
-		parts = append(parts, lk("cleanup"))
-		if r.Story != "" && m.P.IsWorkspace() {
-			parts = append(parts, lk("add_repo"))
-		}
-	}
-	parts = append(parts, lk("shell"), lk("fold_all"), lk("new_chat"), lk("new_session"), lk("new_story"))
-	parts = append(parts, lk("keymap"), lk("inbox"), lk("projects"), lk("settings"))
+	global = append(global, lk("keymap"), lk("inbox"), lk("projects"), lk("settings"))
 	if ctx.Projects > 1 {
-		parts = append(parts, switchKeys(cfg))
+		global = append(global, switchKeys(cfg))
 	}
-	parts = append(parts, lk("close_project"))
+	global = append(global, lk("close_project"))
 	if ctx.Narrow {
 		// one pane at a time: say how to come back
-		parts = append(parts, k(cfg.Client.PaneRight, "back"))
+		global = append(global, k(cfg.Client.PaneRight, "back"))
 	}
-	return join(parts)
+	if keys := join(rowKeys); keys != "" {
+		return row + " › " + keys + "  │  " + join(global)
+	}
+	return join(global)
 }
+
+// rowPart names the selected row and lists the keys that act on it, so "d delete" reads as
+// deleting that session and "D close" as closing that story.
+func rowPart(m *Model, cfg *config.Config, ctx BarContext) (string, []string) {
+	lk := func(action, label string) string {
+		if key := cfg.Keys.First(cfg.Keys.List, action); key != "" {
+			return config.Pretty(key) + " " + label
+		}
+		return ""
+	}
+	r := m.Selected()
+	if num, sess := m.SelectedSession(); sess != nil {
+		open := lk("open", "type in Claude")
+		if ctx.Narrow {
+			open = lk("open", "Claude")
+		}
+		parts := []string{open}
+		if sess.Done {
+			parts = append(parts, lk("resume", "resume"))
+		} else {
+			parts = append(parts, lk("focus", "focus mode"))
+			if m.Gone(num) {
+				parts = append(parts, lk("resume", "resume"))
+			}
+			parts = append(parts, lk("stop_session", "stop"))
+		}
+		parts = append(parts, lk("rename", "rename"), lk("delete_session", "delete"), lk("artifacts", "artifacts"))
+		return truncate(fmt.Sprintf("[%d] %s", num, sess.Title), rowNameWidth), parts
+	}
+	if sh, ok := m.SelectedShell(); ok {
+		return truncate(fmt.Sprintf("$%d %s", sh.K, sh.Label()), rowNameWidth),
+			[]string{lk("open", "open"), lk("rename", "rename"), lk("close_shell", "close")}
+	}
+	if r.Kind != RowStory {
+		return "", nil
+	}
+	fold := lk("open", "expand")
+	if m.IsOpen(r.Story) {
+		fold = lk("open", "collapse")
+	}
+	if r.Story == "" {
+		return "chats", []string{fold}
+	}
+	parts := []string{fold, lk("close_story", "close")}
+	if m.P.IsWorkspace() {
+		parts = append(parts, lk("add_repo", "add repo"))
+	}
+	return truncate("story "+r.Story, rowNameWidth), parts
+}
+
+// rowNameWidth caps the row name in the key bar, so a long title leaves room for the keys.
+const rowNameWidth = 24
 
 // switchKeys is "[ ] switch project", or "" when either key is unbound.
 func switchKeys(cfg *config.Config) string {
