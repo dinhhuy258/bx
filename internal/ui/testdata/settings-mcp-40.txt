@@ -10,7 +10,7 @@ bx settings                          dev
 
    api-server  1 server
  › bx          2 servers
-   infra       ✗ skipped  x: args must …
+   infra       ✗ skipped    x: args mus…
    + add project servers
 
  A new session in bx starts with

@@ -167,12 +167,13 @@ func (s *Settings) mcpLines(w, h int, pal palette) []string {
 }
 
 // mcpState is a row's state: a refused save, a set skipped at launch, or its servers.
+// The label is padded to mcpStateW, so the detail after it lines up on every row.
 func (s *Settings) mcpState(scope string, set MCPSet, wide bool, pal palette) string {
 	if e := s.mcpErrs[scope]; e != "" {
-		return pal.red.Render("✗ not saved") + "  " + pal.dim.Render(e)
+		return pal.red.Render(padTo("✗ not saved", mcpStateW)) + "  " + pal.dim.Render(e)
 	}
 	if set.Error != "" {
-		return pal.red.Render("✗ skipped") + "  " + pal.dim.Render(set.Error)
+		return pal.red.Render(padTo("✗ skipped", mcpStateW)) + "  " + pal.dim.Render(set.Error)
 	}
 	if len(set.Servers) == 0 {
 		return pal.dim.Render("none")
@@ -188,8 +189,14 @@ func (s *Settings) mcpState(scope string, set MCPSet, wide bool, pal palette) st
 	for i, sv := range set.Servers {
 		names[i] = sv.Name
 	}
-	return pal.green.Render(n) + "  " + pal.dim.Render(strings.Join(names, " · "))
+	return pal.green.Render(padTo(n, mcpStateW)) + "  " + pal.dim.Render(strings.Join(names, " · "))
 }
+
+// mcpStateW is the width of the widest row label, "✗ not saved".
+const mcpStateW = 11
+
+// padTo pads s with spaces to w cells.
+func padTo(s string, w int) string { return s + strings.Repeat(" ", max(w-runeWidth(s), 0)) }
 
 // mcpPreview is what a new session of the row under the cursor starts with, and where each
 // server comes from; nil off the rows and on the add row.

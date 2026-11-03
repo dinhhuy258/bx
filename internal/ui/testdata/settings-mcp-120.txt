@@ -5,13 +5,13 @@ bx settings                                                                     
  › MCP               │
    Notifications     │    Mode  ◂ merge  ▸
                      │
-                     │    Global      3 servers  github · postgres · sentry
+                     │    Global      3 servers    github · postgres · sentry
                      │
                      │  project servers · 3 of 34 projects have their own
                      │
-                     │    api-server  1 server  stripe
-                     │  › bx          2 servers  playwright · postgres
-                     │    infra       ✗ skipped  x: args must be a list of strings
+                     │    api-server  1 server     stripe
+                     │  › bx          2 servers    playwright · postgres
+                     │    infra       ✗ skipped    x: args must be a list of strings
                      │    + add project servers
                      │
                      │  A new session in bx starts with

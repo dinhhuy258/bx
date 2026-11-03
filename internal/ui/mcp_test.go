@@ -77,9 +77,9 @@ func TestSettingsMCPGolden(t *testing.T) {
 	for _, want := range []string{
 		"project servers · 3 of 34 projects have their own",
 		"Global",
-		"3 servers  github · postgres · sentry",
+		"3 servers    github · postgres · sentry",
 		"✗ not saved  line 9, column 5: invalid character",
-		"✗ skipped  x: args must be a list of strings",
+		"✗ skipped    x: args must be a list of strings",
 		"A new session in bx starts with",
 		"bx  replaces global",
 		"+ add project servers",
