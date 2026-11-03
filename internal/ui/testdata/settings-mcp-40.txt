@@ -1,0 +1,29 @@
+bx settings                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Claude · Git · MCP · Notifications
+
+   Mode  ◂ merge  ▸
+
+   Global      3 servers
+
+ project servers · 3 of 34
+
+   api-server  1 server
+ › bx          2 servers
+   infra       ✗ skipped  x: args must …
+   + add project servers
+
+ A new session in bx starts with
+ github, sentry · global
+ playwright, postgres · bx
+
+ For new and resumed sessions. Running
+ ones keep what they started with.
+
+
+
+
+
+
+
+
