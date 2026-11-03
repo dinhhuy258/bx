@@ -32,6 +32,10 @@ type Project struct {
 	BaseOverride string `json:"base_override,omitempty"`
 	// LastType is the branch type the last new story picked ("fix"), highlighted next time.
 	LastType string `json:"last_type,omitempty"`
+	// MCPServers are the project's own MCP servers, the inner object of a .mcp.json document,
+	// stored untyped: a hand edit with the wrong shape never stops the project from loading
+	// (see internal/mcp). New sessions get them on top of ~/.bx/mcp.json.
+	MCPServers json.RawMessage `json:"-"`
 }
 
 // Story is a branch with a worktree. The worktree path is derived from root, project and story.
@@ -126,12 +130,14 @@ type projectWire struct {
 	// added in version 2 without a bump: a file without them has no override and no last type
 	BaseOverride string `json:"base_override,omitempty"`
 	LastType     string `json:"last_type,omitempty"`
+
+	MCPServers json.RawMessage `json:"mcp_servers,omitempty"`
 }
 
 // MarshalJSON writes the wire shape from the design doc.
 func (p *Project) MarshalJSON() ([]byte, error) {
 	w := projectWire{Version: CurrentVersion, Path: p.Path, Kind: p.Kind, Stories: p.Stories, Sessions: map[string]*sessionWire{}, NextNum: p.NextNum,
-		BaseOverride: p.BaseOverride, LastType: p.LastType}
+		BaseOverride: p.BaseOverride, LastType: p.LastType, MCPServers: p.MCPServers}
 	if w.Stories == nil {
 		w.Stories = map[string]*Story{}
 	}
@@ -155,6 +161,7 @@ func (p *Project) UnmarshalJSON(b []byte) error {
 	}
 	p.Version, p.Path, p.Kind, p.NextNum = w.Version, w.Path, w.Kind, w.NextNum
 	p.BaseOverride, p.LastType = w.BaseOverride, w.LastType
+	p.MCPServers = w.MCPServers
 	p.Stories = w.Stories
 	if p.Stories == nil {
 		p.Stories = map[string]*Story{}
