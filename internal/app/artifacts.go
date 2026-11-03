@@ -42,10 +42,10 @@ func artifactPermissions(dir string) map[string]any {
 	return map[string]any{"allow": []string{"Write(" + rule + ")", "Edit(" + rule + ")"}}
 }
 
-// removeSessionFiles deletes session num's uploads and artifacts. Best effort: a leftover
+// removeSessionFiles deletes session num's uploads, artifacts and MCP config. Best effort: a leftover
 // folder is harmless, and uploads.Remove refuses a symlinked path rather than follow it.
 func (a *App) removeSessionFiles(project string, num int) {
-	for _, base := range []string{a.Cfg.UploadsDir(), a.Cfg.ArtifactsDir()} {
+	for _, base := range []string{a.Cfg.UploadsDir(), a.Cfg.ArtifactsDir(), a.Cfg.SessionMCPDir()} {
 		_ = uploads.Remove(base, project, num)
 	}
 }
