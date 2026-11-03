@@ -41,6 +41,7 @@ type Dialog struct {
 	Fields  []Field
 	Focus   int      // the field with the cursor
 	After   []string // lines under the fields: what the form will make ("Branch fix/x")
+	Mark    int      // 1 + the index of the After line drawn selected, across the box; 0 none
 	Note    string   // amber, under those: what Enter will do differently ("branch exists…")
 	Hint    string   // dim, left of the buttons: the form's keys, or what it is busy with
 	Buttons []Button
@@ -120,7 +121,12 @@ func (d Dialog) Render(w, h int, plain bool) string {
 		in += strings.Repeat(" ", max(iw-lipgloss.Width(in), 0))
 		mid = append(mid, row(label), frame.Render("│")+band("  ", 0, panel)+band(in, 0, input)+band("  ", 0, panel)+frame.Render("│"), row(""))
 	}
-	for _, l := range d.After {
+	for i, l := range d.After {
+		if i+1 == d.Mark && !plain {
+			l = truncate(l, iw)
+			mid = append(mid, frame.Render("│")+band("  ", 0, panel)+band(l, iw, pal.selBG)+band("  ", 0, panel)+frame.Render("│"))
+			continue
+		}
 		mid = append(mid, row(l))
 	}
 	if len(d.After) > 0 {

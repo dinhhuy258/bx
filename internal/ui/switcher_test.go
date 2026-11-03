@@ -73,3 +73,28 @@ func TestSwitcherKeys(t *testing.T) {
 		t.Fatal("esc")
 	}
 }
+
+func TestSwitcherArrowsReachTheButtons(t *testing.T) {
+	s := switcherSample() // on dotfiles, then lab is the last
+	s.Key("Down", "")
+	s.Key("Down", "") // past lab: the first button
+	if !s.onButtons || s.Action() != SwitchAddFolder {
+		t.Fatalf("on buttons %v action %d", s.onButtons, s.Action())
+	}
+	s.Key("Right", "")
+	if s.Key("Enter", "") != SwitchAction || s.Action() != SwitchClone {
+		t.Fatal("→ ⏎ clones:", s.Action())
+	}
+	s.Key("Up", "") // back to the project it left from
+	if s.onButtons || s.Choice() != "lab" {
+		t.Fatalf("↑ left the buttons for %q", s.Choice())
+	}
+	// the selected project is drawn across the box, the hint says how to reach the buttons
+	d := s.Dialog(30, true)
+	if d.Mark == 0 || !strings.Contains(ansi.Strip(d.After[d.Mark-1]), "lab") {
+		t.Fatalf("mark %d in %q", d.Mark, d.After)
+	}
+	if out := ansi.Strip(d.Render(120, 30, true)); !strings.Contains(out, "↓ past the last project to add one") {
+		t.Fatal(out)
+	}
+}

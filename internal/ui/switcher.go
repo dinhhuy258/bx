@@ -116,10 +116,14 @@ func (s *Switcher) Key(key, text string) SwitchResult {
 			d = len(switchActions) - 1
 		}
 		s.action = (s.action + d) % len(switchActions)
+	case (key == "Up" || key == "C-k") && s.onButtons: // back to the project it left from
+		s.onButtons = false
 	case key == "Up" || key == "C-k":
-		s.onButtons, s.cursor = false, s.cursor-1
+		s.cursor--
+	case (key == "Down" || key == "C-j") && !s.onButtons && s.cursor >= n-1: // past the last: the buttons
+		s.onButtons = true
 	case key == "Down" || key == "C-j":
-		s.onButtons, s.cursor = false, s.cursor+1
+		s.cursor++
 	case key == "BSpace" && s.filter == "":
 		for _, r := range s.visible() {
 			if r.Name == s.Choice() && r.Open && !s.onButtons {
@@ -184,15 +188,13 @@ func (s *Switcher) Dialog(h int, plain bool) Dialog {
 		}
 		text := " " + ds.Render(dot) + " " + name + "  " + strings.Join(counts, "  ")
 		if sel {
-			text = band(pal.blue.Render("▌")+text[1:], nameW+20, pal.selBG)
-			if plain {
-				text = "▌" + text[1:]
-			}
+			text = pal.blue.Render("▌") + text[1:]
 		}
 		return text
 	}
 	var rows []string
-	room := max(h-16, 3)
+	mark := 0
+	room := max(h-18, 3)
 	start := max(0, min(s.cursor-room/2, len(v)-room))
 	for i := start; i < len(v) && i < start+room; i++ {
 		if i == start || v[i].Open != v[i-1].Open {
@@ -206,10 +208,18 @@ func (s *Switcher) Dialog(h int, plain bool) Dialog {
 			rows = append(rows, muted.Bold(true).Render(head))
 		}
 		rows = append(rows, line(i, v[i]))
+		if i == s.cursor && !s.onButtons {
+			mark = len(rows)
+		}
 	}
 	if len(v) == 0 {
-		rows = append(rows, pal.dim.Render("no project matches · tab adds one"))
+		rows = append(rows, pal.dim.Render("no project matches · ↓ to add one"))
 	}
+	hint := "↓ past the last project to add one · ⌫ closes an open one"
+	if s.onButtons {
+		hint = "←→ choose · ⏎ add · ↑ back to the projects"
+	}
+	rows = append(rows, "", pal.dim.Render(hint))
 	var buttons []Button
 	for i, a := range switchActions {
 		buttons = append(buttons, Button{Key: "+", Label: a, Default: s.onButtons && i == s.action})
@@ -222,6 +232,7 @@ func (s *Switcher) Dialog(h int, plain bool) Dialog {
 		Title: "Projects", Tone: ToneForm, Focus: focus,
 		Fields:  []Field{{Label: "Find", Value: s.filter}},
 		After:   rows,
+		Mark:    mark,
 		Hint:    "",
 		Buttons: buttons,
 	}
@@ -230,7 +241,7 @@ func (s *Switcher) Dialog(h int, plain bool) Dialog {
 // SwitcherLine is the key bar while the switcher is open.
 func (s *Switcher) Line() string {
 	if s.onButtons {
-		return "←→ choose · ⏎ add · tab back to the projects · esc cancel"
+		return "←→ choose · ⏎ add · ↑ or tab back to the projects · esc cancel"
 	}
-	return "type to filter · ↑↓ move · ⏎ open · ⌫ close an open one · tab add a project · esc cancel"
+	return "type to filter · ↑↓ move, past the last to the buttons · ⏎ open · ⌫ close an open one · esc cancel"
 }
