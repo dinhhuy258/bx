@@ -16,7 +16,7 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if c.Root != root {
 		t.Errorf("Root = %q", c.Root)
 	}
-	if c.Keys.First(c.Keys.List, "inbox") != "a" || c.Keys.First(c.Keys.List, "projects") != "o" {
+	if c.Keys.First(c.Keys.List, "inbox") != "A" || c.Keys.First(c.Keys.List, "projects") != "O" {
 		t.Fatalf("list keys: %+v", c.Keys.List)
 	}
 	if got := c.Keys.List["down"]; len(got) != 2 || got[0] != "j" || got[1] != "Down" {
@@ -31,11 +31,16 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if _, ok := c.Keys.List["activity"]; ok || c.Keys.First(c.Keys.List, "prev_project") != "[" || c.Keys.First(c.Keys.List, "next_project") != "]" {
 		t.Errorf("project keys: %+v", c.Keys.List)
 	}
-	if got := strings.Join(c.Keys.ListActions("d"), ","); got != "close_shell,delete_session" {
-		t.Errorf("d = %s", got)
+	if got := strings.Join(c.Keys.ListActions("D"), ","); got != "close_shell,close_story,delete_session" {
+		t.Errorf("D = %s", got)
 	}
-	if c.Keys.ListAction("X") != "close_project" || c.Keys.ListAction("s") != "stop_session" || c.Keys.ListAction("x") != "" {
+	if c.Keys.ListAction("X") != "close_project" || c.Keys.ListAction("S") != "stop_session" || c.Keys.ListAction("P") != "settings" || c.Keys.ListAction("x") != "" {
 		t.Errorf("list keys: %+v", c.Keys.List)
+	}
+	for _, k := range []string{"n", "w", "t", "a", "o", "v", "s", "d"} { // actions take capitals; lowercase is free
+		if a := c.Keys.ListAction(k); a != "" {
+			t.Errorf("%s is bound to %s", k, a)
+		}
 	}
 }
 

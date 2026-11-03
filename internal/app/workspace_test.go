@@ -147,11 +147,15 @@ func TestWorkspaceCloseKeepsOriginals(t *testing.T) {
 	os.WriteFile(filepath.Join(m, "api", "new.go"), []byte("x\n"), 0o644)
 	os.WriteFile(filepath.Join(m, "scratch.txt"), []byte("x\n"), 0o644)
 	var d *DirtyError
-	if err := a.CloseStory(p, "login", false); !errors.As(err, &d) || d.Files != 2 || d.Detail != "api: 1, outside the repos: 1" {
+	if _, err := a.CloseStory(p, "login", false); !errors.As(err, &d) || d.Files != 2 || d.Detail != "api: 1, outside the repos: 1" {
 		t.Fatalf("err = %v", err)
 	}
-	if err := a.CloseStory(p, "login", true); err != nil {
+	msg, err := a.CloseStory(p, "login", true)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if msg != "deleted branch feat/login (api: local)" {
+		t.Fatalf("msg = %q", msg)
 	}
 	if _, err := os.Lstat(m); !os.IsNotExist(err) {
 		t.Fatal("story folder left behind")
@@ -161,8 +165,8 @@ func TestWorkspaceCloseKeepsOriginals(t *testing.T) {
 			t.Errorf("original %s: %v", rel, err)
 		}
 	}
-	if out := gitIn(t, filepath.Join(p.Path, "api"), "branch", "--list", "feat/login"); out == "" {
-		t.Fatal("branch deleted")
+	if out := gitIn(t, filepath.Join(p.Path, "api"), "branch", "--list", "feat/login"); out != "" {
+		t.Fatalf("branch kept: %q", out)
 	}
 	if _, ok := p.Stories["login"]; ok {
 		t.Fatal("story still recorded")

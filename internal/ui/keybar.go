@@ -77,7 +77,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 	return join(global)
 }
 
-// rowPart names the selected row and lists the keys that act on it, so "d delete" reads as
+// rowPart names the selected row and lists the keys that act on it, so "D delete" reads as
 // deleting that session and "D close" as closing that story.
 func rowPart(m *Model, cfg *config.Config, ctx BarContext) (string, []string) {
 	lk := func(action, label string) string {
