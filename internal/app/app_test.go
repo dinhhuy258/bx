@@ -303,13 +303,13 @@ func TestCloseStoryDirtyThenForce(t *testing.T) {
 	os.WriteFile(filepath.Join(wt, "new.txt"), []byte("x"), 0o644)
 	f.Replies[listSessions] = "$5\tbx-home-network-1\n"
 	var de *DirtyError
-	if err := a.CloseStory(p, "s1", false); !errors.As(err, &de) || de.Files != 1 {
+	if _, err := a.CloseStory(p, "s1", false); !errors.As(err, &de) || de.Files != 1 {
 		t.Fatalf("want DirtyError, got %v", err)
 	}
 	if calls(f) != "" || p.Stories["s1"] == nil {
 		t.Fatal("a refused close changed something")
 	}
-	if err := a.CloseStory(p, "s1", true); err != nil {
+	if _, err := a.CloseStory(p, "s1", true); err != nil {
 		t.Fatal(err)
 	}
 	if calls(f) != "kill-session -t $5" {
@@ -350,13 +350,13 @@ func TestCloseStoryRemovesUploads(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(a.Cfg.WorktreeDir("home-network", "s1"), "new.txt"), []byte("x"), 0o644)
 	f.Replies[listSessions] = ""
-	if err := a.CloseStory(p, "s1", false); err == nil {
+	if _, err := a.CloseStory(p, "s1", false); err == nil {
 		t.Fatal("a dirty story closed without force")
 	}
 	if _, err := os.Stat(mine); err != nil {
 		t.Fatalf("a refused close removed the upload: %v", err)
 	}
-	if err := a.CloseStory(p, "s1", true); err != nil {
+	if _, err := a.CloseStory(p, "s1", true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(uploads.Dir(base, "home-network", n1)); !os.IsNotExist(err) {

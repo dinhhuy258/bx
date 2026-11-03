@@ -147,6 +147,37 @@ func (g *Git) DeleteRef(repo, ref string) error {
 	return err
 }
 
+// ErrRemoteMoved refuses to delete a branch of origin that moved since it was last fetched:
+// someone pushed to it, and deleting would lose that.
+var ErrRemoteMoved = errors.New("it moved on origin since the last fetch")
+
+// DeleteRemoteBranch deletes branch b on origin, and reports whether it did. Only a branch known
+// here as origin/<b> is deleted, and only where origin/<b> points (a lease): a moved branch is
+// refused with ErrRemoteMoved. A branch origin no longer has is no error; its stale origin/<b>
+// is dropped.
+func (g *Git) DeleteRemoteBranch(ctx context.Context, repo, b string) (bool, error) {
+	tracking := "refs/remotes/origin/" + b
+	sha, err := g.run(repo, "rev-parse", "--verify", "--quiet", tracking)
+	if err != nil {
+		return false, nil
+	}
+	_, err = g.runCtx(ctx, repo, "push", "--force-with-lease=refs/heads/"+b+":"+sha, "origin", ":refs/heads/"+b)
+	if err == nil {
+		return true, nil
+	}
+	if ctx.Err() != nil || !strings.Contains(err.Error(), "stale info") {
+		return false, err
+	}
+	// stale info: origin has no b any more, or b moved there; push says the same for both
+	if there, lsErr := g.LsRemoteBranch(ctx, repo, b); lsErr != nil {
+		return false, lsErr
+	} else if there {
+		return false, ErrRemoteMoved
+	}
+	_ = g.DeleteRef(repo, tracking)
+	return false, nil
+}
+
 // IsAncestor reports whether commit a is an ancestor of b (or b itself).
 func (g *Git) IsAncestor(repo, a, b string) bool {
 	_, err := g.run(repo, "merge-base", "--is-ancestor", a, b)

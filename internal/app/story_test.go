@@ -688,3 +688,54 @@ func TestPullRequestsAndPRStoriesPassTheirContext(t *testing.T) {
 		t.Fatalf("stories %v", p.Stories)
 	}
 }
+
+func TestCloseStoryDeletesItsBranch(t *testing.T) {
+	a, _, p := newApp(t)
+	u := withOrigin(t, p.Path)
+	onOrigin := func(b string) bool { return gitIn(t, u.bare, "branch", "--list", b) != "" }
+	here := func(b string) bool { return gitIn(t, p.Path, "branch", "--list", b) != "" }
+	pushed := func(name string) string { // a story whose branch is pushed from its worktree
+		newStory(t, a, p, StoryOpts{Name: name})
+		wt := a.Dir(p, name)
+		commitFile(t, wt, name+".txt")
+		gitIn(t, wt, "push", "-q", "-u", "origin", "feat/"+name)
+		return "feat/" + name
+	}
+	closed := func(name, want string) {
+		t.Helper()
+		msg, err := a.CloseStory(p, name, false)
+		if err != nil || msg != want {
+			t.Fatalf("close %s = %q %v, want %q", name, msg, err, want)
+		}
+	}
+
+	b := pushed("both")
+	closed("both", "deleted branch feat/both (local, origin)")
+	if here(b) || onOrigin(b) || gitIn(t, p.Path, "branch", "-r", "--list", "origin/"+b) != "" {
+		t.Fatal("branch left behind")
+	}
+
+	newStory(t, a, p, StoryOpts{Name: "never pushed"})
+	closed("never-pushed", "deleted branch feat/never-pushed (local)")
+
+	b = pushed("gone")
+	gitIn(t, u.seed, "push", "-q", "origin", "--delete", b) // deleted on origin from elsewhere
+	closed("gone", "deleted branch feat/gone (local)")
+	if gitIn(t, p.Path, "branch", "-r", "--list", "origin/"+b) != "" {
+		t.Fatal("stale origin/feat/gone kept")
+	}
+
+	b = pushed("moved")
+	gitIn(t, u.seed, "fetch", "-q", "origin")
+	u.push(t, b, "theirs.txt") // someone pushed to it since
+	closed("moved", "deleted branch feat/moved (local) · kept feat/moved on origin, it moved on origin since the last fetch")
+	if !onOrigin(b) {
+		t.Fatal("a moved branch was deleted on origin")
+	}
+
+	newStory(t, a, p, StoryOpts{Source: SourceBranch, Branch: "develop"})
+	closed("develop", "kept develop, a base branch")
+	if !here("develop") || !onOrigin("develop") {
+		t.Fatal("a base branch was deleted")
+	}
+}

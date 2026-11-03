@@ -325,7 +325,7 @@ class El extends Node {
 }
 globalThis.Node = Node;
 globalThis.document = { createElement: (t) => new El(t), createElementNS: (_, t) => new El(t),
-  addEventListener() {}, removeEventListener() {}, body: new El('body') };
+  addEventListener() {}, removeEventListener() {}, querySelector: () => null, body: new El('body') };
 const { showProject } = await import(process.argv[2] + '/project.js');
 const { api } = await import(process.argv[2] + '/api.js');
 const fail = (m) => { console.error(m); process.exit(1); };
@@ -359,7 +359,7 @@ await tick();
 let dlg = top();
 let ok = all(dlg).find((e) => e.value === 'ok');
 if (text(all(dlg).find((e) => e.tag === 'h2')) !== 'Close fix/login?' || ok.className !== 'danger' || text(ok) !== 'Close story') fail('first ask: ' + text(dlg) + ' ok=' + ok.className);
-if (!text(dlg).includes('Its sessions stop and its worktree is removed.')) fail('first ask text: ' + text(dlg));
+if (!text(dlg).includes('Its sessions stop, its worktree is removed and its branch is deleted here and on origin.')) fail('first ask text: ' + text(dlg));
 if (calls.length) fail('closed before the answer: ' + calls);
 dlg.close('ok');
 await tick(); await tick();

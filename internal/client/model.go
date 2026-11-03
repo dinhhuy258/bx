@@ -864,6 +864,11 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if dir := ui.ShortPath(m.m.Dir(row.Story)); dir != "" {
 				body = []string{what + ":", dir}
 			}
+			branch := "Its branch"
+			if st := m.m.P.Stories[row.Story]; st != nil && st.Branch != "" {
+				branch = "Branch " + st.Branch
+			}
+			body = append(body, "", branch+" is deleted here and on origin.")
 			m.ask(ui.PromptCloseStory, row.Story, "Close story "+row.Story+"?", body...)
 		}
 	case "projects":
@@ -1453,7 +1458,11 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		case err != nil:
 			m.setFlash("error: " + err.Error())
 		default:
-			m.setFlash("closed story " + target)
+			flash := "closed story " + target
+			if res.Message != "" {
+				flash += " · " + res.Message
+			}
+			m.setFlash(flash)
 			return m.poll()
 		}
 	case ui.PromptStop:
