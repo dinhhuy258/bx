@@ -36,6 +36,7 @@ type Client struct {
 	PaneLeft  string `toml:"pane_left"`
 	PaneRight string `toml:"pane_right"`
 	CopyMode  string `toml:"copy_mode"` // tmux copy-mode with vi keys; a yank goes to the clipboard
+	OpenPage  string `toml:"open_page"` // opens the page Claude just made in the open session
 }
 
 // Keys holds the list binds. A bind is a list of key names; "z M" is a two-key sequence.
@@ -74,7 +75,7 @@ func Default(root string) *Config {
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
-		Client: Client{PaneLeft: "C-h", PaneRight: "C-l", CopyMode: "M-c"},
+		Client: Client{PaneLeft: "C-h", PaneRight: "C-l", CopyMode: "M-c", OpenPage: "M-o"},
 	}
 }
 
@@ -111,6 +112,7 @@ type rawConfig struct {
 		PaneLeft  *string `toml:"pane_left"`
 		PaneRight *string `toml:"pane_right"`
 		CopyMode  *string `toml:"copy_mode"`
+		OpenPage  *string `toml:"open_page"`
 	} `toml:"client"`
 }
 
@@ -133,6 +135,9 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 	if r.Client.CopyMode != nil {
 		c.Client.CopyMode = *r.Client.CopyMode
+	}
+	if r.Client.OpenPage != nil {
+		c.Client.OpenPage = *r.Client.OpenPage
 	}
 }
 

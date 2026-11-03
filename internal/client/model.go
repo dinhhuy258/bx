@@ -68,6 +68,7 @@ type Conn interface {
 	Resize(ctx context.Context, cols, rows int) error
 	Scroll(ctx context.Context, lines int) error
 	CopyMode(ctx context.Context) error
+	PageSeen(ctx context.Context) error
 	Close()
 }
 
@@ -240,9 +241,11 @@ type Model struct {
 	width, height int
 	narrow        bool
 	claudeFocused bool
-	focusMode     bool // Claude pane fills the width
-	scrolled      bool // the Claude pane may be back in history; the next key returns to live first
-	copying       bool // the Claude pane is in tmux copy-mode: keys go to tmux until it leaves
+	focusMode     bool          // Claude pane fills the width
+	scrolled      bool          // the Claude pane may be back in history; the next key returns to live first
+	copying       bool          // the Claude pane is in tmux copy-mode: keys go to tmux until it leaves
+	page          *api.Artifact // the page Claude just wrote in the pane's session, until it is opened or dismissed
+	pageNew       bool          // page is the first write of its name: "New page", else "Updated"
 	prompt        ui.Prompt
 	seq           string
 	flash         string
@@ -401,6 +404,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.conn = msg.conn
+		m.page = nil // a page still unseen comes again as the stream's first frame
 		// the window size may have changed while the dial was in flight
 		_ = m.conn.Resize(m.ctx, m.term.Cols(), m.term.Rows())
 		return m, nil
@@ -502,6 +506,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.copying = false
 		}
 		return m, nil
+	case pageMsg:
+		if msg.conn == m.conn {
+			p := msg.page
+			m.page, m.pageNew = &p, msg.isNew
+		}
+		return m, nil
+	case pageSeenMsg:
+		if msg.conn == m.conn {
+			m.page = nil
+		}
+		return m, nil
+	case tea.MouseClickMsg:
+		return m, m.click(msg)
 	case clipboardMsg:
 		m.setFlash(fmt.Sprintf("copied %d chars", utf8.RuneCountInString(string(msg))))
 		return m, tea.SetClipboard(string(msg))
@@ -698,6 +715,7 @@ func (m *Model) closeStream() {
 		m.conn.Close()
 	}
 	m.conn, m.connecting, m.target, m.scrolled, m.copying, m.paneClosed, m.shellLabel = nil, false, Target{}, false, false, false, ""
+	m.page = nil // a page still unseen comes again when the session's stream opens
 	cols, rows := m.term.Cols(), m.term.Rows()
 	m.term.Close()
 	m.term = NewTerm(cols, rows)
@@ -769,6 +787,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == m.cfg.Client.CopyMode && key != "" { // from both panes
 		m.copyMode()
 		return m, nil
+	}
+	if key == m.cfg.Client.OpenPage && key != "" && m.page != nil { // from both panes
+		return m, m.openPage()
 	}
 	if m.claudeFocused {
 		switch key {
@@ -1997,6 +2018,9 @@ func (m *Model) pane() string {
 		ch, color = "━", focusColor
 	}
 	rule := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(strings.Repeat(ch, m.term.Cols()))
+	if m.page != nil && !m.target.Zero() {
+		rule, _ = m.pageStrip(ch, color)
+	}
 	if !m.target.Zero() {
 		screen := m.term.View()
 		if m.paneClosed { // a shell that ended: its last output, faint
@@ -2117,9 +2141,91 @@ func (m *Model) bar() string {
 		r := m.act.Selected(ui.ActivityRows(m.activityModels()))
 		text = ui.ActivityBar(m.cfg, r.Num == 0, ui.BarContext{Flash: m.flash, Narrow: m.narrow})
 	default:
-		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.target.Num, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects), Shell: m.target.Shell() && !m.paneClosed})
+		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.target.Num, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects), Shell: m.target.Shell() && !m.paneClosed, Page: m.page != nil})
 	}
 	// cut the text to one line: Width would wrap it and push the bar off the screen
 	text = ansi.Truncate(" "+text, max(m.width, 1), "…")
 	return lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6")).Background(lipgloss.Color("#1a1b26")).Width(m.width).Render(text)
+}
+
+// openPage opens the page Claude just wrote in the local browser and tells the server it was
+// seen. With the file server off there is no link: the flash says so and the strip stays.
+func (m *Model) openPage() tea.Cmd {
+	if m.page.URL == "" {
+		m.setFlash(`no link: the artifacts file server is off (serve.files_listen = "off")`)
+		return nil
+	}
+	u := m.page.URL
+	m.seePage()
+	m.setFlash(u) // the link stays readable, e.g. to copy it over SSH
+	return m.browse(u)
+}
+
+// seePage drops the page strip and tells the server, which drops it on the other clients too.
+func (m *Model) seePage() {
+	m.page = nil
+	if m.conn != nil {
+		_ = m.conn.PageSeen(m.ctx)
+	}
+}
+
+// pageStrip is the rule under the pane title with the page Claude just wrote on it:
+// "━━  ▤ New page  report.html  ━━━━━  Open M-o  ✕ ━". closeAt is the column of ✕ in the pane,
+// -1 when the pane is too narrow for the strip.
+func (m *Model) pageStrip(ch, color string) (line string, closeAt int) {
+	cols := m.term.Cols()
+	rule := func(n int) string {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(strings.Repeat(ch, max(n, 0)))
+	}
+	kind := "Updated"
+	if m.pageNew {
+		kind = "New page"
+	}
+	key := config.Pretty(m.cfg.Client.OpenPage)
+	btn, btnStyle := " Open "+key+" ", lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(lipgloss.Color("#7aa2f7")).Bold(true)
+	switch {
+	case m.page.URL == "":
+		btn, btnStyle = " file server off ", lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
+	case key == "":
+		btn = " Open "
+	case cols < 50:
+		btn = " " + key + " "
+	}
+	// rule(2) + " " + label + " " + fill + " " + btn + " ✕ " + rule(1)
+	fixed := 2 + 1 + 1 + 1 + ansi.StringWidth(btn) + 3 + 1
+	label := ansi.Truncate(" ▤ "+kind+"  "+m.page.Name+" ", max(cols-fixed-1, 0), "… ")
+	fill := cols - fixed - ansi.StringWidth(label)
+	if fill < 0 { // too narrow for the strip: the plain rule; the key bar still names the key
+		return rule(cols), -1
+	}
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#c0caf5")).Background(lipgloss.Color("#24304a"))
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#a9b1d6"))
+	closeAt = 2 + 1 + ansi.StringWidth(label) + 1 + fill + 1 + ansi.StringWidth(btn) + 1
+	line = rule(2) + " " + labelStyle.Render(label) + " " + rule(fill) + " " + btnStyle.Render(btn) + dim.Render(" ✕ ") + rule(1)
+	return line, closeAt
+}
+
+// click handles a mouse click: on the page strip, ✕ dismisses the page and anywhere else opens it.
+func (m *Model) click(msg tea.MouseClickMsg) tea.Cmd {
+	if m.page == nil || msg.Button != tea.MouseLeft || msg.Y != paneHeader-1 || m.picker != nil || m.switcher != nil ||
+		m.settings != nil || m.showKeys || m.prompt.Active() || m.cleanIDs != nil || m.m == nil {
+		return nil
+	}
+	x := msg.X
+	switch {
+	case m.focusMode || (m.narrow && m.claudeFocused):
+	case m.narrow:
+		return nil // the list fills the screen
+	default:
+		x -= ui.ListWidth + 1
+	}
+	if x < 0 {
+		return nil
+	}
+	_, closeAt := m.pageStrip("━", focusColor)
+	if x >= closeAt-1 && x <= closeAt+1 {
+		m.seePage()
+		return nil
+	}
+	return m.openPage()
 }

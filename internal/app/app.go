@@ -33,6 +33,9 @@ type App struct {
 	// ArtifactsURL is the file server's base, e.g. http://100.64.0.1:7358; "" when it is off,
 	// and Claude then gives the file path instead of a link.
 	ArtifactsURL string
+	// APIURL is bx serve's own base, e.g. http://100.64.0.1:7357. With Self and PluginDir set,
+	// every session gets the page hook, which posts there when Claude writes a page; "" gives none.
+	APIURL string
 	// Transcripts is Claude's projects folder (~/.claude/projects), where Titles reads the
 	// first prompt of unnamed sessions; "" leaves them unnamed.
 	Transcripts string

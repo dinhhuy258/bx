@@ -134,7 +134,7 @@ func TestServeAndClientSections(t *testing.T) {
 		t.Fatalf("client = %+v", c.Client)
 	}
 	d := Default(root)
-	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.PaneLeft != "C-h" || d.Client.PaneRight != "C-l" || d.Client.CopyMode != "M-c" {
+	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.PaneLeft != "C-h" || d.Client.PaneRight != "C-l" || d.Client.CopyMode != "M-c" || d.Client.OpenPage != "M-o" {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
 	}
 }

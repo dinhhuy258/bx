@@ -104,3 +104,29 @@ func TestCloseStoryRemovesArtifacts(t *testing.T) {
 		t.Fatalf("folder left after close: %v", err)
 	}
 }
+
+func TestSessionGetsPageHook(t *testing.T) {
+	a, _, p := artifactsApp(t)
+	a.Self = "/usr/local/bin/bx"
+	a.APIURL = "http://100.64.0.1:7357"
+	o := a.options(p, 1, &state.Session{})
+	const hook = `"PostToolUse":[{"hooks":[{"command":"/usr/local/bin/bx page-hook http://100.64.0.1:7357","timeout":5,"type":"command"}],"matcher":"Write|Edit|MultiEdit"}]`
+	if !strings.Contains(o.Settings, hook) {
+		t.Fatalf("no page hook: %s", o.Settings)
+	}
+	a.APIURL = ""
+	if o := a.options(p, 1, &state.Session{}); strings.Contains(o.Settings, "PostToolUse") {
+		t.Fatalf("page hook without bx serve's address: %s", o.Settings)
+	}
+}
+
+func TestWithHooksKeepsBoth(t *testing.T) {
+	guard := map[string]any{"PreToolUse": []any{"guard"}, "PostToolUse": []any{"other"}}
+	got := withHooks(guard, pageHooks("/bx", "http://h:1"))
+	if len(got["PreToolUse"].([]any)) != 1 || len(got["PostToolUse"].([]any)) != 2 || len(guard["PostToolUse"].([]any)) != 1 {
+		t.Fatalf("%v (in %v)", got, guard)
+	}
+	if got := withHooks(nil, pageHooks("/bx", "http://h:1")); len(got["PostToolUse"].([]any)) != 1 {
+		t.Fatalf("%v", got)
+	}
+}

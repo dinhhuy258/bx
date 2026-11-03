@@ -103,6 +103,15 @@ function showTerminal(root, project, target) {
   const noticeText = h('span');
   const resumeBtn = h('button', { class: 'primary', hidden: true, onclick: () => resume() }, 'Resume');
   const notice = h('div', { class: 'notice', hidden: true }, noticeText, resumeBtn);
+  // the page Claude just wrote (a "page" frame): Open opens it in a new tab, inside the tap so it
+  // isn't blocked; Open and × tell the server it was seen, which closes it on the other clients
+  let page = null;
+  const pageName = h('b');
+  const pageSub = h('span');
+  const pageOpen = h('button', { class: 'primary', onclick: () => { if (page?.url) window.open(page.url, '_blank', 'noopener'); seePage(); } }, 'Open');
+  const pageChip = h('div', { class: 'page-chip', hidden: true, role: 'status' },
+    h('span', { class: 'page-ic' }, icon('doc')), h('span', { class: 'page-tx' }, pageName, pageSub), pageOpen,
+    h('button', { class: 'ib', 'aria-label': 'Dismiss', onclick: () => seePage() }, '×'));
   const keep = (e) => e.preventDefault(); // tapping a button must not close the keyboard
   const input = h('textarea', { rows: 1, placeholder: shell ? 'Run a command…' : 'Message Claude…', autocapitalize: 'off',
     autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter' });
@@ -138,7 +147,7 @@ function showTerminal(root, project, target) {
   const screen = h('div', { class: 'session' },
     h('header', { class: 'bar sbar' }, h('a', { href: backHref, class: 'ib', 'aria-label': 'Back' }, icon('back')),
       h('h1', { class: 'ttl' }, titleEl, metaEl), copyBtn, escBtn, menuBtn, stateLine),
-    h('div', { class: 'term-wrap' }, termEl, liveBtn, notice, shell ? null : slashCommandsEl),
+    h('div', { class: 'term-wrap' }, termEl, liveBtn, notice, shell ? null : pageChip, shell ? null : slashCommandsEl),
     inputRow, shell ? null : fileInput);
   root.append(screen);
   document.documentElement.classList.add('session-lock'); // see layout()
@@ -184,11 +193,16 @@ function showTerminal(root, project, target) {
       // Tmux.Scroll(sid, 0) runs `send-keys -X cancel`, harmless when the pane isn't in a mode;
       // it also returns a Mac TUI viewing history in this session to live, which is accepted.
       control({ type: 'scroll', lines: 0 });
+      hidePage(); // a page still unseen comes again as the socket's first frame
       term.reset(); // tmux attach redraws the whole screen
     };
     ws.onmessage = (e) => {
       if (typeof e.data === 'string') {
-        try { if (JSON.parse(e.data).type === 'copy_end') setScrolled(0); } catch { /* ignore */ }
+        let m = null;
+        try { m = JSON.parse(e.data); } catch { return; }
+        if (m.type === 'copy_end') setScrolled(0);
+        else if (m.type === 'page' && m.page && !shell) showPage(m.page, m.new);
+        else if (m.type === 'page_seen') hidePage();
         return;
       }
       term.write(new Uint8Array(e.data));
@@ -342,6 +356,24 @@ function showTerminal(root, project, target) {
   }
   function control(obj) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+  // showPage shows or updates the page banner; an open one changes in place without rising again
+  function showPage(p, isNew) {
+    page = p;
+    pageName.textContent = p.name;
+    pageSub.textContent = (isNew ? 'New page' : 'Updated') + (p.url ? '' : ' · file server off');
+    pageOpen.hidden = !p.url;
+    pageChip.hidden = false;
+    liveBtn.classList.add('above-page');
+  }
+  function hidePage() {
+    page = null;
+    pageChip.hidden = true;
+    liveBtn.classList.remove('above-page');
+  }
+  function seePage() {
+    hidePage();
+    control({ type: 'page_seen' });
   }
   // back at live (↓ Live, a button, send, a reconnect) also ends a momentum glide, which would
   // otherwise scroll back into tmux copy-mode while the user types

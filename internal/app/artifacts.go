@@ -49,3 +49,29 @@ func (a *App) removeSessionFiles(project string, num int) {
 		_ = uploads.Remove(base, project, num)
 	}
 }
+
+// pageHookTools are the Claude tools that write a page.
+const pageHookTools = "Write|Edit|MultiEdit"
+
+// pageHooks are the --settings hooks that run `bx page-hook <api>` after each write or edit. The
+// hook does nothing unless the file is a page in the session's artifacts folder ($BX_ARTIFACTS).
+func pageHooks(self, api string) map[string]any {
+	hook := map[string]any{"type": "command", "command": shellJoin([]string{self, "page-hook", api}), "timeout": 5}
+	return map[string]any{"PostToolUse": []any{map[string]any{"matcher": pageHookTools, "hooks": []any{hook}}}}
+}
+
+// withHooks merges the hook events of add into hooks (nil is empty), keeping both sides' entries.
+func withHooks(hooks, add map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range hooks {
+		out[k] = v
+	}
+	for k, v := range add {
+		if cur, ok := out[k].([]any); ok {
+			out[k] = append(append([]any{}, cur...), v.([]any)...)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}

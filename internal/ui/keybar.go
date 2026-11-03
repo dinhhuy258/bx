@@ -16,6 +16,7 @@ type BarContext struct {
 	Narrow        bool   // window too small for two panes: one pane at a time
 	Projects      int    // how many projects the client has open; the switch keys show from two
 	Shell         bool   // the pane shows a live shell rather than Claude
+	Page          bool   // the pane's session has a page Claude just wrote: the open page key shows
 }
 
 var labels = map[string]string{
@@ -55,10 +56,16 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		} else {
 			parts = []string{"CLAUDE", "type to write · Claude queues it while it works", "⏎ send", "esc interrupt", back}
 		}
+		if ctx.Page && cfg.Client.OpenPage != "" {
+			parts = append(parts, k(cfg.Client.OpenPage, "open page"))
+		}
 		return join(parts)
 	}
 	row, rowKeys := rowPart(m, cfg, ctx)
 	global := []string{"j/k move", lk("shell"), lk("fold_all"), lk("new_session"), lk("new_story")}
+	if ctx.Page && cfg.Client.OpenPage != "" {
+		global = append([]string{k(cfg.Client.OpenPage, "open page")}, global...)
+	}
 	if r := m.Selected(); r.Kind == RowStory {
 		global = append(global, lk("cleanup"))
 	}

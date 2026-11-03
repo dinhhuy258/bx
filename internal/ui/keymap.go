@@ -92,6 +92,7 @@ func Keymap(cfg *config.Config, width int) string {
 		{keys(cfg.Client.PaneLeft), "to the list; past it, the tmux pane on the left"},
 		{keys(cfg.Client.PaneRight), "to Claude; past it, the tmux pane on the right"},
 		{keys(cfg.Client.CopyMode), "copy mode · vi keys, v select, y copy, q quit"},
+		{keys(cfg.Client.OpenPage), "open the page Claude just made (or click it on the line under the title)"},
 	} {
 		if l.keys != "" {
 			panes.lines = append(panes.lines, l)

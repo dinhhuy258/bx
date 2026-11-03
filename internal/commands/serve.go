@@ -67,6 +67,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 		return 1
 	}
 	a.PluginDir = cfg.PluginDir()
+	a.APIURL = "http://" + addr
 	if filesAddr != "" {
 		a.ArtifactsURL = "http://" + filesAddr
 	}

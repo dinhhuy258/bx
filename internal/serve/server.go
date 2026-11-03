@@ -42,6 +42,7 @@ type Server struct {
 	seen     map[string]map[int]bool // by project, the sessions in tmux at the last watch
 	started  map[string]map[int]bool // by project, the sessions bx serve started since the last watch
 	unread   unread                  // the sessions that finished a turn nobody watched; see unread.go
+	pages    pages                   // the pages Claude wrote, by session; see pages.go
 
 	sending map[string]bool // "project/story" of a review send in progress
 
@@ -59,7 +60,7 @@ type diffCache struct {
 // New builds a Server.
 func New(a *app.App, cfg *config.Config, l claude.Lister, log func(string, ...any)) *Server {
 	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{},
-		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread(), sending: map[string]bool{}}
+		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread(), sending: map[string]bool{}, pages: newPages()}
 }
 
 // Handler routes the API.
@@ -104,6 +105,7 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/sessions/{num}/files", s.uploadFile)
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/artifacts", s.listArtifacts)
+	mux.HandleFunc("POST /api/hooks/page", s.pageHook)
 	mux.HandleFunc("GET /api/projects/{name}/sessions/{num}/slash-commands", s.listSlashCommands)
 	mux.HandleFunc("POST /api/projects/{name}/sessions", s.action(func(p *state.Project, r api.Action) (int, error) {
 		var num int

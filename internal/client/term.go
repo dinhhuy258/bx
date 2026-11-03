@@ -155,6 +155,12 @@ type (
 	}
 	clipboardMsg string              // text copied in tmux copy-mode
 	copyEndMsg   struct{ conn Conn } // the stream's pane left copy-mode
+	pageMsg      struct {            // Claude wrote a page in the stream's session
+		conn  Conn
+		page  api.Artifact
+		isNew bool
+	}
+	pageSeenMsg struct{ conn Conn } // another client opened or dismissed the page
 )
 
 // Connect dials one session's stream and starts the pumps: one streamOutputMsg per burst of
@@ -196,8 +202,16 @@ func (s *Stream) readLoop(ctx context.Context, send func(tea.Msg)) {
 			send(streamOutputMsg{})
 		case websocket.MessageText:
 			var ctl api.Control
-			if json.Unmarshal(data, &ctl) == nil && ctl.Type == "copy_end" {
+			if json.Unmarshal(data, &ctl) != nil {
+				continue
+			}
+			switch {
+			case ctl.Type == "copy_end":
 				send(copyEndMsg{s})
+			case ctl.Type == "page" && ctl.Page != nil:
+				send(pageMsg{s, *ctl.Page, ctl.New})
+			case ctl.Type == "page_seen":
+				send(pageSeenMsg{s})
 			}
 		}
 	}
@@ -232,6 +246,11 @@ func (s *Stream) Scroll(ctx context.Context, lines int) error {
 // CopyMode puts the session in tmux copy-mode.
 func (s *Stream) CopyMode(ctx context.Context) error {
 	return s.control(ctx, api.Control{Type: "copy"})
+}
+
+// PageSeen tells the server the session's page was opened or dismissed.
+func (s *Stream) PageSeen(ctx context.Context) error {
+	return s.control(ctx, api.Control{Type: "page_seen"})
 }
 
 // control sends a text frame to the server.

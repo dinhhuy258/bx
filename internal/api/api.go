@@ -178,10 +178,25 @@ type Settings struct {
 
 // Control is a text frame from the client. Binary frames are terminal bytes in both directions.
 type Control struct {
-	Type  string `json:"type"` // client: "resize", "scroll" or "copy" (enter copy-mode); server: "copy_end"
+	// client: "resize", "scroll", "copy" (enter copy-mode) or "page_seen" (the page was opened
+	// or dismissed); server: "copy_end", "page" (Claude wrote a page; also sent when the stream
+	// opens, until a client sends page_seen) or "page_seen" (another client saw it)
+	Type  string `json:"type"`
 	Cols  int    `json:"cols,omitempty"`
 	Rows  int    `json:"rows,omitempty"`
 	Lines int    `json:"lines,omitempty"` // scroll: <0 back into history, >0 toward live, 0 back to live
+	// page: the page, and whether this is the first write of its name ("New page", else "Updated")
+	Page *Artifact `json:"page,omitempty"`
+	New  bool      `json:"new,omitempty"`
+}
+
+// PageHook is the body of POST /api/hooks/page, sent by `bx page-hook` after Claude writes or
+// edits a page: the Claude session and the file. New is false when the hook knows the file
+// existed (an Edit, or a Write that updated it).
+type PageHook struct {
+	SessionID string `json:"session_id"`
+	Path      string `json:"path"`
+	New       bool   `json:"new"`
 }
 
 // SyncFile is one file of a Claude sync: in a plan request its hash and mode; in an apply

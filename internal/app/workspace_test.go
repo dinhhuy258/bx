@@ -283,6 +283,11 @@ func TestWorkspaceSessionGetsGuard(t *testing.T) {
 	if !strings.Contains(both.Settings, `"PreToolUse"`) || !strings.Contains(both.Settings, `"permissions"`) {
 		t.Fatalf("guard and artifacts not merged: %q", both.Settings)
 	}
+	a.APIURL = "http://100.64.0.1:7357"
+	all := a.options(p, 1, &state.Session{Story: "login"})
+	if !strings.Contains(all.Settings, "bx guard ") || !strings.Contains(all.Settings, "bx page-hook ") {
+		t.Fatalf("guard and page hook not merged: %q", all.Settings)
+	}
 }
 
 func TestSessionGetsClaudeSettings(t *testing.T) {

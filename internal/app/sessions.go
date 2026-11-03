@@ -99,7 +99,8 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 // options are the settings a session started with, for its command line. With Self set, every
 // session gets the bx status line, and a session of a workspace story also gets the guard hook,
 // which keeps edits out of the original repositories.
-// With PluginDir set, every session also gets its artifacts folder (see artifacts.go).
+// With PluginDir set, every session also gets its artifacts folder (see artifacts.go), and with
+// APIURL too the page hook, which tells bx serve when Claude writes a page.
 // Every session also gets the MCP servers of its project and of ~/.bx/mcp.json (see mcp.go),
 // and the Claude settings of the settings screen as they are now, so a resumed session takes
 // today's attribution while it keeps its own model, effort and permission mode.
@@ -111,6 +112,9 @@ func (a *App) options(p *state.Project, num int, s *state.Session) claude.Option
 	}
 	if p.IsWorkspace() && s.Story != "" && a.Self != "" {
 		hooks = guardHooks(a.Self, a.Dir(p, s.Story))
+	}
+	if a.PluginDir != "" && a.Self != "" && a.APIURL != "" {
+		hooks = withHooks(hooks, pageHooks(a.Self, a.APIURL))
 	}
 	if a.PluginDir != "" {
 		dir := a.ArtifactsDir(p.Name, num)

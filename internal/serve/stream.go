@@ -23,8 +23,9 @@ type stream struct{ cancel context.CancelFunc }
 
 // stream serves GET /api/projects/{name}/sessions/{num}/stream: a pty running
 // `tmux attach` to the session, bridged to a WebSocket. Binary frames are terminal bytes both
-// ways; a text frame from the client resizes, scrolls or enters copy-mode (see Tmux.Scroll),
-// and a "copy_end" frame from the server tells the client that tmux left copy-mode. When the
+// ways; a text frame from the client resizes, scrolls, enters copy-mode (see Tmux.Scroll) or
+// says the page was seen, and a "copy_end" frame from the server tells the client that tmux left
+// copy-mode; "page" and "page_seen" frames carry the page Claude wrote (see pages.go). When the
 // session ends (Claude exited, story closed) the socket closes normally with reason
 // "session ended", and the client does not reconnect. Several clients may watch one session; tmux sizes it to the latest.
 func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +104,13 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label
 	if uuid != "" {
 		s.watch(uuid)
 		defer s.unwatch(uuid)
+		// the page Claude wrote (see pages.go): now if no client has seen it yet, then as written
+		s.subscribePages(uuid, st, func(b []byte) {
+			wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
+			defer wcancel()
+			_ = c.Write(wctx, websocket.MessageText, b)
+		})
+		defer s.unsubscribePages(uuid, st)
 	}
 
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
@@ -183,6 +191,8 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label
 						s.Log("stream %s: scroll: %v", label, err)
 					}
 					checkMode()
+				case ctl.Type == "page_seen" && uuid != "":
+					s.pageSeen(uuid, st)
 				case ctl.Type == "copy":
 					if err := s.App.Tmux.CopyMode(sid); err != nil {
 						s.Log("stream %s: copy-mode: %v", label, err)

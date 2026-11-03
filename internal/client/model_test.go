@@ -350,6 +350,7 @@ type fakeConn struct {
 	resized  [][2]int
 	scrolled []int
 	copies   int
+	seen     int
 	closed   bool
 }
 
@@ -363,6 +364,10 @@ func (c *fakeConn) Scroll(_ context.Context, lines int) error {
 }
 func (c *fakeConn) CopyMode(context.Context) error {
 	c.copies++
+	return nil
+}
+func (c *fakeConn) PageSeen(context.Context) error {
+	c.seen++
 	return nil
 }
 func (c *fakeConn) Close() { c.closed = true }
@@ -2262,5 +2267,89 @@ func TestSyncFlashesAndAsksWhileClaudeWorks(t *testing.T) {
 	}
 	if h.m.flash != "s1 synced · 3 new commits from origin" || h.m.busy != "" {
 		t.Fatalf("flash = %q busy = %q", h.m.flash, h.m.busy)
+	}
+}
+
+func TestPageStripOpensFromEitherPane(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	var browsed []string
+	h.m.browse = func(u string) tea.Cmd { browsed = append(browsed, u); return nil }
+	h.press("Enter") // session 1 open, typing in Claude
+	c := h.conns[0]
+	const u = "http://100.64.0.1:7358/home-network/1/report.html"
+	h.update(pageMsg{conn: &fakeConn{}, page: api.Artifact{Name: "old.html", URL: u}}) // from an old stream
+	if h.m.page != nil {
+		t.Fatal("a stale page frame must be ignored")
+	}
+	h.update(pageMsg{conn: c, page: api.Artifact{Name: "report.html", URL: u}, isNew: true})
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "▤ New page  report.html") || !strings.Contains(v, "Open M-o") || !strings.Contains(ansi.Strip(h.m.bar()), "M-o open page") {
+		t.Fatalf("no strip or key:\n%s", v)
+	}
+	h.update(pageMsg{conn: c, page: api.Artifact{Name: "report.html", URL: u}})
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "▤ Updated  report.html") {
+		t.Fatalf("an edit says Updated:\n%s", v)
+	}
+	h.update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModAlt}) // while focused on Claude: not sent to it
+	select {
+	case b := <-h.m.term.Input():
+		t.Fatalf("M-o reached Claude: %q", b)
+	default:
+	}
+	if len(browsed) != 1 || browsed[0] != u || c.seen != 1 || h.m.page != nil {
+		t.Fatalf("browsed %q seen %d page %v", browsed, c.seen, h.m.page)
+	}
+	if v := ansi.Strip(h.m.View().Content); strings.Contains(v, "report.html ━") || strings.Contains(ansi.Strip(h.m.bar()), "open page") {
+		t.Fatalf("strip left after opening:\n%s", v)
+	}
+
+	// from the list too; a page_seen from another client closes it
+	h.press("C-h")
+	h.update(pageMsg{conn: c, page: api.Artifact{Name: "report.html", URL: u}})
+	h.update(pageSeenMsg{conn: c})
+	if h.m.page != nil || c.seen != 1 {
+		t.Fatalf("page_seen from the server: page %v seen %d", h.m.page, c.seen)
+	}
+	h.update(pageMsg{conn: c, page: api.Artifact{Name: "report.html", URL: u}})
+	h.update(tea.KeyPressMsg{Code: 'o', Mod: tea.ModAlt})
+	if len(browsed) != 2 || c.seen != 2 {
+		t.Fatalf("from the list: browsed %q seen %d", browsed, c.seen)
+	}
+}
+
+func TestPageStripClicks(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	var browsed []string
+	h.m.browse = func(u string) tea.Cmd { browsed = append(browsed, u); return nil }
+	h.press("Enter")
+	c := h.conns[0]
+	page := pageMsg{conn: c, page: api.Artifact{Name: "report.html", URL: "http://h/report.html"}, isNew: true}
+	h.update(page)
+	_, closeAt := h.m.pageStrip("━", focusColor)
+	off := ui.ListWidth + 1
+	h.update(tea.MouseClickMsg{X: off + 3, Y: 0, Button: tea.MouseLeft}) // the title line: nothing
+	if h.m.page == nil {
+		t.Fatal("a click off the strip")
+	}
+	h.update(tea.MouseClickMsg{X: off + closeAt, Y: paneHeader - 1, Button: tea.MouseLeft}) // ✕
+	if h.m.page != nil || len(browsed) != 0 || c.seen != 1 {
+		t.Fatalf("✕: page %v browsed %q seen %d", h.m.page, browsed, c.seen)
+	}
+	h.update(page)
+	h.update(tea.MouseClickMsg{X: off + 6, Y: paneHeader - 1, Button: tea.MouseLeft}) // the name
+	if h.m.page != nil || len(browsed) != 1 || c.seen != 2 {
+		t.Fatalf("open: page %v browsed %q seen %d", h.m.page, browsed, c.seen)
+	}
+	// the strip fits the pane at every width, and says so when there is no link
+	h.update(pageMsg{conn: c, page: api.Artifact{Name: strings.Repeat("long-", 30) + ".html"}})
+	for _, w := range []int{120, 80, 52} {
+		h.update(tea.WindowSizeMsg{Width: w, Height: 30})
+		line, _ := h.m.pageStrip("━", focusColor)
+		if got := ansi.StringWidth(line); got != h.m.term.Cols() {
+			t.Errorf("width %d: strip %d cols, pane %d", w, got, h.m.term.Cols())
+		}
+		if !strings.Contains(ansi.Strip(line), "file server off") {
+			t.Errorf("width %d: %q", w, ansi.Strip(line))
+		}
 	}
 }
