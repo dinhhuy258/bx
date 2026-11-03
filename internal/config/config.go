@@ -197,6 +197,13 @@ func (c *Config) ArtifactsDir() string { return filepath.Join(c.Root, "artifacts
 // PluginDir is <root>/claude-plugin: the Claude Code plugin bx gives every session it starts.
 func (c *Config) PluginDir() string { return filepath.Join(c.Root, "claude-plugin") }
 
+// MCPFile is <root>/mcp.json: the MCP servers every new session gets.
+func (c *Config) MCPFile() string { return filepath.Join(c.Root, "mcp.json") }
+
+// SessionMCPDir is <root>/run/mcp: <project>/<num>/mcp.json is the --mcp-config bx wrote for
+// that session.
+func (c *Config) SessionMCPDir() string { return filepath.Join(c.Root, "run", "mcp") }
+
 // EnsureDirs creates every folder under the root.
 func (c *Config) EnsureDirs() error {
 	for _, d := range []string{"projects", "worktrees", "state", "logs", "run"} {
