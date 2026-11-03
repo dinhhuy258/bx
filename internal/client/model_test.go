@@ -53,6 +53,11 @@ type fakeBackend struct {
 	storyErr    error                 // POST stories fails
 	sessionErr  string                // the new story's session does not start
 	storyCtxErr error                 // ctx.Err() as POST stories saw it
+	// settings › mcp
+	mcp      api.MCP
+	mcpDocs  map[string]string // by scope ("" = global)
+	mcpSaves []string          // "<scope>=<text>"
+	mcpErr   *api.Result       // SaveMCPDoc refuses with it
 }
 
 func (f *fakeBackend) StoryInfo(context.Context, string) (api.StoryInfo, error) {
@@ -1957,4 +1962,18 @@ func TestArtifactsWithFileServerOff(t *testing.T) {
 	if !strings.Contains(h.m.View().Content, "files_listen") {
 		t.Fatal(h.m.View().Content)
 	}
+}
+
+func (f *fakeBackend) MCP(context.Context) (api.MCP, error) { return f.mcp, nil }
+
+func (f *fakeBackend) MCPDoc(_ context.Context, scope string) (api.MCPDoc, error) {
+	return api.MCPDoc{Text: f.mcpDocs[scope]}, nil
+}
+
+func (f *fakeBackend) SaveMCPDoc(_ context.Context, scope, text string) (api.Result, error) {
+	f.mcpSaves = append(f.mcpSaves, scope+"="+text)
+	if f.mcpErr != nil {
+		return *f.mcpErr, &StatusError{Code: 400, Text: f.mcpErr.Error}
+	}
+	return api.Result{}, nil
 }

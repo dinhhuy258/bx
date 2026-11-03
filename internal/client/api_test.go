@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,5 +146,29 @@ func TestStatusErrorCarriesTheCode(t *testing.T) {
 		if !errors.As(err, &se) || se.Code != code || !strings.Contains(err.Error(), fmt.Sprint(code)) {
 			t.Fatalf("%d: %#v", code, err)
 		}
+	}
+}
+
+func TestAPIMCPDoc(t *testing.T) {
+	var gotPath, gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.Method + " " + r.URL.RequestURI()
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		if r.Method == http.MethodPut {
+			w.WriteHeader(400)
+			w.Write([]byte(`{"error":"line 2, column 1: x","line":2}`))
+			return
+		}
+		w.Write([]byte(`{"text":"{}"}`))
+	}))
+	defer ts.Close()
+	c := NewAPI(ts.URL)
+	if d, err := c.MCPDoc(context.Background(), "my proj"); err != nil || d.Text != "{}" || gotPath != "GET /api/mcp/doc?tui=1&project=my+proj" {
+		t.Fatalf("%v %q %s", err, d.Text, gotPath)
+	}
+	res, err := c.SaveMCPDoc(context.Background(), "", "x")
+	if err == nil || res.Line != 2 || gotPath != "PUT /api/mcp/doc?tui=1&project=" || gotBody != `{"text":"x"}` {
+		t.Fatalf("%v %+v %s %s", err, res, gotPath, gotBody)
 	}
 }

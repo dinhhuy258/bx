@@ -129,6 +129,25 @@ func (c *API) SaveSettings(ctx context.Context, values map[string]string) (api.S
 	return out, c.call(ctx, pollTimeout, http.MethodPut, "/api/settings?tui=1", api.Settings{Values: values}, &out)
 }
 
+// MCP is GET /api/mcp?tui=1: the global MCP servers and every project with its own.
+func (c *API) MCP(ctx context.Context) (api.MCP, error) {
+	var out api.MCP
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/mcp?tui=1", nil, &out)
+}
+
+// MCPDoc is GET /api/mcp/doc: the text of project's servers ("" = the global ones).
+func (c *API) MCPDoc(ctx context.Context, project string) (api.MCPDoc, error) {
+	var out api.MCPDoc
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/mcp/doc?tui=1&project="+url.QueryEscape(project), nil, &out)
+}
+
+// SaveMCPDoc is PUT /api/mcp/doc. A refusal fills Result: the error and its Line.
+func (c *API) SaveMCPDoc(ctx context.Context, project, text string) (api.Result, error) {
+	var res api.Result
+	err := c.call(ctx, pollTimeout, http.MethodPut, "/api/mcp/doc?tui=1&project="+url.QueryEscape(project), api.MCPDoc{Text: text}, &res)
+	return res, err
+}
+
 // SyncPlan is POST /api/claude/sync/plan: what a Claude sync would change on the server.
 func (c *API) SyncPlan(ctx context.Context, r api.SyncPlanRequest) (api.SyncPlan, error) {
 	var out api.SyncPlan
