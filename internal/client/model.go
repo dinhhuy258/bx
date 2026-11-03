@@ -125,29 +125,20 @@ type (
 	}
 )
 
-// Picker entries after the project names.
-const (
-	addFolder  = "+ Add existing folder"
-	cloneRepo  = "+ Clone from GitHub"
-	newProject = "+ New empty project"
-)
-
 type pickKind int
 
 const (
-	pickProjects pickKind = iota
-	pickRepos
-	pickStoryRepos      // the repositories of a new workspace story
-	pickAddRepos        // repositories to add to a workspace story
-	pickCleanup         // what cleanup removes
-	pickStorySource     // new story from: new branch, existing branch or pull request
-	pickStoryType       // the branch type of a new branch
-	pickStoryBranch     // the existing branch of a new story
-	pickStoryPR         // the pull request of a new story
-	pickOverrideProject // settings › git: the project of a new base override
-	pickOverrideBranch  // settings › git: the base branch of a project
-	pickArtifact        // a page of the selected session, opened in the browser
-	pickMCPProject      // settings › mcp: the project of new servers
+	pickRepos           pickKind = iota
+	pickStoryRepos               // the repositories of a new workspace story
+	pickAddRepos                 // repositories to add to a workspace story
+	pickCleanup                  // what cleanup removes
+	pickStorySource              // new story from: new branch, existing branch or pull request
+	pickStoryBranch              // the existing branch of a new story
+	pickStoryPR                  // the pull request of a new story
+	pickOverrideProject          // settings › git: the project of a new base override
+	pickOverrideBranch           // settings › git: the base branch of a project
+	pickArtifact                 // a page of the selected session, opened in the browser
+	pickMCPProject               // settings › mcp: the project of new servers
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -186,6 +177,7 @@ type Model struct {
 	afterShellNote bool
 
 	picker       *ui.Picker
+	switcher     *ui.Switcher // the project dialog
 	pickKind     pickKind
 	artifactURLs map[string]string        // the artifact picker's links, by file name
 	browse       func(url string) tea.Cmd // opens a link in the local browser; tests replace it
@@ -485,6 +477,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.attach()
 		case m.prompt.Active():
 			m.prompt.Paste(msg.Content)
+		case m.switcher != nil:
+			m.switcher.Paste(msg.Content)
 		case m.picker != nil:
 			m.picker.Paste(msg.Content)
 		case m.claudeFocused && m.conn != nil && !m.copying:
@@ -692,6 +686,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.picker != nil {
 		return m, m.pickerKey(key, k.Text)
 	}
+	// before the prompt: a prompt opened over the switcher (close project) answers first
+	if m.switcher != nil && !m.prompt.Active() {
+		return m, m.switcherKey(key, k.Text)
+	}
 	if m.cleanIDs != nil {
 		return m, m.cleanupKey(key)
 	}
@@ -700,6 +698,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		kind := m.prompt.Kind
 		switch m.prompt.Key(key, k.Text) {
 		case ui.PromptSubmit:
+			if kind == ui.PromptNewStory {
+				return m, m.storyName(strings.TrimSpace(m.prompt.Input), m.prompt.BranchType(), m.prompt.StoryBranch())
+			}
 			return m, m.submit(kind, strings.TrimSpace(m.prompt.Input), m.prompt.Target)
 		case ui.PromptCancel:
 		}
@@ -781,8 +782,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.stepProject(-1)
 	case "next_project":
 		return m, m.stepProject(1)
+	case "project_1", "project_2", "project_3", "project_4", "project_5", "project_6", "project_7", "project_8", "project_9":
+		return m, m.nthProject(int(action[len(action)-1] - '0'))
 	case "close_project":
-		m.openPrompt(ui.PromptCloseProject, m.project, fmt.Sprintf("close project %s? its sessions keep running on the server · y/n", m.project), "")
+		m.askCloseProject()
 		return m, nil
 	}
 	if m.activity {
@@ -821,9 +824,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "rename":
 		if onShell {
-			m.openPrompt(ui.PromptRenameShell, shellKey(sh.Story, sh.K), "shell name (empty = command)", sh.Title)
+			m.openPrompt(ui.PromptRenameShell, shellKey(sh.Story, sh.K), "Name (empty shows the command)", sh.Title)
 		} else if sess != nil {
-			m.openPrompt(ui.PromptRename, "", "new title", sess.Title)
+			m.openPrompt(ui.PromptRename, "", fmt.Sprintf("Title of [%d]", num), sess.Title)
 		}
 	case "resume":
 		if sess != nil && (m.m.Gone(num) || sess.Done) {
@@ -831,19 +834,19 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "stop_session":
 		if sess != nil && !sess.Done {
-			m.openPrompt(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("stop [%d] %s? y/n", num, sess.Title), "")
+			m.ask(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("Stop [%d]?", num), sess.Title, "", "Claude stops and its window closes.", config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "resume"))+" resumes it later.")
 		}
 	case "close_shell":
 		if onShell {
-			label := fmt.Sprintf("Close shell $%d %s?", sh.K, sh.Label())
+			body := []string{sh.Label() + " in " + groupName(sh.Story)}
 			if sh.Command != "" && !ui.PlainShell(sh.Command) {
-				label += " " + sh.Command + " is still running and will be killed."
+				body = append(body, "", sh.Command+" is still running and will be killed.")
 			}
-			m.openPrompt(ui.PromptCloseShell, shellKey(sh.Story, sh.K), label, "")
+			m.ask(ui.PromptCloseShell, shellKey(sh.Story, sh.K), fmt.Sprintf("Close shell $%d?", sh.K), body...)
 		}
 	case "delete_session":
 		if sess != nil {
-			m.openPrompt(ui.PromptDelete, strconv.Itoa(num), fmt.Sprintf("delete [%d] %s? y/n", num, sess.Title), "")
+			m.ask(ui.PromptDelete, strconv.Itoa(num), fmt.Sprintf("Delete [%d]?", num), sess.Title, "", "Its record is removed from bx.")
 		}
 	case "add_repo":
 		if row.Kind == ui.RowStory && row.Story != "" && m.m.P.IsWorkspace() {
@@ -857,11 +860,15 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "close_story":
 		if row.Kind == ui.RowStory && row.Story != "" {
-			text := fmt.Sprintf("close story %s, stop its sessions and remove its worktree? y/n", row.Story)
+			what := "Its sessions stop and its worktree is removed"
 			if n := len(m.m.ShellsOf(row.Story)); n > 0 {
-				text = fmt.Sprintf("close story %s, stop its sessions and %s and remove its worktree? y/n", row.Story, plural(n, "shell", "shells"))
+				what = fmt.Sprintf("Its sessions and %s stop and its worktree is removed", plural(n, "shell", "shells"))
 			}
-			m.openPrompt(ui.PromptCloseStory, row.Story, text, "")
+			body := []string{what + "."}
+			if dir := ui.ShortPath(m.m.Dir(row.Story)); dir != "" {
+				body = []string{what + ":", dir}
+			}
+			m.ask(ui.PromptCloseStory, row.Story, "Close story "+row.Story+"?", body...)
 		}
 	case "projects":
 		m.openProjectPicker()
@@ -957,6 +964,15 @@ func (m *Model) stepProject(delta int) tea.Cmd {
 	return m.switchProject(names[(i%len(names)+len(names))%len(names)])
 }
 
+// nthProject switches to the n-th project of the tabs, 1 the first; past the last it does nothing.
+func (m *Model) nthProject(n int) tea.Cmd {
+	if n > len(m.opened.Projects) || m.opened.Projects[n-1] == m.project {
+		return nil
+	}
+	m.activity = false
+	return m.switchProject(m.opened.Projects[n-1])
+}
+
 // openSession opens a session of any project in the Claude pane and gives it the keys,
 // switching project first when needed.
 func (m *Model) openSession(project string, num int) tea.Cmd {
@@ -993,7 +1009,7 @@ const wheelLines = 3
 
 // wheel scrolls the Claude pane when the pointer is over it.
 func (m *Model) wheel(msg tea.MouseWheelMsg) {
-	if m.m == nil || m.picker != nil || m.settings != nil || m.showKeys || msg.Y < paneHeader {
+	if m.m == nil || m.picker != nil || m.switcher != nil || m.settings != nil || m.showKeys || msg.Y < paneHeader {
 		return
 	}
 	switch {
@@ -1059,8 +1075,7 @@ func (m *Model) enterShell(sh ui.Shell) tea.Cmd {
 // askNewShell asks before opening a new shell in a story ("" = chats), naming its number and folder.
 func (m *Model) askNewShell(story string) {
 	k := m.m.NextShell(story)
-	label := fmt.Sprintf("New shell $%d in %s  %s", k, groupName(story), ui.ShortPath(m.m.Dir(story)))
-	m.openPrompt(ui.PromptNewShell, shellKey(story, k), label, "")
+	m.ask(ui.PromptNewShell, shellKey(story, k), fmt.Sprintf("New shell $%d", k), "in "+groupName(story), ui.ShortPath(m.m.Dir(story)))
 }
 
 // newShell opens a shell in a story ("" = chats) and shows it focused.
@@ -1148,15 +1163,63 @@ func (m *Model) backToClaude() tea.Cmd {
 	return m.connect() // nil unless the stream dropped
 }
 
-// openProjectPicker lists the projects this client has not opened yet, then the ways to add one.
+// openProjectPicker opens the project dialog: every project with what runs and waits in it,
+// those open in this client first, and the ways to add one.
 func (m *Model) openProjectPicker() {
-	items := make([]string, 0, len(m.projects)+3)
+	rows := make([]ui.SwitcherRow, 0, len(m.projects))
 	for _, p := range m.projects {
-		if !slices.Contains(m.opened.Projects, p.Name) {
-			items = append(items, p.Name)
+		rows = append(rows, ui.SwitcherRow{Name: p.Name, Open: slices.Contains(m.opened.Projects, p.Name), Running: p.Running, Waiting: p.Waiting, Unread: p.Unread})
+	}
+	m.switcher = ui.NewSwitcher(rows, m.project)
+}
+
+// switcherKey handles a key in the project dialog: open a project, close an open one, or add one.
+func (m *Model) switcherKey(key, text string) tea.Cmd {
+	switch m.switcher.Key(key, text) {
+	case ui.SwitchCancel:
+		m.switcher = nil
+	case ui.SwitchOpen:
+		name := m.switcher.Choice()
+		m.switcher = nil
+		m.activity = false
+		return m.switchProject(name)
+	case ui.SwitchClose:
+		name := m.switcher.Choice()
+		m.switcher = nil
+		if name != m.project {
+			return m.switchThenAskClose(name)
+		}
+		m.askCloseProject()
+	case ui.SwitchAction:
+		action := m.switcher.Action()
+		m.switcher = nil
+		switch action {
+		case ui.SwitchAddFolder:
+			m.openPrompt(ui.PromptAddFolder, "", "Folder on the server (absolute path)", "")
+		case ui.SwitchNewEmpty:
+			m.openPrompt(ui.PromptNewProject, "", "Project name", "")
+		case ui.SwitchClone:
+			m.setFlash("loading repositories…")
+			be, ctx := m.be, m.ctx
+			return func() tea.Msg {
+				repos, err := be.Repos(ctx)
+				return reposMsg{repos, err}
+			}
 		}
 	}
-	m.picker, m.pickKind = ui.NewPicker("projects", append(items, addFolder, cloneRepo, newProject)), pickProjects
+	return nil
+}
+
+// switchThenAskClose shows the project to close, then asks: closing takes the one on screen.
+func (m *Model) switchThenAskClose(name string) tea.Cmd {
+	cmd := m.switchProject(name)
+	m.askCloseProject()
+	return cmd
+}
+
+// askCloseProject asks before taking the open project off this client's tabs.
+func (m *Model) askCloseProject() {
+	m.ask(ui.PromptCloseProject, m.project, "Close project "+m.project+"?", "It leaves this client's tabs.", "Its sessions keep running on the server.")
 }
 
 func (m *Model) pickerKey(key, text string) tea.Cmd {
@@ -1180,8 +1243,6 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			return m.create(api.NewProject{Kind: "clone", Repo: choice})
 		case pickStorySource:
 			return m.pickStorySource(choice)
-		case pickStoryType:
-			return m.pickStoryType(choice)
 		case pickStoryBranch:
 			return m.pickStoryBranch(choice)
 		case pickStoryPR:
@@ -1214,21 +1275,6 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			}
 			m.setFlash(u)
 			return m.browse(u)
-		}
-		switch choice {
-		case addFolder:
-			m.openPrompt(ui.PromptAddFolder, "", "folder on the server (absolute path)", "")
-		case newProject:
-			m.openPrompt(ui.PromptNewProject, "", "project name", "")
-		case cloneRepo:
-			m.setFlash("loading repositories…")
-			be, ctx := m.be, m.ctx
-			return func() tea.Msg {
-				repos, err := be.Repos(ctx)
-				return reposMsg{repos, err}
-			}
-		default:
-			return m.switchProject(choice)
 		}
 	}
 	return nil
@@ -1279,7 +1325,7 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 	switch m.settings.Key(key) {
 	case ui.SettingsClose:
 		if n := len(m.settings.Changes()); n > 0 {
-			m.openPrompt(ui.PromptDiscardSettings, "", fmt.Sprintf("discard %s? y/n", plural(n, "change", "changes")), "")
+			m.ask(ui.PromptDiscardSettings, "", fmt.Sprintf("Discard %s?", plural(n, "change", "changes")), "Your unsaved edits to the settings are lost.")
 			return nil
 		}
 		m.settings, m.mcpDrafts = nil, map[string]mcpDraft{}
@@ -1327,7 +1373,7 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 		m.openOverrideProjects()
 	case ui.SettingsGitRemove:
 		project, _ := m.settings.GitChoice()
-		m.openPrompt(ui.PromptRemoveOverride, project, fmt.Sprintf("remove base override of %s (%s)? y/n", project, m.baseOverride(project)), "")
+		m.ask(ui.PromptRemoveOverride, project, "Remove base override?", fmt.Sprintf("New stories in %s stop starting from %s", project, m.baseOverride(project)), "and use the detected base again.")
 	}
 	return nil
 }
@@ -1358,8 +1404,7 @@ func (m *Model) create(p api.NewProject) tea.Cmd {
 
 // askNewSession asks before starting a session in story ("" = chats), naming its group and folder.
 func (m *Model) askNewSession(story string) {
-	label := fmt.Sprintf("New session in %s  %s", groupName(story), ui.ShortPath(m.m.Dir(story)))
-	m.openPrompt(ui.PromptNewSession, story, label, "")
+	m.ask(ui.PromptNewSession, story, "New session", "in "+groupName(story), ui.ShortPath(m.m.Dir(story)))
 }
 
 // newSession starts a session in story ("" = a chat) with no title: bx serve names it after
@@ -1380,8 +1425,6 @@ func (m *Model) newSession(story string) tea.Cmd {
 
 func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	switch kind {
-	case ui.PromptNewStory:
-		return m.storyName(text)
 	case ui.PromptUseBranch:
 		return m.useBranch()
 	case ui.PromptAddRepoForce:
@@ -1399,7 +1442,7 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			if res.Detail != "" {
 				files += " (" + res.Detail + ")"
 			}
-			m.openPrompt(ui.PromptCloseStoryForce, target, fmt.Sprintf("%s has %s · discard them? y/n", target, files), "")
+			m.ask(ui.PromptCloseStoryForce, target, "Discard changes and close "+target+"?", target+" has "+files+".", "", "They are lost with its worktree.")
 		case err != nil:
 			m.setFlash("error: " + err.Error())
 		default:
@@ -1433,7 +1476,7 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		res, err := m.be.Do(m.ctx, m.project, "delete", api.Action{Num: num, Force: force})
 		switch {
 		case err != nil && res.Running && !force:
-			m.openPrompt(ui.PromptDeleteForce, target, fmt.Sprintf("[%d] is still open · kill it and delete? y/n", num), "")
+			m.ask(ui.PromptDeleteForce, target, fmt.Sprintf("[%d] is still open", num), "Kill it and delete its record?")
 		case err != nil:
 			m.setFlash("error: " + err.Error())
 		default:
@@ -1659,7 +1702,7 @@ func (m *Model) pickCleanup(checked []string) {
 	m.cleanIDs, m.cleanLabels = ids, labels
 }
 
-// cleanupKey answers the cleanup confirm box: y removes, n or Esc cancels, other keys wait.
+// cleanupKey answers the cleanup dialog: y removes, n, Esc or Enter cancels, other keys wait.
 func (m *Model) cleanupKey(key string) tea.Cmd {
 	switch key {
 	case "y":
@@ -1669,7 +1712,7 @@ func (m *Model) cleanupKey(key string) tea.Cmd {
 			res, err := be.CleanupApply(ctx, ids)
 			return cleanedMsg{res.Removed, err}
 		}
-	case "n", "Esc":
+	case "n", "Esc", "Enter":
 		m.cleanIDs, m.cleanLabels = nil, nil
 	}
 	return nil
@@ -1682,7 +1725,7 @@ func (m *Model) addStoryRepos(story string, repos []string, force bool) tea.Cmd 
 	switch {
 	case err != nil && res.Dirty > 0 && !force:
 		m.addRepos = repos
-		m.openPrompt(ui.PromptAddRepoForce, story, fmt.Sprintf("uncommitted files in the original (%s) will not be in the story · add anyway? y/n", res.Detail), "")
+		m.ask(ui.PromptAddRepoForce, story, "Add anyway?", fmt.Sprintf("The originals have uncommitted files (%s).", res.Detail), "The story will not have them.")
 	case err != nil:
 		m.setFlash("error: " + err.Error())
 	default:
@@ -1694,6 +1737,12 @@ func (m *Model) addStoryRepos(story string, repos []string, force bool) tea.Cmd 
 
 func (m *Model) openPrompt(kind ui.PromptKind, target, label, initial string) {
 	m.prompt.Open(kind, target, label, initial)
+	m.flash = ""
+}
+
+// ask opens a y/n question as a dialog: its title and the lines that say what will happen.
+func (m *Model) ask(kind ui.PromptKind, target, title string, body ...string) {
+	m.prompt.Ask(kind, target, title, body...)
 	m.flash = ""
 }
 
@@ -1725,7 +1774,7 @@ func (m *Model) View() tea.View {
 	if !m.target.Zero() {
 		v.MouseMode = tea.MouseModeCellMotion // the wheel scrolls the Claude pane
 	}
-	if m.claudeFocused && m.picker == nil && m.settings == nil && m.m != nil && !m.showKeys {
+	if m.claudeFocused && m.picker == nil && m.settings == nil && m.m != nil && !m.showKeys && !m.prompt.Active() && m.cleanIDs == nil && m.switcher == nil {
 		if x, y := m.term.Cursor(); x >= 0 {
 			off := 0
 			if !m.focusMode && !m.narrow {
@@ -1737,19 +1786,33 @@ func (m *Model) View() tea.View {
 	return v
 }
 
+// body is the screen, with the open question or form drawn over it.
 func (m *Model) body() string {
+	var d ui.Dialog
+	switch {
+	case m.cleanIDs != nil:
+		d = ui.Dialog{
+			Title: fmt.Sprintf("Remove %s?", plural(len(m.cleanIDs), "item", "items")), Tone: ui.ToneDanger, Body: m.cleanLabels,
+			Buttons: []ui.Button{{Key: "n", Label: "Cancel", Default: true}, {Key: "y", Label: "Remove", Danger: true}},
+		}
+	case m.prompt.Active():
+		d = m.prompt.Dialog()
+	case m.switcher != nil:
+		d = m.switcher.Dialog(m.height-1, false)
+	default:
+		return m.screen()
+	}
+	return ui.Overlay(m.screen(), d.Render(m.width, m.height-1, false), m.width, m.height-1)
+}
+
+func (m *Model) screen() string {
 	switch {
 	case m.picker != nil:
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
-	case m.cleanIDs != nil:
-		title := fmt.Sprintf("Remove %s?", plural(len(m.cleanIDs), "item", "items"))
-		return ui.ConfirmBox(title, m.cleanLabels, "remove", m.width, m.height-1) + "\n" + m.flash
 	case m.settings != nil:
 		return m.settings.Render(m.width, m.height-1, false, m.settingsNote) + "\n" + m.bar()
 	case m.showKeys:
 		return "bx keymap · press any key to close\n\n" + ui.Keymap(m.cfg, m.width)
-	case m.m == nil && m.prompt.Active():
-		return "bx · " + m.prompt.Line() + "\n" + m.flash
 	case m.m == nil && m.project == "" && m.loaded:
 		return m.empty()
 	case m.m == nil && m.project == "":
@@ -1929,6 +1992,8 @@ func (m *Model) bar() string {
 	switch {
 	case m.prompt.Active():
 		text = m.prompt.Line()
+	case m.switcher != nil:
+		text = m.switcher.Line()
 	case m.settings != nil && m.flash != "":
 		text = m.flash
 	case m.settings != nil && m.settingsOnMCPRow():

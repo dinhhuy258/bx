@@ -23,60 +23,97 @@ type RenderOptions struct {
 }
 
 type palette struct {
-	dim, blue, amber, green, red, bold, sel, brand, cyan lipgloss.Style
+	dim, blue, amber, green, red, bold, sel, brand, cyan, group, arrow lipgloss.Style
+	selBG, groupBG                                                     string // SGR of the selection and group-row bands, "" when plain
 }
 
 func newPalette(plain bool) palette {
 	if plain {
 		s := lipgloss.NewStyle()
-		return palette{s, s, s, s, s, s, s, s, s}
+		return palette{s, s, s, s, s, s, s, s, s, s, s, "", ""}
 	}
 	return palette{
-		cyan:  lipgloss.NewStyle().Foreground(lipgloss.Color("#7dcfff")),
-		dim:   lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89")),
-		blue:  lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
-		amber: lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")),
-		green: lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")),
-		red:   lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
-		bold:  lipgloss.NewStyle().Bold(true),
-		sel:   lipgloss.NewStyle().Background(lipgloss.Color("#292e42")),
-		brand: lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true),
+		cyan:    lipgloss.NewStyle().Foreground(lipgloss.Color("#7dcfff")),
+		dim:     lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89")),
+		blue:    lipgloss.NewStyle().Foreground(lipgloss.Color("#7aa2f7")),
+		amber:   lipgloss.NewStyle().Foreground(lipgloss.Color("#e0af68")),
+		green:   lipgloss.NewStyle().Foreground(lipgloss.Color("#9ece6a")),
+		red:     lipgloss.NewStyle().Foreground(lipgloss.Color("#f7768e")),
+		bold:    lipgloss.NewStyle().Bold(true),
+		sel:     lipgloss.NewStyle().Background(lipgloss.Color("#292e42")),
+		brand:   lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true),
+		group:   lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true),
+		arrow:   lipgloss.NewStyle().Foreground(lipgloss.Color("#9d7cd8")),
+		selBG:   "\x1b[48;2;41;46;66m", // #292e42
+		groupBG: "\x1b[48;2;31;35;53m", // #1f2335
 	}
 }
 
+// band paints line, padded to width, with the background sgr. It renews sgr after every reset
+// inside the line so the band holds across the line's own styling. "" leaves line as it is.
+func band(line string, width int, sgr string) string {
+	if sgr == "" {
+		return line
+	}
+	if w := lipgloss.Width(line); w < width {
+		line += strings.Repeat(" ", width-w)
+	}
+	return sgr + strings.ReplaceAll(line, "\x1b[m", "\x1b[m"+sgr) + "\x1b[m"
+}
+
 // Render draws the list pane at width x height. Lines never exceed width cells.
+//
+// The header holds the brand, the project (or the strip of opened projects) and what runs or
+// waits; the rule stays on the second line, level with the Claude pane's. Under it each story is
+// a band with its name, and its sessions and shells hang off it on tree guides, one line each.
+// A session takes a second line only when it says something to act on: a question, or gone.
 func Render(m *Model, width, height int, o RenderOptions) string {
 	if width < 30 {
 		return "bx: terminal too narrow"
 	}
 	pal := newPalette(o.Plain)
 	showAge := width >= 46
-	var lines []string
 
 	run, wait, _ := m.Counts()
-	nStories := len(m.P.Stories)
-	head := fit(pal.brand.Render("bx")+" "+pal.bold.Render(m.P.Name), pal.dim.Render(plural(nStories, "story", "stories")), width)
-	// the rule stays on the second line, level with the Claude pane's
-	lines = append(lines, head, rule(width, o))
-	if len(o.Projects) > 0 {
-		lines = append(lines, strip(o.Projects, m.P.Name, width, pal))
+	var counts []string
+	if run > 0 {
+		counts = append(counts, pal.blue.Render(fmt.Sprintf("● %d", run)))
 	}
-	waitText := pal.dim.Render(fmt.Sprintf("◆ %d needs you", wait))
 	if wait > 0 {
-		waitText = pal.amber.Render(fmt.Sprintf("◆ %d needs you", wait))
+		counts = append(counts, pal.amber.Render(fmt.Sprintf("◆ %d", wait)))
 	}
-	lines = append(lines, fit(pal.blue.Render(fmt.Sprintf("● %d running", run)), waitText, width))
+	right := strings.Join(counts, "  ")
+	title := pal.bold.Render(m.P.Name)
+	if len(o.Projects) > 0 {
+		title = strip(o.Projects, m.P.Name, width-4-lipgloss.Width(right)-2, pal)
+	}
+	top := []string{fit(pal.brand.Render("bx")+"  "+title, right, width), rule(width, o)}
 
 	rows := m.Rows()
 	selIdx := m.SelIndex()
+	numW := len(fmt.Sprint(m.maxNum()))
+	var body []string
+	selLine := 0
 	for i, r := range rows {
-		cursor := " "
-		if i == selIdx {
-			cursor = "›"
+		sel := i == selIdx
+		if sel {
+			selLine = len(body)
 		}
-		if r.Kind == RowStory {
-			lines = append(lines, m.storyLine(r, cursor, width, pal, i == selIdx))
-			if len(m.P.SessionsOf(r.Story)) == 0 && m.IsOpen(r.Story) {
+		mark := func(line string, bg string) string {
+			if sel {
+				return band(pal.blue.Render("▌")+line[1:], width, pal.selBG)
+			}
+			return band(line, width, bg)
+		}
+		last := i+1 >= len(rows) || rows[i+1].Kind == RowStory
+		guide, under := "├ ", "│ "
+		if last {
+			guide, under = "└ ", "  "
+		}
+		switch r.Kind {
+		case RowStory:
+			body = append(body, mark(m.storyLine(r, width, pal), pal.groupBG))
+			if len(m.P.SessionsOf(r.Story)) == 0 && len(m.ShellsOf(r.Story)) == 0 && m.IsOpen(r.Story) {
 				what := "no sessions"
 				if r.Story == "" {
 					what = "no chats"
@@ -84,53 +121,75 @@ func Render(m *Model, width, height int, o RenderOptions) string {
 				if o.NewKey != "" {
 					what += " · " + config.Pretty(o.NewKey) + " to start one"
 				}
-				lines = append(lines, truncate("      "+pal.dim.Render(what), width))
+				body = append(body, truncate("   "+pal.dim.Render("└ "+what), width))
 			}
-			continue
-		}
-		if r.Kind == RowShell {
-			lines = append(lines, m.shellLine(r, cursor, width, pal, i == selIdx))
-			continue
-		}
-		s := m.P.Sessions[r.Num]
-		dot := m.Dot(r.Num)
-		switch m.State(r.Num) {
-		case claude.Waiting:
-			dot = pal.amber.Render(dot)
-		case claude.Running:
-			dot = pal.blue.Render(dot)
+		case RowShell:
+			body = append(body, mark(m.shellLine(r, pal.dim.Render(guide), width, pal, sel), ""))
 		default:
-			if s.Done || m.Unread(r.Num) {
-				dot = pal.green.Render(dot)
-			} else {
-				dot = pal.dim.Render(dot)
+			line, note := m.sessionLine(r.Num, numW, pal.dim.Render(guide), width, showAge, pal, sel)
+			body = append(body, mark(line, ""))
+			if note != "" {
+				body = append(body, truncate("   "+pal.dim.Render(under)+strings.Repeat(" ", numW+4)+note, width))
 			}
 		}
-		title := fmt.Sprintf("[%d] %s", r.Num, s.Title)
-		if i == selIdx {
-			title = pal.bold.Render(title)
-		}
-		right := ""
-		if showAge {
-			right = pal.dim.Render(m.Age(r.Num))
-		}
-		lines = append(lines, fit(cursor+"  "+dot+" "+title, right, width))
-		st := m.StateText(r.Num)
-		switch {
-		case m.State(r.Num) == claude.Waiting:
-			st = pal.amber.Render(st)
-		case m.Unread(r.Num):
-			st = pal.green.Render(st)
-		}
-		lines = append(lines, truncate("      "+st, width))
 	}
-	if nStories == 0 {
-		lines = append(lines, "", "No stories yet.", "A story is a branch with its own worktree.", "Press w to create one.")
+	if len(m.P.Stories) == 0 {
+		body = append(body, "", " No stories yet.", " A story is a branch with its own worktree.", " Press w to create one.")
 	}
-	return pad(lines, height)
+	// scroll the rows under the header so the cursor and the line under it stay in view
+	room := max(height-len(top), 1)
+	off := max(min(selLine+2-room, len(body)-room), 0)
+	return pad(append(top, body[off:]...), height)
 }
 
-func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected bool) string {
+// maxNum is the highest session number, to right-align the numbers in one column.
+func (m *Model) maxNum() int {
+	n := 1
+	for k := range m.P.Sessions {
+		n = max(n, k)
+	}
+	return n
+}
+
+// sessionLine is a session's row, "▌  ├ ●  1  Fix guest DHCP lease time   6m", and its note
+// for the line under it: the question it asks, or that it is gone; "" when there is nothing
+// to act on.
+func (m *Model) sessionLine(num, numW int, guide string, width int, showAge bool, pal palette, selected bool) (string, string) {
+	s := m.P.Sessions[num]
+	dot := m.Dot(num)
+	switch m.State(num) {
+	case claude.Waiting:
+		dot = pal.amber.Render(dot)
+	case claude.Running:
+		dot = pal.blue.Render(dot)
+	default:
+		if s.Done || m.Unread(num) {
+			dot = pal.green.Render(dot)
+		} else {
+			dot = pal.dim.Render(dot)
+		}
+	}
+	title := s.Title
+	if selected {
+		title = pal.bold.Render(title)
+	}
+	right := ""
+	if showAge {
+		right = pal.dim.Render(m.Age(num))
+	}
+	line := fit("   "+guide+dot+" "+pal.dim.Render(fmt.Sprintf("%*d", numW, num))+"  "+title, right, width)
+	note := ""
+	switch {
+	case m.State(num) == claude.Waiting:
+		note = pal.amber.Render(m.StateText(num))
+	case m.Gone(num):
+		note = pal.red.Render(m.StateText(num))
+	}
+	return line, note
+}
+
+// storyLine is a group row: the chats of the project folder, or a story and its worktree.
+func (m *Model) storyLine(r Row, width int, pal palette) string {
 	arrow := "▸"
 	if m.IsOpen(r.Story) {
 		arrow = "▾"
@@ -138,16 +197,16 @@ func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected
 	name := "chats"
 	// Each group row is one folder: chats run in the project folder, a story in its worktree.
 	// A workspace is no repository: its folder has no branch nor changes of its own.
-	right := pal.dim.Render(m.branch()+" · ") + changed(m.Live.DirtyFiles, pal, " · ") + pal.dim.Render(shortPath(m.P.Path))
+	right := pal.dim.Render(m.branch()) + changed(m.Live.DirtyFiles, pal, "", " · ")
 	if m.P.IsWorkspace() {
-		right = pal.dim.Render("workspace · " + shortPath(m.P.Path))
+		right = pal.dim.Render("workspace")
 	}
 	if r.Story != "" {
 		name = r.Story
 		d := m.Live.Diff[r.Story]
 		var parts []string
 		if d.Dirty > 0 {
-			parts = append(parts, changed(d.Dirty, pal, ""))
+			parts = append(parts, changed(d.Dirty, pal, "", ""))
 		}
 		if d.Add > 0 {
 			parts = append(parts, pal.green.Render(fmt.Sprintf("+%d", d.Add)))
@@ -169,13 +228,12 @@ func (m *Model) storyLine(r Row, cursor string, width int, pal palette, selected
 			}
 		}
 	}
-	left := cursor + " " + pal.dim.Render(arrow) + " " + pal.bold.Render(name)
-	return fit(left, right, width)
+	return fit(" "+pal.arrow.Render(arrow)+" "+pal.group.Render(name), right, width)
 }
 
 // shellLine is the one line of a shell row: "$1  zsh", or "$2  dev server … npm" when the
 // shell has a title, with the command dim on the right.
-func (m *Model) shellLine(r Row, cursor string, width int, pal palette, selected bool) string {
+func (m *Model) shellLine(r Row, guide string, width int, pal palette, selected bool) string {
 	sh, _ := m.Shell(r.Story, r.K)
 	label := sh.Label()
 	if selected {
@@ -185,15 +243,16 @@ func (m *Model) shellLine(r Row, cursor string, width int, pal palette, selected
 	if sh.Title != "" {
 		right = pal.dim.Render(sh.Command)
 	}
-	return fit(cursor+"  "+pal.cyan.Render(fmt.Sprintf("$%d", r.K))+"  "+label, right, width)
+	return fit("   "+guide+pal.cyan.Render(fmt.Sprintf("$%d", r.K))+"  "+label, right, width)
 }
 
-// changed is the amber "N changed" for uncommitted files in a folder, empty when clean.
-func changed(n int, pal palette, sep string) string {
+// changed is the amber "N changed" for uncommitted files in a folder, between before and after,
+// or "" when the folder is clean.
+func changed(n int, pal palette, after, before string) string {
 	if n == 0 {
 		return ""
 	}
-	return pal.amber.Render(fmt.Sprintf("%d changed", n)) + pal.dim.Render(sep)
+	return pal.dim.Render(before) + pal.amber.Render(fmt.Sprintf("%d changed", n)) + pal.dim.Render(after)
 }
 
 // ShortPath replaces the home directory with ~, as the list shows folders.

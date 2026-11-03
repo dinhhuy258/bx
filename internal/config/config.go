@@ -67,6 +67,8 @@ func Default(root string) *Config {
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
 				"inbox": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
+				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
+				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
 				"settings": {"S"}, "stop_session": {"s"}, "delete_session": {"d"}, "close_shell": {"d"}, "cleanup": {"C"}, "artifacts": {"v"},
 			},
 		},

@@ -172,7 +172,7 @@ func TestRenderShellRows(t *testing.T) {
 			two = line
 		}
 	}
-	if one == "" || strings.TrimRight(one, " ") != "   $1  zsh" {
+	if one == "" || strings.TrimRight(one, " ") != "   ├ $1  zsh" {
 		t.Errorf("no $1 row with only its command:\n%s", out)
 	}
 	if !strings.HasSuffix(two, "npm") {
@@ -220,20 +220,23 @@ func TestShortPathUsesHome(t *testing.T) {
 
 func TestRenderProjectStrip(t *testing.T) {
 	m, _ := sampleModel()
-	tabs := []ProjectTab{{Name: "bx", Waiting: 1}, {Name: "home-network", Waiting: 1, Running: 2}, {Name: "dotfiles"}, {Name: "lab"}}
-	lines := strings.Split(Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs}), "\n")
-	if lines[2] != "◆ bx  ◉ home-network  ○ dotfiles  ○ lab" {
-		t.Fatalf("strip %q", lines[2])
+	tabs := []ProjectTab{{Name: "bx", Waiting: 1}, {Name: "home-network", Waiting: 1, Running: 2}, {Name: "nas"}}
+	head := func(tabs []ProjectTab) string {
+		return strings.Split(Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs}), "\n")[0]
 	}
-	// too narrow for all: the projects before the open one go first
-	tabs = append([]ProjectTab{{Name: "a-very-long-project"}, {Name: "another-long-one"}}, tabs...)
-	line := strings.Split(Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs}), "\n")[2]
-	if !strings.HasPrefix(line, "… ") || !strings.Contains(line, "home-network") || runeWidth(line) > 46 {
-		t.Fatalf("cut strip %q", line)
+	// numbered tabs, the others with what waits or runs, the open one's counts on the right
+	if got := head(tabs); got != "bx  1 bx ◆1  2 home-network  3 nas    ● 2  ◆ 1" {
+		t.Fatalf("tabs %q", got)
 	}
-	// no opened projects: no strip, the list is as before (the golden test)
+	// too narrow for all: the open one stays, the cut ones are counted with what waits in them
+	tabs = append([]ProjectTab{{Name: "a-very-long-project", Waiting: 2}, {Name: "another-long-one"}}, tabs...)
+	got := head(tabs)
+	if !strings.Contains(got, "home-network") || !strings.Contains(got, "+") || !strings.Contains(got, "◆2") || runeWidth(got) > 46 {
+		t.Fatalf("cut tabs %q", got)
+	}
+	// no opened projects: the project's name instead of tabs (the golden test)
 	if Render(m, 46, 30, RenderOptions{Plain: true, Projects: tabs[:0]}) != Render(m, 46, 30, RenderOptions{Plain: true}) {
-		t.Fatal("no projects must not add a strip")
+		t.Fatal("no projects must not add tabs")
 	}
 }
 

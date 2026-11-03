@@ -23,9 +23,6 @@ const (
 	fromPR        = "pull request"
 )
 
-// noType is the picker item of the "none" branch type: a branch without a type prefix.
-const noType = "(none)"
-
 // fetchingOrigin is the key bar while an existing branch or a pull request is fetched.
 const fetchingOrigin = "fetching origin… · esc to cancel"
 
@@ -38,6 +35,7 @@ type storyDraft struct {
 	story, branch string            // for the title of the workspace checklist
 	tick          string            // the repository ticked in that checklist (a pull request's)
 	busy          string            // the key bar while it is created
+	exists        string            // the branch the new story form said exists: Enter again uses it
 	branches      map[string]string // existing branch picker: label → branch
 	prs           map[string]api.PR // pull request picker: label → pull request
 }
@@ -112,14 +110,18 @@ func (m *Model) gotStoryInfo(msg storyInfoMsg) {
 		return
 	}
 	m.draft.info, m.draft.busy = msg.info, createBusy(msg.info.Base)
-	branch := "<name>"
-	if t := naming.DefaultType(msg.info.LastType); t != "none" {
-		branch = t + "/<name>"
+	m.openStoryForm("", naming.DefaultType(msg.info.LastType), "")
+}
+
+// openStoryForm opens the new story form with a name, a branch type and a note.
+func (m *Model) openStoryForm(name, typ, note string) {
+	types := m.draft.info.Types
+	if len(types) == 0 {
+		types = naming.Types
 	}
-	if msg.info.Base != "" {
-		branch += " ← " + msg.info.Base
-	}
-	m.openPrompt(ui.PromptNewStory, "", "story name ("+branch+")", "")
+	m.prompt.OpenStory(m.draft.info.Base, types, typ)
+	m.prompt.Input, m.prompt.Note = name, note
+	m.flash = ""
 }
 
 // createBusy is the key bar while a new branch is created from base.
@@ -133,46 +135,24 @@ func createBusy(base string) string {
 	return fetchingOrigin // "each repo's default" in a workspace
 }
 
-// storyName takes the typed name: a full branch ("fix/x") goes on, a plain name gets the type
-// picker with the last used type highlighted.
-func (m *Model) storyName(text string) tea.Cmd {
+// storyName takes the new story form: a full branch typed as the name ("fix/x") as it is,
+// else the name with the chosen type. Enter again on a branch the form said exists uses it.
+func (m *Model) storyName(text, typ, branch string) tea.Cmd {
 	d := m.draft
 	if text == "" || d == nil {
 		return nil
 	}
+	if d.exists != "" && d.exists == branch {
+		d.exists = ""
+		return m.useBranch()
+	}
+	d.exists = ""
 	d.act = api.Action{Name: text}
 	if b := naming.CleanBranch(text); strings.Contains(b, "/") {
 		d.story, d.branch = naming.StoryName(b), b
 		return m.storyNext()
 	}
 	d.story = naming.Slug(text)
-	items := make([]string, len(naming.Types))
-	for i, t := range naming.Types {
-		items[i] = typeItem(t)
-	}
-	m.picker, m.pickKind = ui.NewPicker("branch type · "+d.story, items), pickStoryType
-	m.picker.Select(typeItem(naming.DefaultType(d.info.LastType)))
-	return nil
-}
-
-// typeItem is the picker item of a branch type.
-func typeItem(t string) string {
-	if t == "none" {
-		return noType
-	}
-	return t
-}
-
-// pickStoryType sets the chosen branch type and goes on.
-func (m *Model) pickStoryType(choice string) tea.Cmd {
-	d := m.draft
-	if d == nil {
-		return nil
-	}
-	typ := choice
-	if typ == noType {
-		typ = "none"
-	}
 	d.act.Type, d.branch = typ, naming.Branch(typ, d.story)
 	return m.storyNext()
 }
@@ -362,7 +342,16 @@ func (m *Model) gotStory(msg storyMsg) tea.Cmd {
 	case res.Exists != "":
 		where := map[string]string{"local": "locally", "origin": "on origin", "both": "locally and on origin"}[res.Exists]
 		m.draft = &d
-		m.openPrompt(ui.PromptUseBranch, "", fmt.Sprintf("branch %s exists %s · use it? y/n", res.Branch, where), "")
+		if d.act.Source == "" && d.act.Name != "" { // the new story form: say so in it
+			d.exists = res.Branch
+			typ := d.act.Type
+			if typ == "" {
+				typ = naming.DefaultType(d.info.LastType)
+			}
+			m.openStoryForm(d.act.Name, typ, fmt.Sprintf("%s exists %s · ⏎ again starts the story on it", res.Branch, where))
+			return nil
+		}
+		m.ask(ui.PromptUseBranch, "", "Branch exists", fmt.Sprintf("%s exists %s.", res.Branch, where), "Start the story on it?")
 		return nil
 	case msg.err != nil:
 		m.setFlash("error: " + msg.err.Error())

@@ -9,41 +9,72 @@ import (
 	"github.com/dinhhuy258/bx/internal/claude"
 )
 
-// ProjectTab is one project in the strip under the list header.
+// ProjectTab is one project in the tabs of the list header.
 type ProjectTab struct {
 	Name             string
 	Running, Waiting int
 }
 
-// strip is the project strip: "◆ bx  ◉ home-network  ○ dotfiles", the open project's dot a ring
-// in its state colour and its name bold blue. When it
-// does not fit, the projects before the open one are cut first, so the open one stays visible.
+// strip is the project tabs of the header: "1 home-network  2 bx ◆1  3 dotfiles ●2". The first
+// nine are numbered for the project_1..9 keys. The open project is bold blue on the selection
+// band and has no count, the header's right side shows its own; the others show what waits,
+// else what runs. When they do not fit, the open tab stays: the tabs before it are cut first,
+// then those after, and the cut ones become "+2 ◆1", with what waits among them.
 func strip(tabs []ProjectTab, current string, width int, pal palette) string {
 	items := make([]string, len(tabs))
 	cur := 0
 	for i, t := range tabs {
-		dot, style := "○", pal.dim
-		switch {
-		case t.Waiting > 0:
-			dot, style = "◆", pal.amber
-		case t.Running > 0:
-			dot, style = "●", pal.blue
+		num := ""
+		if i < 9 {
+			num = pal.dim.Render(fmt.Sprint(i+1)) + " "
 		}
-		items[i] = style.Render(dot) + " " + t.Name
 		if t.Name == current {
 			cur = i
-			items[i] = style.Render("◉") + " " + pal.bold.Inherit(pal.blue).Render(t.Name)
+			items[i] = band(num+pal.bold.Inherit(pal.blue).Render(t.Name), 0, pal.selBG)
+			continue
 		}
+		badge := ""
+		switch {
+		case t.Waiting > 0:
+			badge = " " + pal.amber.Render(fmt.Sprintf("◆%d", t.Waiting))
+		case t.Running > 0:
+			badge = " " + pal.blue.Render(fmt.Sprintf("●%d", t.Running))
+		}
+		items[i] = num + t.Name + badge
 	}
-	from := 0
-	for from < cur && runeWidth("… "+strings.Join(items[from:cur+1], "  ")) > width {
+	// rest is "+N ◆W" for the tabs left out of [from, to)
+	rest := func(from, to int) string {
+		n, w := 0, 0
+		for i, t := range tabs {
+			if i < from || i >= to {
+				n++
+				w += t.Waiting
+			}
+		}
+		if n == 0 {
+			return ""
+		}
+		s := pal.dim.Render(fmt.Sprintf("+%d", n))
+		if w > 0 {
+			s += " " + pal.amber.Render(fmt.Sprintf("◆%d", w))
+		}
+		return s
+	}
+	line := func(from, to int) string {
+		parts := append([]string(nil), items[from:to]...)
+		if r := rest(from, to); r != "" {
+			parts = append(parts, r)
+		}
+		return strings.Join(parts, "  ")
+	}
+	from, to := 0, len(tabs)
+	for to > cur+1 && runeWidth(line(from, to)) > width {
+		to--
+	}
+	for from < cur && runeWidth(line(from, to)) > width {
 		from++
 	}
-	line := strings.Join(items[from:], "  ")
-	if from > 0 {
-		line = pal.dim.Render("…") + " " + line
-	}
-	return truncate(line, width)
+	return truncate(line(from, to), width)
 }
 
 // ActivityRow is one row of the inbox: a project's header (Num 0) or one of its sessions.

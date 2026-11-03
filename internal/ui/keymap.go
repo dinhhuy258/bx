@@ -48,6 +48,7 @@ var keymapGroups = []keymapGroup{
 		{"projects", "open another project"},
 		{"prev_project", "previous open project"},
 		{"next_project", "next open project"},
+		{"project_1", "open project by its number in the tabs"},
 		{"close_project", "close · off this client, keeps running"},
 	}},
 	{"GENERAL", "", []keymapItem{
@@ -104,6 +105,16 @@ func Keymap(cfg *config.Config, width int) string {
 		}
 		for _, it := range g.items {
 			grouped[it.action] = true
+			if it.action == "project_1" { // the nine number keys on one line: "1…9"
+				for n := 2; n <= 9; n++ {
+					grouped[fmt.Sprintf("project_%d", n)] = true
+				}
+				first, last := cfg.Keys.First(cfg.Keys.List, "project_1"), cfg.Keys.First(cfg.Keys.List, "project_9")
+				if first != "" && last != "" {
+					b.lines = append(b.lines, line{config.Pretty(first) + "…" + config.Pretty(last), it.does})
+				}
+				continue
+			}
 			if k := keys(cfg.Keys.List[it.action]...); k != "" {
 				b.lines = append(b.lines, line{k, it.does})
 			}

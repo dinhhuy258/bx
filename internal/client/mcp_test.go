@@ -109,7 +109,7 @@ func TestSettingsMCPAddsAndRemoves(t *testing.T) {
 	}
 	h.press("k") // lab
 	h.press("BSpace")
-	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "remove MCP servers of lab (1 server)? y/n") {
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "Remove MCP servers?") || !strings.Contains(v, "1 server of lab") {
 		t.Fatalf("remove asks:\n%s", v)
 	}
 	h.press("y")

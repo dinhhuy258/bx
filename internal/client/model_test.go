@@ -461,17 +461,33 @@ func TestOpenedProjectsAreSavedAndRestored(t *testing.T) {
 	h := startIn(t, root, "", 120, 30, "running", "running")
 	h.press("o", "Enter") // home-network
 	h.press("o")
-	if items := ansi.Strip(h.m.View().Content); strings.Contains(items, "home-network") || !strings.Contains(items, "lab") {
-		t.Fatalf("the picker must leave out opened projects:\n%s", items)
+	if v := view(h); !strings.Contains(v, "OPEN HERE") || strings.Index(v, "◉ home-network") > strings.Index(v, "ON THE SERVER") || !strings.Contains(v, "○ lab") {
+		t.Fatalf("open projects come first:\n%s", v)
 	}
-	h.press("Enter") // lab, the only one left
+	h.press("Enter") // lab, the first one not open
 	h.press("[")     // back to home-network: shown last
 	h = startIn(t, root, "", 120, 30, "running", "running")
 	if h.m.project != "home-network" || strings.Join(h.m.opened.Projects, ",") != "home-network,lab" {
 		t.Fatalf("restored project=%q opened=%v", h.m.project, h.m.opened.Projects)
 	}
-	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "◉ home-network  ● lab") {
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "1 home-network  2 lab ●1") {
 		t.Fatalf("strip:\n%s", v)
+	}
+}
+
+func TestNumberKeysOpenProjectsByTheirTab(t *testing.T) {
+	h := start(t, 120, 30, "running", "running")
+	h.press("o", "Enter") // lab: tabs 1 home-network, 2 lab
+	if h.m.project != "lab" {
+		t.Fatal(h.m.project)
+	}
+	h.press("1")
+	if h.m.project != "home-network" {
+		t.Fatalf("1 opened %q", h.m.project)
+	}
+	h.press("2", "9") // 9: no such tab, nothing happens
+	if h.m.project != "lab" {
+		t.Fatalf("2 then 9 left %q", h.m.project)
 	}
 }
 
@@ -480,8 +496,8 @@ func TestCloseProject(t *testing.T) {
 	h := startIn(t, root, "", 120, 30, "running", "running")
 	h.press("o", "Enter", "o", "Enter") // home-network, then lab
 	h.press("X")
-	if bar := ansi.Strip(h.m.bar()); h.m.project != "lab" || !strings.Contains(bar, "close project lab? its sessions keep running on the server") {
-		t.Fatalf("X asks first: project=%q bar=%q", h.m.project, bar)
+	if v := view(h); h.m.project != "lab" || !strings.Contains(v, "Close project lab?") || !strings.Contains(v, "Its sessions keep running on the server.") {
+		t.Fatalf("X asks first: project=%q\n%s", h.m.project, v)
 	}
 	h.press("n")
 	if h.m.project != "lab" || len(h.m.opened.Projects) != 2 {
@@ -808,8 +824,8 @@ func TestPromptsCallTheBackend(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
 	h.press("k", "k") // session 1 → story s1 → chats
 	h.press("n")      // a new session in chats
-	if bar := ansi.Strip(h.m.bar()); len(h.opened) != 0 || !strings.Contains(bar, "New session in chats  /p/home-network   y start  n cancel") {
-		t.Fatalf("n on chats asks first: opened=%q bar=%q", h.opened, bar)
+	if v := view(h); len(h.opened) != 0 || !strings.Contains(v, "New session") || !strings.Contains(v, "in chats") || !strings.Contains(v, "/p/home-network") || !strings.Contains(v, "y  Start") {
+		t.Fatalf("n on chats asks first: opened=%q\n%s", h.opened, v)
 	}
 	h.press("y") // no title prompt: the chat opens and takes the focus
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
@@ -847,20 +863,25 @@ func TestNewStorySourcePicker(t *testing.T) {
 	}
 }
 
-func TestNewBranchPreviewAndTypePicker(t *testing.T) {
+func TestNewStoryForm(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.be.info = api.StoryInfo{Base: "origin/develop", LastType: "fix", Types: naming.Types}
 	h.newBranch()
-	if got := h.m.prompt.Label; got != "story name (fix/<name> ← origin/develop)" {
-		t.Fatalf("label = %q", got)
+	v := view(h)
+	for _, want := range []string{"New story", "Name", "Type", "[fix]", "Base    origin/develop", "Branch  fix/<name>"} {
+		if !strings.Contains(ansi.Strip(h.m.prompt.Dialog().Render(120, 30, true)), want) {
+			t.Errorf("no %q in the form:\n%s", want, v)
+		}
 	}
 	h.typeText("Login Timeout")
-	h.press("Enter")
-	v := ansi.Strip(h.m.View().Content)
-	if h.m.pickKind != pickStoryType || h.m.picker.Choice() != "fix" || !strings.Contains(v, "branch type · login-timeout") || !strings.Contains(v, "(none)") {
-		t.Fatalf("type picker:\n%s", v)
+	if !strings.Contains(view(h), "Branch  fix/login-timeout") {
+		t.Fatalf("the branch follows the name:\n%s", view(h))
 	}
-	h.press("Down", "Enter") // chore, after fix
+	h.press("Tab", "Right") // chore, after fix
+	if !strings.Contains(view(h), "Branch  chore/login-timeout") || h.m.prompt.Input != "Login Timeout" {
+		t.Fatalf("the type changes the branch:\n%s", view(h))
+	}
+	h.press("Enter")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories Login Timeout type=chore" {
 		t.Fatalf("actions = %q", got)
 	}
@@ -871,13 +892,9 @@ func TestNewBranchPreviewAndTypePicker(t *testing.T) {
 	h = start(t, 120, 30, "idle")
 	h.be.info = api.StoryInfo{Base: "main", LastType: "none", Types: naming.Types}
 	h.newBranch()
-	if got := h.m.prompt.Label; got != "story name (<name> ← main)" {
-		t.Fatalf("label = %q", got)
-	}
 	h.typeText("x")
-	h.press("Enter")
-	if h.m.picker.Choice() != "(none)" {
-		t.Fatalf("highlighted %q", h.m.picker.Choice())
+	if !strings.Contains(view(h), "Branch  x") {
+		t.Fatalf("no type, no prefix:\n%s", view(h))
 	}
 	h.press("Enter")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories x type=none" {
@@ -885,30 +902,30 @@ func TestNewBranchPreviewAndTypePicker(t *testing.T) {
 	}
 }
 
-func TestNewBranchWithSlashSkipsTheTypePicker(t *testing.T) {
+func TestNewBranchWithSlashIgnoresTheType(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.newBranch()
 	h.typeText("fix/x")
-	h.press("Enter")
-	if h.m.picker != nil {
-		t.Fatalf("no type picker for a full branch:\n%s", h.m.View().Content)
+	if !strings.Contains(view(h), "Branch  fix/x") {
+		t.Fatalf("a full branch is the branch:\n%s", view(h))
 	}
+	h.press("Enter")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories fix/x" {
 		t.Fatalf("actions = %q", got)
 	}
 }
 
-func TestNewBranchExistsAsksToUseIt(t *testing.T) {
+func TestNewBranchExistsSaysSoInTheForm(t *testing.T) {
 	for _, tc := range []struct{ exists, where string }{{"origin", "on origin"}, {"local", "locally"}, {"both", "locally and on origin"}} {
 		h := start(t, 160, 30, "idle")
 		h.be.exists = tc.exists
 		h.newBranch()
 		h.typeText("fix/login-timeout")
 		h.press("Enter")
-		if want := "branch fix/login-timeout exists " + tc.where + " · use it? y/n"; h.m.prompt.Kind != ui.PromptUseBranch || h.m.prompt.Label != want {
-			t.Fatalf("prompt %q, want %q", h.m.prompt.Label, want)
+		if want := "fix/login-timeout exists " + tc.where + " · ⏎ again starts the story on it"; h.m.prompt.Kind != ui.PromptNewStory || h.m.prompt.Note != want || h.m.prompt.Input != "fix/login-timeout" {
+			t.Fatalf("form note %q input %q, want %q", h.m.prompt.Note, h.m.prompt.Input, want)
 		}
-		h.press("y")
+		h.press("Enter")
 		if got := strings.Join(h.be.actions, "|"); got != "home-network stories fix/login-timeout|home-network stories fix/login-timeout use" {
 			t.Fatalf("actions = %q", got)
 		}
@@ -916,13 +933,23 @@ func TestNewBranchExistsAsksToUseIt(t *testing.T) {
 			t.Fatalf("opened = %q", h.opened)
 		}
 	}
+	// Esc sends nothing more; a changed name is a new try, not the branch that exists
 	h := start(t, 160, 30, "idle")
 	h.be.exists = "origin"
 	h.newBranch()
 	h.typeText("fix/x")
-	h.press("Enter", "n")
+	h.press("Enter", "Esc")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories fix/x" || len(h.opened) != 0 {
-		t.Fatalf("n sends nothing more: actions=%q opened=%q", got, h.opened)
+		t.Fatalf("esc sends nothing more: actions=%q opened=%q", got, h.opened)
+	}
+	h.newBranch()
+	h.typeText("fix/x")
+	h.press("Enter")
+	h.press("BSpace")
+	h.typeText("y")
+	h.press("Enter")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stories fix/x|home-network stories fix/x|home-network stories fix/y" {
+		t.Fatalf("a new name tries again: actions=%q", got)
 	}
 }
 
@@ -930,7 +957,7 @@ func TestNewStoryStreamsItsSessionAndFocusesClaude(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.newBranch()
 	h.typeText("login")
-	h.press("Enter", "Enter")
+	h.press("Enter")
 	if !h.m.claudeFocused || h.m.target.Num != 9 || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.target.Num, h.opened)
 	}
@@ -947,7 +974,7 @@ func TestNewStorySessionErrorKeepsTheStory(t *testing.T) {
 	h.be.sessionErr = "tmux: boom"
 	h.newBranch()
 	h.typeText("login")
-	h.press("Enter", "Enter")
+	h.press("Enter")
 	if h.m.flash != "Created login on feat/login · session: tmux: boom" || h.m.claudeFocused || len(h.opened) != 0 {
 		t.Fatalf("flash=%q focused=%v opened=%q", h.m.flash, h.m.claudeFocused, h.opened)
 	}
@@ -1180,7 +1207,7 @@ func TestCloseStoryAsksAgainWhenDirty(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.dirty = 2
 	h.press("k", "D") // from the story row
-	if !strings.Contains(h.m.View().Content, "close story s1") {
+	if !strings.Contains(view(h), "Close story s1?") {
 		t.Fatal(h.m.View().Content)
 	}
 	h.press("y")
@@ -1196,11 +1223,11 @@ func TestCloseStoryAsksAgainWhenDirty(t *testing.T) {
 func TestCloseStoryOnlyFromStoryRows(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("D") // the cursor starts on session 1
-	if h.m.prompt.Active() || strings.Contains(h.m.View().Content, "close story") {
+	if h.m.prompt.Active() || strings.Contains(view(h), "Close story") {
 		t.Fatalf("D on a session row must do nothing:\n%s", h.m.View().Content)
 	}
 	h.press("k", "D")
-	if !strings.Contains(h.m.View().Content, "close story s1") {
+	if !strings.Contains(view(h), "Close story s1?") {
 		t.Fatal(h.m.View().Content)
 	}
 }
@@ -1208,7 +1235,7 @@ func TestCloseStoryOnlyFromStoryRows(t *testing.T) {
 func TestStopAsksThenStops(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("s")
-	if !strings.Contains(h.m.View().Content, "stop [1] Add lease time? y/n") {
+	if v := view(h); !strings.Contains(v, "Stop [1]?") || !strings.Contains(v, "Add lease time") {
 		t.Fatal(h.m.View().Content)
 	}
 	h.press("y")
@@ -1230,7 +1257,7 @@ func TestStopAsksWhenNotAlive(t *testing.T) {
 		t.Fatal("session 1 should not be alive")
 	}
 	h.press("s")
-	if !strings.Contains(h.m.View().Content, "stop [1] Add lease time? y/n") || len(h.be.actions) != 0 {
+	if !strings.Contains(view(h), "Stop [1]?") || len(h.be.actions) != 0 {
 		t.Fatalf("actions=%q\n%s", h.be.actions, h.m.View().Content)
 	}
 	h.press("n")
@@ -1246,8 +1273,8 @@ func TestStopAsksWhenNotAlive(t *testing.T) {
 func TestNewSessionAsksFirst(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("n")
-	if bar := ansi.Strip(h.m.bar()); len(h.be.actions) != 0 || !strings.Contains(bar, "New session in s1") || !strings.Contains(bar, "y start  n cancel") {
-		t.Fatalf("actions=%q bar=%q", h.be.actions, bar)
+	if v := view(h); len(h.be.actions) != 0 || !strings.Contains(v, "in s1") || !strings.Contains(v, "y  Start") {
+		t.Fatalf("actions=%q\n%s", h.be.actions, v)
 	}
 	h.press("Esc")
 	if len(h.be.actions) != 0 || h.m.prompt.Active() {
@@ -1296,11 +1323,11 @@ func TestDeleteAsksTwiceWhenRunning(t *testing.T) {
 	h := start(t, 160, 30, "running")
 	h.be.running = map[int]bool{1: true}
 	h.press("d")
-	if !strings.Contains(h.m.View().Content, "delete [1] Add lease time? y/n") {
+	if v := view(h); !strings.Contains(v, "Delete [1]?") || !strings.Contains(v, "Add lease time") {
 		t.Fatal(h.m.View().Content)
 	}
 	h.press("y")
-	if !strings.Contains(h.m.View().Content, "[1] is still open · kill it and delete? y/n") {
+	if v := view(h); !strings.Contains(v, "[1] is still open") || !strings.Contains(v, "Kill it and delete its record?") {
 		t.Fatal(h.m.View().Content)
 	}
 	h.press("y")
@@ -1460,8 +1487,8 @@ func TestNewShellAsksThenOpens(t *testing.T) {
 	h := start(t, 200, 30, "running")
 	h.setShells(nil, map[string]string{"": "/p/home-network", "s1": "/w/s1"})
 	h.press("t") // on session 1 of s1
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "New shell $1 in s1  /w/s1   y open  n cancel") {
-		t.Fatalf("bar = %q", bar)
+	if v := view(h); !strings.Contains(v, "New shell $1") || !strings.Contains(v, "in s1") || !strings.Contains(v, "/w/s1") || !strings.Contains(v, "y  Open") {
+		t.Fatalf("view:\n%s", v)
 	}
 	h.press("n")
 	if len(h.be.actions) != 0 || h.m.prompt.Active() {
@@ -1485,8 +1512,8 @@ func TestNewShellAsksThenOpens(t *testing.T) {
 	}
 	h.press("C-h", "k", "k", "k") // $1 → session 1 → s1 → the chats row
 	h.press("t")
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "New shell $1 in chats  /p/home-network") {
-		t.Fatalf("bar = %q", bar)
+	if v := view(h); !strings.Contains(v, "New shell $1") || !strings.Contains(v, "in chats") || !strings.Contains(v, "/p/home-network") {
+		t.Fatalf("view:\n%s", v)
 	}
 	h.press("Enter") // Enter opens too
 	if got := strings.Join(h.opened, "|"); got != "home-network sh s1 1|home-network sh  1" {
@@ -1511,8 +1538,8 @@ func TestShellRowRenameAndClose(t *testing.T) {
 		t.Fatalf("actions = %q", got)
 	}
 	h.press("d")
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "Close shell $2 npm? npm is still running and will be killed.   y close  n cancel") {
-		t.Fatalf("bar = %q", bar)
+	if v := view(h); !strings.Contains(v, "Close shell $2?") || !strings.Contains(v, "npm is still running and will be killed.") || !strings.Contains(v, "y  Close") {
+		t.Fatalf("view:\n%s", v)
 	}
 	h.press("y")
 	if got := h.be.actions[len(h.be.actions)-1]; got != "home-network shells/close s1 $2" {
@@ -1525,8 +1552,8 @@ func TestShellRowRenameAndClose(t *testing.T) {
 		t.Fatalf("the cursor should move to the shell left: %+v", h.m.m.Selected())
 	}
 	h.press("d")
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "Close shell $1 zsh?") || strings.Contains(bar, "still running") {
-		t.Fatalf("bar = %q", bar)
+	if v := view(h); !strings.Contains(v, "Close shell $1?") || !strings.Contains(v, "zsh in s1") || strings.Contains(v, "still running") {
+		t.Fatalf("view:\n%s", v)
 	}
 	h.press("n")
 	if n := len(h.be.actions); n != 2 {
@@ -1677,8 +1704,8 @@ func TestCloseStoryCountsShells(t *testing.T) {
 	h.setShells([]api.Shell{{Story: "s1", K: 1, Command: "zsh"}, {Story: "s1", K: 2, Command: "npm"}}, nil)
 	h.m.m.SelectStory("s1")
 	h.press("D")
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "close story s1, stop its sessions and 2 shells and remove its worktree? y/n") {
-		t.Fatalf("bar = %q", bar)
+	if v := view(h); !strings.Contains(v, "Its sessions and 2 shells stop and its worktree is removed") {
+		t.Fatalf("view:\n%s", v)
 	}
 }
 
@@ -1686,7 +1713,7 @@ func TestProjectStripAndSwitchKeys(t *testing.T) {
 	h := start(t, 240, 30, "waiting", "running") // the key bar with the switch keys is about 230 columns
 	h.press("o", "Enter", "[")                   // open lab, then back to home-network
 	v := ansi.Strip(h.m.View().Content)
-	if !strings.Contains(v, "◉ home-network  ● lab") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "a inbox") {
+	if !strings.Contains(v, "1 home-network  2 lab ●1") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "a inbox") {
 		t.Fatalf("strip and key bar:\n%s", v)
 	}
 	h.press("]")
@@ -1818,7 +1845,7 @@ func TestSettingsEditsATextField(t *testing.T) {
 func TestSettingsEscAsksBeforeDiscarding(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("S", "l", "Esc")
-	if h.m.settings == nil || !strings.Contains(ansi.Strip(h.m.View().Content), "discard 1 change? y/n") {
+	if h.m.settings == nil || !strings.Contains(view(h), "Discard 1 change?") {
 		t.Fatalf("Esc with a change should ask:\n%s", ansi.Strip(h.m.View().Content))
 	}
 	h.press("n")
@@ -1853,13 +1880,13 @@ func workspace(h *harness) {
 func TestWorkspaceNewStoryPicksRepos(t *testing.T) {
 	h := start(t, 160, 30, "running")
 	workspace(h)
-	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "workspace · /p/home-network") || !strings.Contains(v, "api") {
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "workspace") || !strings.Contains(v, "api") {
 		t.Fatalf("view:\n%s", v)
 	}
 	h.be.info.LastType = "fix"
 	h.newBranch()
 	h.typeText("login")
-	h.press("Enter", "Enter") // the name, then fix, the last type
+	h.press("Enter") // the name, then fix, the last type
 	v := ansi.Strip(h.m.View().Content)
 	if h.m.picker == nil || !strings.Contains(v, "repositories of story login (branch fix/login)") || !strings.Contains(v, "[ ] libs/auth") {
 		t.Fatalf("no checklist:\n%s", v)
@@ -1937,8 +1964,8 @@ func TestCleanupChecklistAndConfirm(t *testing.T) {
 		}
 	}
 	h.press("Enter")
-	v = h.m.View().Content
-	if !strings.Contains(v, "Remove 1 item?") || !strings.Contains(v, "y remove") {
+	v = view(h)
+	if !strings.Contains(v, "Remove 1 item?") || !strings.Contains(v, "y  Remove") {
 		t.Fatal(v)
 	}
 	h.press("Esc")
@@ -2028,7 +2055,7 @@ func TestSettingsGitChangesAndRemovesAnOverride(t *testing.T) {
 	}
 	n := len(h.be.actions)
 	h.press("BSpace")
-	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "remove base override of lab (release/1.4)? y/n") {
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "Remove base override?") || !strings.Contains(v, "New stories in lab stop starting from release/1.4") {
 		t.Fatalf("Backspace should ask:\n%s", v)
 	}
 	h.press("n")

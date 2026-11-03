@@ -1,9 +1,6 @@
 package ui
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 	var p Prompt
@@ -20,7 +17,7 @@ func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 			t.Fatalf("%s: %v", k, r)
 		}
 	}
-	if p.Line() != "story name: gest▏  ⏎ ok · esc cancel" {
+	if p.Line() != "⏎ create · esc cancel" {
 		t.Fatal(p.Line())
 	}
 	if r := p.Key("Enter", ""); r != PromptSubmit || p.Active() || p.Input != "gest" {
@@ -33,75 +30,55 @@ func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 	if r := p.Key("Esc", ""); r != PromptCancel || p.Active() {
 		t.Fatal(r)
 	}
-	p.Open(PromptCloseStory, "s1", "close s1? y/n", "")
-	if p.Line() != "close s1? y/n: ▏  y close · any key cancels" {
+	p.Ask(PromptCloseStory, "s1", "Close story s1?")
+	if p.Line() != "y close · n cancel · ⏎ cancel · esc cancel" {
 		t.Fatal(p.Line())
+	}
+	if r := p.Key("x", "x"); r != PromptKeep || !p.Active() {
+		t.Fatal("a stray key does not answer a question:", r)
 	}
 	if r := p.Key("n", "n"); r != PromptCancel {
 		t.Fatal(r)
 	}
-	p.Open(PromptCloseStory, "s1", "close s1? y/n", "")
+	p.Ask(PromptCloseStory, "s1", "Close story s1?")
 	if r := p.Key("y", "y"); r != PromptSubmit || p.Target != "s1" {
 		t.Fatal(r)
 	}
 }
 
-func TestLifecyclePromptsAreYesNo(t *testing.T) {
-	for _, k := range []PromptKind{PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride} {
+func TestQuestionsEnterPicksTheDefault(t *testing.T) {
+	// Enter takes the action, unless the question loses something for good
+	for k, enter := range map[PromptKind]PromptResult{
+		PromptStop: PromptSubmit, PromptUseBranch: PromptSubmit, PromptRemoveOverride: PromptSubmit,
+		PromptNewShell: PromptSubmit, PromptNewSession: PromptSubmit, PromptCloseProject: PromptSubmit,
+		PromptDelete: PromptCancel, PromptDeleteForce: PromptCancel, PromptCloseStory: PromptCancel,
+		PromptCloseShell: PromptCancel, PromptDiscardSettings: PromptCancel,
+	} {
 		var p Prompt
-		p.Open(k, "1", "sure? y/n", "")
+		p.Ask(k, "1", "Sure?")
 		if !p.YesNo() {
 			t.Fatalf("kind %d is not y/n", k)
 		}
-		if r := p.Key("Enter", ""); r != PromptCancel {
-			t.Fatalf("kind %d: Enter gave %v, want cancel", k, r)
+		if r := p.Key("Enter", ""); r != enter {
+			t.Errorf("kind %d: Enter gave %v, want %v", k, r, enter)
 		}
-		p.Open(k, "1", "sure? y/n", "")
-		if r := p.Key("y", "y"); r != PromptSubmit || p.Target != "1" {
-			t.Fatalf("kind %d: y gave %v", k, r)
+		p.Ask(k, "1", "Sure?")
+		if r := p.Key("y", "y"); r != PromptSubmit || p.Target != "1" || p.Active() {
+			t.Errorf("kind %d: y gave %v", k, r)
+		}
+		for _, key := range []string{"n", "Esc"} {
+			p.Ask(k, "1", "Sure?")
+			if r := p.Key(key, key); r != PromptCancel || p.Active() {
+				t.Errorf("kind %d: %s gave %v, want cancel", k, key, r)
+			}
 		}
 	}
 	var p Prompt
-	p.Open(PromptUseBranch, "", "branch fix/x exists on origin · use it? y/n", "")
-	if p.Line() != "branch fix/x exists on origin · use it? y/n: ▏  y use · any key cancels" {
+	p.Ask(PromptUseBranch, "", "Branch exists", "fix/x exists on origin.")
+	if p.Line() != "y use branch · n cancel · ⏎ use branch · esc cancel" {
 		t.Fatal(p.Line())
 	}
-	p.Open(PromptRemoveOverride, "lab", "remove base override of lab (develop)? y/n", "")
-	if !strings.HasSuffix(p.Line(), "y remove · any key cancels") {
-		t.Fatal(p.Line())
-	}
-}
-
-func TestShellPrompts(t *testing.T) {
-	var p Prompt
-	p.Open(PromptNewShell, "s1/1", "New shell $1 in s1  /w", "")
-	if got, want := p.Line(), "New shell $1 in s1  /w   y open  n cancel"; got != want {
-		t.Fatalf("\n got %q\nwant %q", got, want)
-	}
-	for _, key := range []string{"Enter", "y"} {
-		p.Open(PromptNewShell, "s1/1", "New shell $1 in s1  /w", "")
-		if r := p.Key(key, key); r != PromptSubmit || p.Target != "s1/1" || p.Active() {
-			t.Fatalf("%s gave %v, want submit", key, r)
-		}
-	}
-	for _, key := range []string{"n", "Esc"} {
-		p.Open(PromptNewShell, "s1/1", "New shell $1 in s1  /w", "")
-		if r := p.Key(key, key); r != PromptCancel || p.Active() {
-			t.Fatalf("%s gave %v, want cancel", key, r)
-		}
-	}
-	p.Open(PromptCloseShell, "s1/1", "Close shell $1 zsh?", "")
-	if got, want := p.Line(), "Close shell $1 zsh?   y close  n cancel"; got != want {
-		t.Fatalf("\n got %q\nwant %q", got, want)
-	}
-	if r := p.Key("Enter", ""); r != PromptCancel {
-		t.Fatalf("Enter on close shell gave %v, want cancel", r)
-	}
-	p.Open(PromptCloseShell, "s1/1", "Close shell $1 zsh?", "")
-	if r := p.Key("y", "y"); r != PromptSubmit {
-		t.Fatalf("y gave %v", r)
-	}
-	p.Open(PromptRenameShell, "s1/1", "shell name (empty = command)", "dev")
+	p.Open(PromptRenameShell, "s1/1", "Name", "dev")
 	if p.YesNo() || p.Input != "dev" {
 		t.Fatal("rename shell is a text prompt with the old title")
 	}

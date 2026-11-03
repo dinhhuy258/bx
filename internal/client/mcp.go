@@ -221,9 +221,9 @@ func (m *Model) removeMCPKey() {
 	if n == 0 {
 		return
 	}
-	label := fmt.Sprintf("remove MCP servers of %s (%s)? y/n", scope, plural(n, "server", "servers"))
+	what := fmt.Sprintf("%s of %s", plural(n, "server", "servers"), scope)
 	if scope == "" {
-		label = fmt.Sprintf("remove the global MCP servers (%s)? y/n", plural(n, "server", "servers"))
+		what = plural(n, "global server", "global servers") + ", used by every project"
 	}
-	m.openPrompt(ui.PromptRemoveMCP, scope, label, "")
+	m.ask(ui.PromptRemoveMCP, scope, "Remove MCP servers?", what, "New sessions start without them.")
 }

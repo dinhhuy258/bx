@@ -6,7 +6,7 @@ import (
 
 // KeyName converts a Bubble Tea key press to the bx key names used in config.toml:
 // printable text as typed ("j", "Z", "?"), "Enter", "Esc", "Space", "Up", "Down",
-// "Left", "Right", "Tab", "PgUp", "PgDn", "C-x" for control keys and "M-x" for Alt (Option
+// "Left", "Right", "Tab", "S-Tab", "PgUp", "PgDn", "C-x" for control keys and "M-x" for Alt (Option
 // sends Alt only when the terminal treats it as Meta).
 func KeyName(k tea.KeyPressMsg) string {
 	if k.Mod.Contains(tea.ModAlt) {
@@ -30,6 +30,9 @@ func KeyName(k tea.KeyPressMsg) string {
 	case tea.KeyRight:
 		return "Right"
 	case tea.KeyTab:
+		if k.Mod.Contains(tea.ModShift) {
+			return "S-Tab"
+		}
 		return "Tab"
 	case tea.KeyBackspace:
 		return "BSpace"

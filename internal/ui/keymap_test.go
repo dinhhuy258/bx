@@ -23,12 +23,13 @@ func TestKeymapGroupsByWhatTheKeysActOn(t *testing.T) {
 		"d      close · kills what runs in it",
 		"X      close · off this client, keeps running",
 		"zM     my macro",
+		"1…9    open project by its number in the tabs",
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}
 	}
-	if strings.Contains(v, "the pages it made") || strings.Contains(v, "delete_session") {
+	if strings.Contains(v, "the pages it made") || strings.Contains(v, "delete_session") || strings.Contains(v, "project 2") {
 		t.Error(v)
 	}
 	if strings.Contains(v[:shell], "close · kills") {
