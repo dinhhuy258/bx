@@ -28,8 +28,8 @@ const (
 
 // Field is one setting. Key is the section id, a dot, then the field id. For a choice, ""
 // first means no value: the program's own default. A choice with a Default has no "": no value
-// means Default. A TUIOnly field and its value are left out of what the web client gets (see
-// Visible).
+// means Default. A TUIOnly field and its value are left out of what the web client gets, and a
+// WebReadOnly one is sent Locked (see Visible).
 type Field struct {
 	Key     string   `json:"key"`
 	Label   string   `json:"label"`
@@ -38,6 +38,9 @@ type Field struct {
 	Choices []string `json:"choices,omitempty"`
 	Default string   `json:"default,omitempty"`
 	TUIOnly bool     `json:"-"`
+	// WebReadOnly: the web client shows the field disabled (Locked) and may not change it.
+	WebReadOnly bool `json:"-"`
+	Locked      bool `json:"locked,omitempty"` // set by Visible for the web client
 }
 
 // Section is a group of fields, one entry on the left of the screen.
@@ -58,6 +61,13 @@ var Sections = []Section{{
 			Choices: []string{"", "low", "medium", "high", "xhigh", "max"}},
 		{Key: "claude.permission_mode", Label: "Permission mode", Kind: Choice, Help: "Permission mode: --permission-mode. default = Claude's own",
 			Choices: []string{"", "acceptEdits", "auto", "plan", "manual", "dontAsk", "bypassPermissions"}},
+	},
+}, {
+	ID: "mcp", Title: "MCP", Help: "For new and resumed sessions. Running ones keep what they started with.",
+	Fields: []Field{
+		{Key: "mcp.mode", Label: "Mode", Kind: Choice, Default: "merge", WebReadOnly: true,
+			Help:    "Mode: merge = your Claude servers + these · strict = only these (--strict-mcp-config) · off",
+			Choices: []string{"merge", "strict", "off"}},
 	},
 }, {
 	ID: "notifications", Title: "Notifications",
@@ -85,6 +95,7 @@ func Visible(tui bool, values map[string]string) ([]Section, map[string]string) 
 			if f.TUIOnly {
 				continue
 			}
+			f.Locked = f.WebReadOnly
 			fields = append(fields, f)
 			if v, ok := values[f.Key]; ok {
 				out[f.Key] = v
@@ -102,6 +113,12 @@ func Visible(tui bool, values map[string]string) ([]Section, map[string]string) 
 func TUIOnlyKey(key string) bool {
 	f, ok := field(key)
 	return ok && f.TUIOnly
+}
+
+// WebReadOnlyKey reports whether key is a WebReadOnly field.
+func WebReadOnlyKey(key string) bool {
+	f, ok := field(key)
+	return ok && f.WebReadOnly
 }
 
 func field(key string) (Field, bool) {

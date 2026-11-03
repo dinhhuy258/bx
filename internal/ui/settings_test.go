@@ -90,6 +90,7 @@ func TestSettingsTextField(t *testing.T) {
 		t.Fatal("a choice is not a text field")
 	}
 	s.Key("Tab") // git
+	s.Key("Tab") // mcp
 	s.Key("Tab") // notifications
 	s.Key("j")   // past Enabled
 	f, ok := s.TextField()
@@ -118,6 +119,7 @@ func TestSettingsNotificationsEnabled(t *testing.T) {
 	s := NewSettings("dev")
 	s.Load(settings.Sections, nil)
 	s.Key("Tab") // git
+	s.Key("Tab") // mcp
 	s.Key("Tab") // notifications
 	if f, ok := s.field(); !ok || f.Key != "notifications.enabled" {
 		t.Fatalf("first field = %v %v", f, ok)
@@ -152,6 +154,7 @@ func TestSettingsNotificationsGolden(t *testing.T) {
 	s := NewSettings("dev")
 	s.Load(settings.Sections, map[string]string{"notifications.ntfy_url": "https://ntfy.sh/bx-topic"})
 	s.Key("Tab") // git
+	s.Key("Tab") // mcp
 	s.Key("Tab") // notifications
 	got := s.Render(w, 14, true, "")
 	golden := "testdata/settings-notifications-120.txt"
