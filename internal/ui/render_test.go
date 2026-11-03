@@ -92,7 +92,7 @@ func TestKeyBar(t *testing.T) {
 	if got := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Session: 2}); got != "CLAUDE  ↑↓ move  ⏎ confirm  esc no  ^h to list" || strings.Contains(got, "1-3") {
 		t.Errorf("Claude bar while asking: %q", got)
 	}
-	for _, want := range []string{"s stop", "R rename", "X delete"} {
+	for _, want := range []string{"s stop", "R rename", "d delete"} {
 		if !strings.Contains(kb, want) {
 			t.Errorf("session bar missing %q: %s", want, kb)
 		}
@@ -104,7 +104,7 @@ func TestKeyBar(t *testing.T) {
 		t.Error("lifecycle keys come before the global keys:", kb)
 	}
 	m.SelectStory("guest-vlan-fix")
-	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "D close story") || strings.Contains(kb, "X delete") {
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "D close story") || strings.Contains(kb, "d delete") {
 		t.Error(kb)
 	}
 	m.SelectStory("zigbee-map-docs")
@@ -136,13 +136,13 @@ func TestKeyBar(t *testing.T) {
 	m.SetShells([]Shell{{Story: "guest-vlan-fix", K: 1, Command: "zsh"}}, nil)
 	m.SelectShell("guest-vlan-fix", 1)
 	kb = KeyBar(m, cfg, BarContext{})
-	for _, want := range []string{"⏎ open shell", "R rename", "X close shell", "t new shell"} {
+	for _, want := range []string{"⏎ open shell", "R rename", "d close shell", "t new shell"} {
 		if !strings.Contains(kb, want) {
 			t.Errorf("shell bar missing %q: %s", want, kb)
 		}
 	}
-	if strings.Contains(kb, "X delete") {
-		t.Error("X closes a shell, it deletes nothing:", kb)
+	if strings.Contains(kb, "d delete") {
+		t.Error("d closes a shell, it deletes nothing:", kb)
 	}
 	if got, want := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Shell: true}), "SHELL  type to run · exit closes it  ^h to list  M-c copy"; got != want {
 		t.Errorf("shell pane bar:\n got %q\nwant %q", got, want)

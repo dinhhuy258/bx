@@ -25,6 +25,8 @@ const (
 	PromptCloseShell     // y/n: close a shell, killing what runs in it (Target is "story/k")
 	PromptRenameShell    // a shell's new title, empty = its command (Target is "story/k")
 	PromptRemoveMCP      // y/n: remove the MCP servers of a scope (Target is the project, "" = global)
+	PromptNewSession     // y/n, Enter also starts: start a session (Target is the story, "" = a chat)
+	PromptCloseProject   // y/n: take the open project off this client's list (Target is the project)
 )
 
 // PromptResult is what a key did to the prompt.
@@ -58,7 +60,7 @@ func (p *Prompt) YesNo() bool {
 	switch p.Kind {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
 		PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride,
-		PromptNewShell, PromptCloseShell, PromptRemoveMCP:
+		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject:
 		return true
 	}
 	return false
@@ -73,7 +75,7 @@ func (p *Prompt) Key(key, text string) PromptResult {
 		p.Kind = PromptNone
 		return PromptCancel
 	case p.YesNo():
-		enter := p.Kind == PromptNewShell && key == "Enter"
+		enter := (p.Kind == PromptNewShell || p.Kind == PromptNewSession) && key == "Enter"
 		p.Kind = PromptNone
 		if key == "y" || enter {
 			return PromptSubmit
@@ -103,7 +105,7 @@ func oneLine(s string) string { return strings.NewReplacer("\r", "", "\n", "").R
 // Line is the key bar text while the prompt is open.
 func (p *Prompt) Line() string {
 	switch p.Kind {
-	case PromptNewShell, PromptCloseShell:
+	case PromptNewShell, PromptCloseShell, PromptNewSession:
 		return p.Label + "   y " + p.verb() + "  n cancel"
 	}
 	if p.YesNo() {
@@ -131,7 +133,9 @@ func (p *Prompt) verb() string {
 		return "remove"
 	case PromptNewShell:
 		return "open"
-	case PromptCloseShell:
+	case PromptNewSession:
+		return "start"
+	case PromptCloseShell, PromptCloseProject:
 		return "close"
 	}
 	return "yes"

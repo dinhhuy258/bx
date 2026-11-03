@@ -467,7 +467,15 @@ func TestCloseProject(t *testing.T) {
 	root := t.TempDir()
 	h := startIn(t, root, "", 120, 30, "running", "running")
 	h.press("o", "Enter", "o", "Enter") // home-network, then lab
-	h.press("x")
+	h.press("X")
+	if bar := ansi.Strip(h.m.bar()); h.m.project != "lab" || !strings.Contains(bar, "close project lab? its sessions keep running on the server") {
+		t.Fatalf("X asks first: project=%q bar=%q", h.m.project, bar)
+	}
+	h.press("n")
+	if h.m.project != "lab" || len(h.m.opened.Projects) != 2 {
+		t.Fatalf("n keeps it open: project=%q opened=%v", h.m.project, h.m.opened.Projects)
+	}
+	h.press("X", "y")
 	if h.m.project != "home-network" || strings.Join(h.m.opened.Projects, ",") != "home-network" {
 		t.Fatalf("project=%q opened=%v", h.m.project, h.m.opened.Projects)
 	}
@@ -475,7 +483,7 @@ func TestCloseProject(t *testing.T) {
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "lab") {
 		t.Fatalf("a closed project goes back to the picker:\n%s", v)
 	}
-	h.press("Esc", "x")
+	h.press("Esc", "X", "y")
 	if v := h.m.View().Content; h.m.project != "" || h.m.picker != nil || !strings.Contains(v, "No project open.") {
 		t.Fatalf("project=%q\n%s", h.m.project, v)
 	}
@@ -699,7 +707,11 @@ func TestPaneKeysPastTheEdgeGoToTmux(t *testing.T) {
 
 func TestPromptsCallTheBackend(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
-	h.press("c") // no title prompt: the chat opens and takes the focus
+	h.press("c")
+	if bar := ansi.Strip(h.m.bar()); len(h.opened) != 0 || !strings.Contains(bar, "New chat  /p/home-network   y start  n cancel") {
+		t.Fatalf("c asks first: opened=%q bar=%q", h.opened, bar)
+	}
+	h.press("y") // no title prompt: the chat opens and takes the focus
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a new chat should open and focus: %q", h.opened)
 	}
@@ -1110,6 +1122,45 @@ func TestStopAsksThenStops(t *testing.T) {
 	}
 }
 
+func TestStopAsksWhenNotAlive(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	snap := h.be.snaps["home-network"]
+	snap.Live.Agents = map[string]claude.Agent{} // its Claude is gone
+	h.be.snaps["home-network"] = snap
+	h.update(tickMsg(time.Now()))
+	if h.m.m.Alive(1) {
+		t.Fatal("session 1 should not be alive")
+	}
+	h.press("s")
+	if !strings.Contains(h.m.View().Content, "stop [1] Add lease time? y/n") || len(h.be.actions) != 0 {
+		t.Fatalf("actions=%q\n%s", h.be.actions, h.m.View().Content)
+	}
+	h.press("n")
+	if len(h.be.actions) != 0 {
+		t.Fatalf("n must not stop: %q", h.be.actions)
+	}
+	h.press("s", "y")
+	if got := strings.Join(h.be.actions, "|"); got != "home-network stop 1" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
+func TestNewSessionAsksFirst(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("n")
+	if bar := ansi.Strip(h.m.bar()); len(h.be.actions) != 0 || !strings.Contains(bar, "New session in s1") || !strings.Contains(bar, "y start  n cancel") {
+		t.Fatalf("actions=%q bar=%q", h.be.actions, bar)
+	}
+	h.press("Esc")
+	if len(h.be.actions) != 0 || h.m.prompt.Active() {
+		t.Fatalf("Esc cancels: %q", h.be.actions)
+	}
+	h.press("n", "Enter") // Enter also starts it
+	if got := strings.Join(h.be.actions, "|"); got != "home-network sessions s1" {
+		t.Fatalf("actions = %q", got)
+	}
+}
+
 func TestStopTheOpenSessionClosesItsStream(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("Enter", "C-h", "s", "y")
@@ -1146,7 +1197,7 @@ func TestDoneSessionRefusesEnterAndFocus(t *testing.T) {
 func TestDeleteAsksTwiceWhenRunning(t *testing.T) {
 	h := start(t, 160, 30, "running")
 	h.be.running = map[int]bool{1: true}
-	h.press("X")
+	h.press("d")
 	if !strings.Contains(h.m.View().Content, "delete [1] Add lease time? y/n") {
 		t.Fatal(h.m.View().Content)
 	}
@@ -1288,7 +1339,7 @@ func TestNarrowShowsOnePaneAtATime(t *testing.T) {
 
 func TestToolKeysExplainThemselves(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
-	h.press("d")
+	h.press("e")
 	if len(h.be.actions) != 0 || !strings.Contains(h.m.View().Content, "not available yet") {
 		t.Fatalf("actions=%q\n%s", h.be.actions, h.m.View().Content)
 	}
@@ -1360,7 +1411,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 2 {
 		t.Fatalf("selected %+v", h.m.m.Selected())
 	}
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "⏎ open shell") || !strings.Contains(bar, "X close shell") {
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "⏎ open shell") || !strings.Contains(bar, "d close shell") {
 		t.Fatalf("bar = %q", bar)
 	}
 	h.press("R")
@@ -1369,7 +1420,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 	if got := strings.Join(h.be.actions, "|"); got != "home-network shells/rename s1 api $2" {
 		t.Fatalf("actions = %q", got)
 	}
-	h.press("X")
+	h.press("d")
 	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "Close shell $2 npm? npm is still running and will be killed.   y close  n cancel") {
 		t.Fatalf("bar = %q", bar)
 	}
@@ -1383,7 +1434,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 1 {
 		t.Fatalf("the cursor should move to the shell left: %+v", h.m.m.Selected())
 	}
-	h.press("X")
+	h.press("d")
 	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "Close shell $1 zsh?") || strings.Contains(bar, "still running") {
 		t.Fatalf("bar = %q", bar)
 	}

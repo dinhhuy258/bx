@@ -63,11 +63,11 @@ func Default(root string) *Config {
 			List: map[string][]string{
 				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
 				"new_chat": {"c"}, "new_session": {"n"}, "new_story": {"w"},
-				"lazygit": {"d"}, "nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
+				"nvim": {"e"}, "shell": {"t"}, "prs": {"p"}, "keymap": {"?"},
 				"rename": {"R"}, "resume": {"r"}, "close_story": {"D"}, "add_repo": {"+"},
 				"inbox": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
-				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"x"},
-				"settings": {"S"}, "stop": {"s"}, "delete": {"X"}, "cleanup": {"C"}, "artifacts": {"v"},
+				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
+				"settings": {"S"}, "stop": {"s"}, "delete": {"d"}, "cleanup": {"C"}, "artifacts": {"v"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
@@ -137,6 +137,10 @@ func (r rawConfig) applyTo(c *Config) {
 // list): a config that binds one still works.
 var inboxWas = []string{"waiting", "activity"}
 
+// removedActions are list actions bx no longer has: a config that still binds one is ignored,
+// so its key does not stay bound to nothing.
+var removedActions = []string{"lazygit"}
+
 func applyBinds(dst map[string][]string, src map[string]bind) {
 	if _, ok := src["inbox"]; !ok {
 		var keys bind
@@ -147,7 +151,7 @@ func applyBinds(dst map[string][]string, src map[string]bind) {
 			src["inbox"] = keys
 		}
 	}
-	for _, old := range inboxWas {
+	for _, old := range append(inboxWas, removedActions...) {
 		delete(src, old)
 	}
 	for action, b := range src {

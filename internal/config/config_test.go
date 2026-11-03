@@ -30,6 +30,24 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if _, ok := c.Keys.List["activity"]; ok || c.Keys.First(c.Keys.List, "prev_project") != "[" || c.Keys.First(c.Keys.List, "next_project") != "]" {
 		t.Errorf("project keys: %+v", c.Keys.List)
 	}
+	if c.Keys.ListAction("X") != "close_project" || c.Keys.ListAction("d") != "delete" || c.Keys.ListAction("x") != "" {
+		t.Errorf("close_project/delete keys: %+v", c.Keys.List)
+	}
+}
+
+// lazygit was removed: a config that still binds it loads, and the key binds nothing.
+func TestRemovedLazygitBindIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[keys.list]\nlazygit = \"g\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := c.Keys.List["lazygit"]; ok || c.Keys.ListAction("g") != "" {
+		t.Fatalf("list keys: %+v", c.Keys.List)
+	}
 }
 
 func TestFileOverridesAndUnbind(t *testing.T) {

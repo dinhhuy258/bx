@@ -760,7 +760,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "next_project":
 		return m, m.stepProject(1)
 	case "close_project":
-		return m, m.closeProject()
+		m.openPrompt(ui.PromptCloseProject, m.project, fmt.Sprintf("close project %s? its sessions keep running on the server · y/n", m.project), "")
+		return m, nil
 	}
 	if m.activity {
 		return m, m.activityKey(action)
@@ -791,9 +792,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.enterClaude()
 		}
 	case "new_chat":
-		return m, m.newSession("")
+		m.askNewSession("")
 	case "new_session":
-		return m, m.newSession(row.Story)
+		m.askNewSession(row.Story)
 	case "new_story":
 		if m.busy == "" { // one story at a time: Esc cancels the one in progress
 			m.openStorySource()
@@ -810,9 +811,6 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "stop":
 		if sess != nil && !sess.Done {
-			if !m.m.Alive(num) {
-				return m, m.stop(num)
-			}
 			m.openPrompt(ui.PromptStop, strconv.Itoa(num), fmt.Sprintf("stop [%d] %s? y/n", num, sess.Title), "")
 		}
 	case "delete":
@@ -852,7 +850,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.openSettings()
 	case "shell":
 		m.askNewShell(row.Story)
-	case "lazygit", "nvim", "prs":
+	case "nvim", "prs":
 		m.setFlash(action + " is not available yet")
 	case "keymap":
 		m.showKeys = true
@@ -1318,6 +1316,15 @@ func (m *Model) create(p api.NewProject) tea.Cmd {
 	}
 }
 
+// askNewSession asks before starting a session in story ("" = a chat), naming its folder.
+func (m *Model) askNewSession(story string) {
+	label := "New chat  " + ui.ShortPath(m.m.Dir(story))
+	if story != "" {
+		label = fmt.Sprintf("New session in %s  %s", story, ui.ShortPath(m.m.Dir(story)))
+	}
+	m.openPrompt(ui.PromptNewSession, story, label, "")
+}
+
 // newSession starts a session in story ("" = a chat) with no title: bx serve names it after
 // the first prompt. A chat takes the focus, so the prompt can be typed right away.
 func (m *Model) newSession(story string) tea.Cmd {
@@ -1368,6 +1375,13 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	case ui.PromptNewShell:
 		story, _ := parseShellKey(target)
 		return m.newShell(story)
+	case ui.PromptNewSession:
+		return m.newSession(target)
+	case ui.PromptCloseProject:
+		if target != m.project { // the project changed under the prompt
+			return nil
+		}
+		return m.closeProject()
 	case ui.PromptCloseShell:
 		return m.closeShell(parseShellKey(target))
 	case ui.PromptRenameShell:
