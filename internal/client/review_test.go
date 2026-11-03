@@ -69,7 +69,7 @@ func TestReviewEmptyCommentDeletes(t *testing.T) {
 func TestReviewConflictReloads(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.be.review = reviewFixture()
-	h.be.reviewErr = &StatusError{Code: 409, Text: "Comments changed on another device"}
+	h.be.reviewErr = &StatusError{Code: 409, Text: "comments changed on another device"}
 	h.press("k", "G", "j", "c")
 	h.typeText("x")
 	h.press("Enter")

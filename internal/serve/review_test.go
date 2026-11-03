@@ -111,7 +111,7 @@ func TestSendPastesIntoARunningSessionAndMarksSent(t *testing.T) {
 		t.Fatalf("not marked sent: %+v", c)
 	}
 	// round 2: nothing unsent is left
-	if res, code := postStatus(t, ts.URL+reviewPath+"/send", api.ReviewSend{Session: 1}); code != http.StatusConflict || res.Error != "Nothing to send" {
+	if res, code := postStatus(t, ts.URL+reviewPath+"/send", api.ReviewSend{Session: 1}); code != http.StatusConflict || res.Error != "nothing to send" {
 		t.Fatalf("resend: %d %+v", code, res)
 	}
 	// a sent comment can't be edited
