@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Kind is how a field is edited: a choice from a list, or a line of text. Toggle comes when a
@@ -24,7 +26,15 @@ type Kind string
 const (
 	Choice Kind = "choice"
 	Text   Kind = "text" // an http:// or https:// URL; "" is off
+	Line   Kind = "line" // one line of free text, at most MaxLine runes; "" is not set
 )
+
+// MaxLine is the longest Line value, in runes.
+const MaxLine = 200
+
+// Typed reports whether the field is edited by typing its value (Text or Line), not by
+// stepping through choices.
+func (k Kind) Typed() bool { return k == Text || k == Line }
 
 // Field is one setting. Key is the section id, a dot, then the field id. For a choice, ""
 // first means no value: the program's own default. A choice with a Default has no "": no value
@@ -41,6 +51,9 @@ type Field struct {
 	// WebReadOnly: the web client shows the field disabled (Locked) and may not change it.
 	WebReadOnly bool `json:"-"`
 	Locked      bool `json:"locked,omitempty"` // set by Visible for the web client
+	// Claude is the path in Claude's settings.json the value is sent as, in the session's
+	// --settings, such as "attribution.commit"; "" is a setting bx uses itself. See ClaudeValue.
+	Claude string `json:"-"`
 }
 
 // Section is a group of fields, one entry on the left of the screen.
@@ -53,7 +66,8 @@ type Section struct {
 
 // Sections is every setting, in screen order.
 var Sections = []Section{{
-	ID: "claude", Title: "Claude", Help: "For new sessions. Running and resumed ones keep what they started with.",
+	ID: "claude", Title: "Claude",
+	Help: "For new sessions. A resumed one keeps its model, effort and permission mode.",
 	Fields: []Field{
 		{Key: "claude.model", Label: "Model", Kind: Choice, Help: "Model: --model. default = Claude's own",
 			Choices: []string{"", "opus", "sonnet", "haiku", "fable"}},
@@ -61,6 +75,16 @@ var Sections = []Section{{
 			Choices: []string{"", "low", "medium", "high", "xhigh", "max"}},
 		{Key: "claude.permission_mode", Label: "Permission mode", Kind: Choice, Help: "Permission mode: --permission-mode. default = Claude's own",
 			Choices: []string{"", "acceptEdits", "auto", "plan", "manual", "dontAsk", "bypassPermissions"}},
+		{Key: "claude.commit", Label: "Commit trailer", Kind: Choice, TUIOnly: true, Claude: "attribution.commit",
+			Help:    "Commit trailer: attribution.commit. default = Claude's own Co-Authored-By · none = no trailer · custom = Commit text",
+			Choices: []string{"", "none", "custom"}},
+		{Key: "claude.commit_text", Label: "Commit text", Kind: Line, TUIOnly: true,
+			Help: "Commit text: the commit trailer when Commit trailer is custom, e.g. Co-Authored-By: Claude <noreply@anthropic.com>"},
+		{Key: "claude.pr", Label: "PR line", Kind: Choice, TUIOnly: true, Claude: "attribution.pr",
+			Help:    "PR line: attribution.pr. default = Claude's own \"Generated with Claude Code\" · none = no line · custom = PR text",
+			Choices: []string{"", "none", "custom"}},
+		{Key: "claude.pr_text", Label: "PR text", Kind: Line, TUIOnly: true,
+			Help: "PR text: the line at the end of a pull request description when PR line is custom"},
 	},
 }, {
 	ID: "mcp", Title: "MCP", Help: "For new and resumed sessions. Running ones keep what they started with.",
@@ -109,6 +133,53 @@ func Visible(tui bool, values map[string]string) ([]Section, map[string]string) 
 	return secs, out
 }
 
+// ClaudeSettings is the JSON object of every field with a Claude path whose value is set, for a
+// session's --settings: "attribution.commit" becomes {"attribution": {"commit": …}}. A field at
+// its default is left out, so Claude's own settings files decide it.
+func ClaudeSettings(values map[string]string) map[string]any {
+	out := map[string]any{}
+	for _, s := range Sections {
+		for _, f := range s.Fields {
+			if f.Claude == "" {
+				continue
+			}
+			v, ok := ClaudeValue(f, values)
+			if !ok {
+				continue
+			}
+			m := out
+			parts := strings.Split(f.Claude, ".")
+			for _, p := range parts[:len(parts)-1] {
+				next, ok := m[p].(map[string]any)
+				if !ok {
+					next = map[string]any{}
+					m[p] = next
+				}
+				m = next
+			}
+			m[parts[len(parts)-1]] = v
+		}
+	}
+	return out
+}
+
+// ClaudeValue is the value field f sends to Claude, and false when it sends none. "" (the
+// default) sends none; "none" sends "" (Claude hides the line); "custom" sends the text of the
+// field <key>_text, or none when that is empty.
+func ClaudeValue(f Field, values map[string]string) (any, bool) {
+	switch v := values[f.Key]; v {
+	case "":
+		return nil, false
+	case "none":
+		return "", true
+	case "custom":
+		text := values[f.Key+"_text"]
+		return text, text != ""
+	default:
+		return v, true
+	}
+}
+
 // TUIOnlyKey reports whether key is a TUIOnly field.
 func TUIOnlyKey(key string) bool {
 	f, ok := field(key)
@@ -134,6 +205,7 @@ func field(key string) (Field, bool) {
 
 // Validate checks value for key. "" (the default) is always valid. A text value must be an
 // absolute http:// or https:// URL; its error does not repeat the value, which may be a secret.
+// A line value is one line of printable text, at most MaxLine runes.
 func Validate(key, value string) error {
 	f, ok := field(key)
 	if !ok {
@@ -146,6 +218,15 @@ func Validate(key, value string) error {
 		u, err := url.Parse(value)
 		if err != nil || strings.ContainsAny(value, " \t\r\n") || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return fmt.Errorf("%s: want an http:// or https:// URL", key)
+		}
+		return nil
+	}
+	if f.Kind == Line {
+		if !utf8.ValidString(value) || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+			return fmt.Errorf("%s: want one line of text", key)
+		}
+		if n := utf8.RuneCountInString(value); n > MaxLine {
+			return fmt.Errorf("%s: %d characters, at most %d", key, n, MaxLine)
 		}
 		return nil
 	}

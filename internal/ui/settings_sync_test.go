@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dinhhuy258/bx/internal/settings"
 )
 
 func sampleSync() SyncData {
@@ -47,6 +49,9 @@ func syncSettings() *Settings {
 	return s
 }
 
+// claudeFields is the number of fields in the Claude section, above its sync list.
+var claudeFields = len(settings.Sections[0].Fields)
+
 // to moves the cursor down n rows from the first field.
 func to(s *Settings, n int) {
 	for range 10 {
@@ -81,7 +86,7 @@ func golden(t *testing.T, name, got string, w int) {
 
 func TestSettingsSyncGolden(t *testing.T) {
 	s := syncSettings()
-	to(s, 4) // skills/brainstorm
+	to(s, claudeFields+1) // skills/brainstorm
 	golden(t, "settings-sync-120", s.Render(120, 30, true, ""), 120)
 	golden(t, "settings-sync-40", s.Render(40, 30, true, ""), 40)
 	s.Key("s")
@@ -94,9 +99,7 @@ func TestSettingsSyncGolden(t *testing.T) {
 
 func TestSettingsSyncFoldsAndCursor(t *testing.T) {
 	s := sampleSettings()
-	s.Key("j")
-	s.Key("j")
-	s.Key("j")
+	to(s, claudeFields)
 	if _, ok := s.syncRow(); ok {
 		t.Fatal("no list before the first scan: the cursor stays on the last field")
 	}
@@ -109,7 +112,7 @@ func TestSettingsSyncFoldsAndCursor(t *testing.T) {
 		}
 	}
 	s.SetSync(sampleSync(), allBut(sampleSync()))
-	to(s, 3)
+	to(s, claudeFields)
 	if r, ok := s.syncRow(); !ok || r.folder != "skills" || r.item >= 0 {
 		t.Fatalf("j past the last field: %+v %v", r, ok)
 	}
@@ -146,7 +149,7 @@ func TestSettingsSyncSelect(t *testing.T) {
 	if got, want := s.SyncChanges(), 6; got != want { // rules/a, brainstorm, old-skill, plan, quick-build, rails-console
 		t.Fatalf("changes = %d, want %d", got, want)
 	}
-	to(s, 3) // the skills folder
+	to(s, claudeFields) // the skills folder
 	if s.Key("Space") != SettingsSelect {
 		t.Fatal("space on a folder selects")
 	}
@@ -170,7 +173,7 @@ func TestSettingsSyncSelect(t *testing.T) {
 		t.Fatalf("all %q:\n%s", s.SyncInclude(), got)
 	}
 	// the error item can't be checked
-	to(s, 5) // skills/linked
+	to(s, claudeFields+2) // skills/linked
 	if r, _ := s.syncRow(); s.sync.data.Items[r.item].Name != "skills/linked" {
 		t.Fatalf("row %+v", r)
 	}
@@ -204,7 +207,7 @@ func TestSettingsSyncOptIn(t *testing.T) {
 	if strings.Contains(got, "[x]") {
 		t.Fatalf("a box is checked:\n%s", got)
 	}
-	to(s, 3)
+	to(s, claudeFields)
 	if s.Key("s") != SettingsNothingSelected || s.sync.confirm {
 		t.Fatal("s with nothing selected")
 	}
@@ -316,7 +319,7 @@ func TestSettingsSyncWindow(t *testing.T) {
 			items = append(items, SyncItem{Name: "skills/s" + string(rune('a'+i)), Status: "new"})
 		}
 		s.SetSync(SyncData{Items: items}, allBut(SyncData{Items: items}))
-		to(s, 3+1+20) // skills/su
+		to(s, claudeFields+1+20) // skills/su
 		got := s.Render(w, 24, true, "")
 		lines := strings.Split(got, "\n")
 		if len(lines) != 24 {

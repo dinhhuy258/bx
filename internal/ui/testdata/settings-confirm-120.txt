@@ -1,7 +1,7 @@
 bx settings                                                                                                          dev
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
-   Git               │ For new sessions. Running and resumed ones keep what they started with.
+   Git               │ For new sessions. A resumed one keeps its model, effort and permission mode.
    MCP               │
    Notifications     │   ╭────────────────────────────────────────────────────────────╮
                      │   │ Sync 4 changes to bx serve?                                │

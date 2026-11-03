@@ -28,9 +28,15 @@ func TestSettingsStepMarksAndUnmarksChanges(t *testing.T) {
 	if s.Changes()["claude.model"] != "fable" {
 		t.Fatalf("changes = %v", s.Changes())
 	}
-	s.Key("j")
-	s.Key("j")
-	s.Key("j") // stays on the last field
+	for range 20 {
+		s.Key("j")
+	}
+	if f, ok := s.field(); !ok || f.Key != "claude.pr_text" {
+		t.Fatalf("j stops on the last field, not %v", f)
+	}
+	for range 4 {
+		s.Key("k")
+	}
 	s.Key("l")
 	if s.Changes()["claude.permission_mode"] != "auto" {
 		t.Fatalf("changes = %v", s.Changes())
@@ -177,5 +183,27 @@ func TestSettingsNotificationsGolden(t *testing.T) {
 	}
 	if !strings.Contains(got, "not set") || !strings.Contains(got, "https://ntfy.sh/bx-topic") {
 		t.Fatal(got)
+	}
+}
+
+func TestSettingsLineField(t *testing.T) {
+	s := NewSettings("dev")
+	s.Load(settings.Sections, map[string]string{"claude.commit": "custom", "claude.commit_text": "Co-Authored-By: Huy"})
+	for range 3 { // model, effort, permission mode
+		s.Key("j")
+	}
+	if f, ok := s.field(); !ok || f.Key != "claude.commit" || s.Key("Enter") != SettingsSave {
+		t.Fatalf("the commit trailer is a choice: %v", f)
+	}
+	s.Key("j")
+	f, ok := s.TextField()
+	if !ok || f.Key != "claude.commit_text" || s.Key("Enter") != SettingsEdit {
+		t.Fatalf("the commit text is typed: %v %v", f, ok)
+	}
+	v := s.Render(120, 40, true, "")
+	for _, want := range []string{"Commit trailer", "custom", "Co-Authored-By: Huy", "PR text", "not set"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("no %q in\n%s", want, v)
+		}
 	}
 }

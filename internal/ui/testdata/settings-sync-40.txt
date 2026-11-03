@@ -5,6 +5,10 @@ bx settings                          dev
    Model         ◂ default           ▸
    Effort        ◂ default           ▸
    Permission …  ◂ acceptEdits       ▸
+   Commit trai…  ◂ default           ▸
+   Commit text   not set
+   PR line       ◂ default           ▸
+   PR text       not set
 
  Sync to bx serve  Mac /Users/me/.claud…
    ▾ [-] skills         +1 ~2 −1
@@ -16,15 +20,11 @@ bx settings                          dev
        [ ] rails-cons…  not synced
        [x] systematic…  = same  skipped…
    ▾ [x] agents         up to date (2)
-       [x] reviewer.md  = same
-       [x] sub          = same
-   ▾ [x] commands       up to date (1)
-       [x] c.md         = same
-     … 3 more
+     … 7 more
 
  3 server-only items kept
 
- For new sessions. Running and resumed
- ones keep what they started with.
+ For new sessions. A resumed one keeps
+ its model, effort and permission mode.
  space select · h/l fold · s sync… · r
  refresh

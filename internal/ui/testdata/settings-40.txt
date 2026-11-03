@@ -5,9 +5,10 @@ bx settings                          dev
  › Model         ◂ opus              ▸ •
    Effort        ◂ default           ▸
    Permission …  ◂ acceptEdits       ▸
+   Commit trai…  ◂ default           ▸
+   Commit text   not set
+   PR line       ◂ default           ▸
+   PR text       not set
 
- For new sessions. Running and resumed
- ones keep what they started with.
- Model: --model. default = Claude's own
-
-
+ For new sessions. A resumed one keeps
+ its model, effort and permission mode.

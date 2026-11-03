@@ -1,15 +1,19 @@
 bx settings                                                                                                          dev
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
-   Git               │ For new sessions. Running and resumed ones keep what they started with.
+   Git               │ For new sessions. A resumed one keeps its model, effort and permission mode.
    MCP               │
    Notifications     │    Model            ◂ default           ▸
                      │    Effort           ◂ default           ▸
                      │    Permission mode  ◂ acceptEdits       ▸
+                     │    Commit trailer   ◂ default           ▸
+                     │  › Commit text      not set
+                     │    PR line          ◂ default           ▸
+                     │    PR text          not set
                      │
                      │  Sync to bx serve  Mac /Users/me/.claude → /home/bx/.claude · checked 22:41
                      │    ▾ [ ] skills                  not synced (7)
-                     │  ›     [ ] brainstorm            not synced
+                     │        [ ] brainstorm            not synced
                      │        [ ] linked                skills/linked: refusing to write through a symlink
                      │        [ ] old-skill             not synced
                      │        [ ] plan                  not synced
@@ -18,13 +22,9 @@ bx settings                                                                     
                      │        [ ] systematic-debugging  not synced  skipped a\b.md: bad name
                      │    ▾ [ ] agents                  not synced (2)
                      │        [ ] reviewer.md           not synced
-                     │        [ ] sub                   not synced
-                     │    ▾ [ ] commands                not synced (1)
-                     │        [ ] c.md                  not synced
-                     │    ▾ [ ] rules                   not synced (2)
-                     │        [ ] a.md                  not synced
-                     │        [ ] b.md                  not synced
+                     │      … 6 more
                      │
                      │  3 server-only items kept
                      │
-                     │ space select · h/l fold · s sync… · r refresh
+                     │ Commit text: the commit trailer when Commit trailer is custom, e.g. Co-Authored-By: Claude
+                     │ <noreply@anthropic.com>

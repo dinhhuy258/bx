@@ -111,10 +111,10 @@ func (s *Settings) field() (settings.Field, bool) {
 	return fs[s.fld], true
 }
 
-// TextField is the field under the cursor if it is a text field.
+// TextField is the field under the cursor if it is edited by typing (a URL or a line).
 func (s *Settings) TextField() (settings.Field, bool) {
 	f, ok := s.field()
-	if !ok || f.Kind != settings.Text {
+	if !ok || !f.Kind.Typed() {
 		return settings.Field{}, false
 	}
 	return f, true
@@ -331,7 +331,7 @@ func (s *Settings) fieldLines(w int, pal palette) []string {
 		cursor, label := " ", truncate(f.Label, labelW)
 		label += strings.Repeat(" ", max(labelW-runeWidth(label), 0))
 		var value string
-		if f.Kind == settings.Text {
+		if f.Kind.Typed() {
 			v := s.value(f.Key)
 			if v == "" {
 				v = "not set"

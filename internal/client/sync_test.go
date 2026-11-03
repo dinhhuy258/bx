@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/dinhhuy258/bx/internal/api"
+	"github.com/dinhhuy258/bx/internal/settings"
 )
 
 // macFile writes rel under the test's Claude config dir (a temp dir set by startIn).
@@ -81,11 +82,20 @@ func TestSyncListOnOpen(t *testing.T) {
 	}
 }
 
+// toSync opens the settings and moves past the Claude section's fields to its sync list.
+func toSync() []string {
+	keys := []string{"S"}
+	for range settings.Sections[0].Fields {
+		keys = append(keys, "j")
+	}
+	return keys
+}
+
 func TestSyncSelectionIsSaved(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
 	h.m.opened.Projects, h.m.opened.Current = []string{"lab"}, "lab" // kept as they are by the save
-	h.press("S", "j", "j", "j")                                      // the skills folder
+	h.press(toSync()...)                                             // the skills folder
 	h.press("j", " ")                                                // skills/a
 	o := loadOpened(root)
 	if want := []string{"agents/b.md", "agents/x.md", "skills/a", "skills/gone"}; !reflect.DeepEqual(o.SyncInclude, want) || !reflect.DeepEqual(o.Projects, []string{"lab"}) || o.Current != "lab" {
@@ -110,7 +120,7 @@ func TestSyncSelectionIsSaved(t *testing.T) {
 func TestSyncSeedsOnlyOnce(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
-	h.press("S", "j", "j", "j") // the skills folder: [-], a unchecked, gone checked
+	h.press(toSync()...)        // the skills folder: [-], a unchecked, gone checked
 	h.press(" ", " ")           // all, then none
 	h.press("j", "j", "j", " ") // the agents folder: [x] → none
 	v := view(h)
@@ -141,7 +151,7 @@ func TestSyncSeedsOnlyOnce(t *testing.T) {
 func TestSyncFoldsResetOnOpen(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
-	h.press("S", "j", "j", "j", "h") // fold skills
+	h.press(append(toSync(), "h")...) // fold skills
 	if v := view(h); !strings.Contains(v, "▸ [-] skills") || strings.Contains(v, "gone") {
 		t.Fatalf("h folds:\n%s", v)
 	}

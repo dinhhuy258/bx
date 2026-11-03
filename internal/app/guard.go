@@ -25,10 +25,14 @@ func statusLine(self string) map[string]any {
 	return map[string]any{"type": "command", "command": shellJoin([]string{self, "statusline"})}
 }
 
-// settingsJSON is a session's --settings: the guard hooks, the artifacts permissions and the
-// status line, each left out when nil; "" when all are.
-func settingsJSON(hooks, permissions, status map[string]any) string {
+// settingsJSON is a session's --settings: the user's Claude settings from the settings screen
+// (base, see settings.ClaudeSettings), then bx's guard hooks, artifacts permissions and status
+// line on top, each left out when nil; "" when all are empty.
+func settingsJSON(base, hooks, permissions, status map[string]any) string {
 	m := map[string]any{}
+	for k, v := range base {
+		m[k] = v
+	}
 	if hooks != nil {
 		m["hooks"] = hooks
 	}

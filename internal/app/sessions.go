@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dinhhuy258/bx/internal/claude"
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/uploads"
 )
@@ -95,7 +96,9 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 // session gets the bx status line, and a session of a workspace story also gets the guard hook,
 // which keeps edits out of the original repositories.
 // With PluginDir set, every session also gets its artifacts folder (see artifacts.go).
-// Every session also gets the MCP servers of its project and of ~/.bx/mcp.json (see mcp.go).
+// Every session also gets the MCP servers of its project and of ~/.bx/mcp.json (see mcp.go),
+// and the Claude settings of the settings screen as they are now, so a resumed session takes
+// today's attribution while it keeps its own model, effort and permission mode.
 func (a *App) options(p *state.Project, num int, s *state.Session) claude.Options {
 	o := claude.Options{Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
 	var hooks, perms, status map[string]any
@@ -114,7 +117,7 @@ func (a *App) options(p *state.Project, num int, s *state.Session) claude.Option
 		perms = artifactPermissions(dir)
 	}
 	o.MCPConfig, o.StrictMCPConfig = a.sessionMCP(p, num)
-	o.Settings = settingsJSON(hooks, perms, status)
+	o.Settings = settingsJSON(settings.ClaudeSettings(a.Settings.Values()), hooks, perms, status)
 	return o
 }
 

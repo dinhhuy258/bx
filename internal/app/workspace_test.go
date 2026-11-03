@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
@@ -277,5 +278,27 @@ func TestWorkspaceSessionGetsGuard(t *testing.T) {
 	both := a.options(p, 1, &state.Session{Story: "login"})
 	if !strings.Contains(both.Settings, `"PreToolUse"`) || !strings.Contains(both.Settings, `"permissions"`) {
 		t.Fatalf("guard and artifacts not merged: %q", both.Settings)
+	}
+}
+
+func TestSessionGetsClaudeSettings(t *testing.T) {
+	a, p := newWorkspace(t)
+	var err error
+	if a.Settings, err = settings.Open(filepath.Join(t.TempDir(), "settings.json"), func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.options(p, 1, &state.Session{}).Settings; got != "" {
+		t.Fatalf("nothing set, no bx binary: %q", got)
+	}
+	if err := a.Settings.Set(map[string]string{"claude.commit": "none", "claude.pr": "custom", "claude.pr_text": "Made with bx"}); err != nil {
+		t.Fatal(err)
+	}
+	const want = `"attribution":{"commit":"","pr":"Made with bx"}`
+	if got := a.options(p, 1, &state.Session{}).Settings; got != "{"+want+"}" {
+		t.Fatalf("alone: %q", got)
+	}
+	a.Self = "/usr/local/bin/bx"
+	if got := a.options(p, 1, &state.Session{}).Settings; !strings.Contains(got, want) || !strings.Contains(got, `"statusLine"`) {
+		t.Fatalf("with the status line: %q", got)
 	}
 }
