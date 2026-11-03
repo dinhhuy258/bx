@@ -492,7 +492,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // gotProjects stores the project list and drops opened projects the server no longer has. The
 // first reply opens the project to start with: the one asked for, else the one shown last, else
-// the first opened one. With none opened the list stays empty until o opens one.
+// the first opened one. With none opened the list stays empty until O opens one.
 func (m *Model) gotProjects(msg projectsMsg) tea.Cmd {
 	if msg.err != nil {
 		m.setFlash("error: " + msg.err.Error())
@@ -886,8 +886,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // listAction is the list action of key for the selected row. One key can serve actions of
-// different rows (d: delete_session on a session, close_shell on a shell); the one for another
-// kind of row loses.
+// different rows (D: delete_session on a session, close_shell on a shell, close_story on a
+// story); the one for another kind of row loses.
 func (m *Model) listAction(key string) string {
 	actions := m.cfg.Keys.ListActions(key)
 	if len(actions) < 2 || m.activity {
@@ -895,9 +895,11 @@ func (m *Model) listAction(key string) string {
 	}
 	_, onShell := m.m.SelectedShell()
 	num, _ := m.m.SelectedSession()
+	onStory := m.m.Selected().Kind == ui.RowStory
 	for _, a := range actions {
 		switch {
-		case a == "close_shell" && !onShell, (a == "delete_session" || a == "stop_session") && num == 0:
+		case a == "close_shell" && !onShell, (a == "delete_session" || a == "stop_session") && num == 0,
+			a == "close_story" && !onStory:
 			continue
 		}
 		return a

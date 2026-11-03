@@ -49,7 +49,7 @@ func syncStart(t *testing.T, root string) *harness {
 func TestSyncListOnOpen(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
-	h.press("S")
+	h.press("P")
 	if len(h.be.planReqs) != 1 {
 		t.Fatalf("plan requests = %d", len(h.be.planReqs))
 	}
@@ -85,7 +85,7 @@ func TestSyncSelectionIsSaved(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
 	h.m.opened.Projects, h.m.opened.Current = []string{"lab"}, "lab" // kept as they are by the save
-	h.press("S", "j", "j", "j")                                      // the skills folder
+	h.press("P", "j", "j", "j")                                      // the skills folder
 	h.press("j", " ")                                                // skills/a
 	o := loadOpened(root)
 	if want := []string{"agents/b.md", "agents/x.md", "skills/a", "skills/gone"}; !reflect.DeepEqual(o.SyncInclude, want) || !reflect.DeepEqual(o.Projects, []string{"lab"}) || o.Current != "lab" {
@@ -100,7 +100,7 @@ func TestSyncSelectionIsSaved(t *testing.T) {
 	}
 	// a new client remembers it
 	h2 := syncStart(t, root)
-	h2.press("S")
+	h2.press("P")
 	if v := view(h2); !strings.Contains(v, "[x] a") || !strings.Contains(v, "+ new") || !strings.Contains(v, "• 3 to sync") {
 		t.Fatalf("the saved selection:\n%s", v)
 	}
@@ -110,7 +110,7 @@ func TestSyncSelectionIsSaved(t *testing.T) {
 func TestSyncSeedsOnlyOnce(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
-	h.press("S", "j", "j", "j") // the skills folder: [-], a unchecked, gone checked
+	h.press("P", "j", "j", "j") // the skills folder: [-], a unchecked, gone checked
 	h.press(" ", " ")           // all, then none
 	h.press("j", "j", "j", " ") // the agents folder: [x] → none
 	v := view(h)
@@ -127,7 +127,7 @@ func TestSyncSeedsOnlyOnce(t *testing.T) {
 		t.Fatalf("a rescan seeds again:\n%s", v)
 	}
 	h2 := syncStart(t, root)
-	h2.press("S")
+	h2.press("P")
 	if v := view(h2); !strings.Contains(v, "[ ] gone") || !strings.Contains(v, "[ ] x.md") || len(h2.m.settings.SyncScope()) != 0 {
 		t.Fatalf("a new client seeds again:\n%s", v)
 	}
@@ -141,7 +141,7 @@ func TestSyncSeedsOnlyOnce(t *testing.T) {
 func TestSyncFoldsResetOnOpen(t *testing.T) {
 	root := t.TempDir()
 	h := syncStart(t, root)
-	h.press("S", "j", "j", "j", "h") // fold skills
+	h.press("P", "j", "j", "j", "h") // fold skills
 	if v := view(h); !strings.Contains(v, "▸ [-] skills") || strings.Contains(v, "gone") {
 		t.Fatalf("h folds:\n%s", v)
 	}
@@ -149,7 +149,7 @@ func TestSyncFoldsResetOnOpen(t *testing.T) {
 	if v := view(h); !strings.Contains(v, "▸ [-] skills") {
 		t.Fatalf("a rescan keeps the fold:\n%s", v)
 	}
-	h.press("Esc", "S")
+	h.press("Esc", "P")
 	if v := view(h); !strings.Contains(v, "▾ [-] skills") || !strings.Contains(v, "▾ [x] agents") || !strings.Contains(v, "[x] gone") {
 		t.Fatalf("reopened:\n%s", v)
 	}
@@ -165,7 +165,7 @@ func TestSyncSeedHonorsOldExclude(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := syncStart(t, root)
-	h.press("S")
+	h.press("P")
 	o := loadOpened(root)
 	if want := []string{"agents/b.md", "skills/gone"}; !reflect.DeepEqual(o.SyncInclude, want) {
 		t.Fatalf("client.json = %+v", o)
@@ -185,7 +185,7 @@ func TestSyncPrunesGoneItems(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := syncStart(t, root)
-	h.press("S")
+	h.press("P")
 	if got := loadOpened(root).SyncInclude; !reflect.DeepEqual(got, []string{"agents/b.md"}) {
 		t.Fatalf("include = %q", got)
 	}
@@ -218,7 +218,7 @@ func TestSyncConfirmAndApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := syncStart(t, root)
-	h.press("S", "s")
+	h.press("P", "s")
 	if v := view(h); !strings.Contains(v, "Sync 2 changes to bx serve?") || !strings.Contains(v, "− skills/gone  deleted on the server") || strings.Contains(v, "agents/x.md") {
 		t.Fatalf("the box:\n%s", v)
 	}
@@ -255,13 +255,13 @@ func TestSyncConfirmAndApply(t *testing.T) {
 func TestSyncUpToDate(t *testing.T) {
 	h := syncStart(t, t.TempDir())
 	h.be.plan = api.SyncPlan{Dir: "/srv", Items: []api.SyncItem{{Name: "agents/b.md", Status: "same", Synced: true}}}
-	h.press("S", "s")
+	h.press("P", "s")
 	if v := view(h); !strings.Contains(v, "Up to date") || strings.Contains(v, "to bx serve?") || len(h.be.applies) != 0 {
 		t.Fatalf("s with no changes:\n%s", v)
 	}
 	h2 := syncStart(t, t.TempDir())
 	h2.be.plan = api.SyncPlan{Dir: "/srv", Items: []api.SyncItem{{Name: "skills/a", Status: "new", Add: []string{"skills/a/SKILL.md"}}}}
-	h2.press("S", "s")
+	h2.press("P", "s")
 	if v := view(h2); !strings.Contains(v, "Nothing selected") || strings.Contains(v, "to bx serve?") || len(h2.be.applies) != 0 {
 		t.Fatalf("s with nothing selected:\n%s", v)
 	}
@@ -269,7 +269,7 @@ func TestSyncUpToDate(t *testing.T) {
 
 func TestSyncDropsAStaleReply(t *testing.T) {
 	h := syncStart(t, t.TempDir())
-	h.press("S")
+	h.press("P")
 	old := h.m.syncSeq
 	h.press("r")
 	h.update(syncPlanMsg{seq: old, err: errors.New("an old failure")})
@@ -286,7 +286,7 @@ func TestSyncDropsAStaleReply(t *testing.T) {
 func TestSyncErrors(t *testing.T) {
 	h := syncStart(t, t.TempDir())
 	h.be.planErr = &StatusError{Code: 405, Text: "405 Method Not Allowed"}
-	h.press("S")
+	h.press("P")
 	if v := view(h); !strings.Contains(v, "bx serve doesn't support sync yet. Update the server: make deploy") || !strings.Contains(v, "r to try again") {
 		t.Fatalf("an old server:\n%s", v)
 	}
@@ -312,7 +312,7 @@ func TestSyncErrors(t *testing.T) {
 func TestSyncBigFileIsAnItemError(t *testing.T) {
 	h := syncStart(t, t.TempDir())
 	macFile(t, "skills/a/big.bin", strings.Repeat("x", 1<<20+1))
-	h.press("S")
+	h.press("P")
 	if v := view(h); !strings.Contains(v, "skills/a/big.bin: 1.0 MB, over the 1 MB limit") || !strings.Contains(v, "• 2 to sync") {
 		t.Fatalf("big file:\n%s", v)
 	}
@@ -336,7 +336,7 @@ func TestSyncUnreadableIsAWarning(t *testing.T) {
 		t.Cleanup(func() { _ = os.Chmod(p, 0o755) })
 	}
 	h.be.plan.Items = append(h.be.plan.Items, api.SyncItem{Name: "rules/old.md", Status: "removed", Delete: []string{"rules/old.md"}, Synced: true})
-	h.press("S")
+	h.press("P")
 	var got []string
 	for _, f := range h.be.planReqs[0].Files {
 		got = append(got, f.Path)

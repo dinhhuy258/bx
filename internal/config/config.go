@@ -62,14 +62,14 @@ func Default(root string) *Config {
 		Keys: Keys{
 			List: map[string][]string{
 				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
-				"new_session": {"n"}, "new_story": {"w"},
-				"shell": {"t"}, "keymap": {"?"},
+				"new_session": {"N"}, "new_story": {"W"},
+				"shell": {"T"}, "keymap": {"?"},
 				"rename": {"R"}, "close_story": {"D"}, "add_repo": {"+"},
-				"inbox": {"a"}, "projects": {"o"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
+				"inbox": {"A"}, "projects": {"O"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
 				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
-				"settings": {"S"}, "stop_session": {"s"}, "delete_session": {"d"}, "close_shell": {"d"}, "cleanup": {"C"}, "artifacts": {"v"},
+				"settings": {"P"}, "stop_session": {"S"}, "delete_session": {"D"}, "close_shell": {"D"}, "cleanup": {"C"}, "artifacts": {"V"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},

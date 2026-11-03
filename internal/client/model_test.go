@@ -436,7 +436,7 @@ func TestStartupOpensTheOnlyProject(t *testing.T) {
 	if len(lines) != 30 || !strings.Contains(lines[0], "home-network") || !strings.Contains(v, "Add lease time") {
 		t.Fatalf("view:\n%s", v)
 	}
-	if !strings.Contains(lines[29], "j/k move") || !strings.Contains(lines[29], "o projects") {
+	if !strings.Contains(lines[29], "j/k move") || !strings.Contains(lines[29], "O projects") {
 		t.Fatalf("key bar: %q", lines[29])
 	}
 	if !strings.Contains(v, "No session open") || len(h.opened) != 0 {
@@ -447,10 +447,10 @@ func TestStartupOpensTheOnlyProject(t *testing.T) {
 func TestStartupWithNothingOpenedIsEmpty(t *testing.T) {
 	h := startIn(t, t.TempDir(), "", 120, 30, "running", "running")
 	v := h.m.View().Content
-	if h.m.picker != nil || h.m.project != "" || !strings.Contains(v, "No project open.") || !strings.Contains(v, "o open a project") {
+	if h.m.picker != nil || h.m.project != "" || !strings.Contains(v, "No project open.") || !strings.Contains(v, "O open a project") {
 		t.Fatalf("picker=%v project=%q\n%s", h.m.picker != nil, h.m.project, v)
 	}
-	h.press("o", "Down", "Enter")
+	h.press("O", "Down", "Enter")
 	if h.m.project != "lab" || h.m.picker != nil || !strings.Contains(h.m.View().Content, "Add lease time") {
 		t.Fatalf("project=%q\n%s", h.m.project, h.m.View().Content)
 	}
@@ -459,8 +459,8 @@ func TestStartupWithNothingOpenedIsEmpty(t *testing.T) {
 func TestOpenedProjectsAreSavedAndRestored(t *testing.T) {
 	root := t.TempDir()
 	h := startIn(t, root, "", 120, 30, "running", "running")
-	h.press("o", "Enter") // home-network
-	h.press("o")
+	h.press("O", "Enter") // home-network
+	h.press("O")
 	if v := view(h); !strings.Contains(v, "OPEN HERE") || strings.Index(v, "◉ home-network") > strings.Index(v, "ON THE SERVER") || !strings.Contains(v, "○ lab") {
 		t.Fatalf("open projects come first:\n%s", v)
 	}
@@ -477,7 +477,7 @@ func TestOpenedProjectsAreSavedAndRestored(t *testing.T) {
 
 func TestNumberKeysOpenProjectsByTheirTab(t *testing.T) {
 	h := start(t, 120, 30, "running", "running")
-	h.press("o", "Enter") // lab: tabs 1 home-network, 2 lab
+	h.press("O", "Enter") // lab: tabs 1 home-network, 2 lab
 	if h.m.project != "lab" {
 		t.Fatal(h.m.project)
 	}
@@ -494,7 +494,7 @@ func TestNumberKeysOpenProjectsByTheirTab(t *testing.T) {
 func TestCloseProject(t *testing.T) {
 	root := t.TempDir()
 	h := startIn(t, root, "", 120, 30, "running", "running")
-	h.press("o", "Enter", "o", "Enter") // home-network, then lab
+	h.press("O", "Enter", "O", "Enter") // home-network, then lab
 	h.press("X")
 	if v := view(h); h.m.project != "lab" || !strings.Contains(v, "Close project lab?") || !strings.Contains(v, "Its sessions keep running on the server.") {
 		t.Fatalf("X asks first: project=%q\n%s", h.m.project, v)
@@ -507,7 +507,7 @@ func TestCloseProject(t *testing.T) {
 	if h.m.project != "home-network" || strings.Join(h.m.opened.Projects, ",") != "home-network" {
 		t.Fatalf("project=%q opened=%v", h.m.project, h.m.opened.Projects)
 	}
-	h.press("o")
+	h.press("O")
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "lab") {
 		t.Fatalf("a closed project goes back to the picker:\n%s", v)
 	}
@@ -823,7 +823,7 @@ func TestPaneKeysPastTheEdgeGoToTmux(t *testing.T) {
 func TestPromptsCallTheBackend(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
 	h.press("k", "k") // session 1 → story s1 → chats
-	h.press("n")      // a new session in chats
+	h.press("N")      // a new session in chats
 	if v := view(h); len(h.opened) != 0 || !strings.Contains(v, "New session") || !strings.Contains(v, "in chats") || !strings.Contains(v, "/p/home-network") || !strings.Contains(v, "y  Start") {
 		t.Fatalf("n on chats asks first: opened=%q\n%s", h.opened, v)
 	}
@@ -832,7 +832,7 @@ func TestPromptsCallTheBackend(t *testing.T) {
 		t.Fatalf("a session in chats should open and focus: %q", h.opened)
 	}
 	h.press("C-h", "y")   // back to the list; y on the waiting session 1 does nothing
-	h.press("w", "Enter") // new branch
+	h.press("W", "Enter") // new branch
 	h.typeText("guest")
 	h.press("Enter", "Enter") // the name, then feat
 	if got := strings.Join(h.be.actions, "|"); got != "home-network sessions|home-network stories guest type=feat" {
@@ -842,12 +842,12 @@ func TestPromptsCallTheBackend(t *testing.T) {
 
 // newBranch opens the name prompt of a new branch story.
 func (h *harness) newBranch() {
-	h.press("w", "Enter")
+	h.press("W", "Enter")
 }
 
 func TestNewStorySourcePicker(t *testing.T) {
 	h := start(t, 120, 30, "idle")
-	h.press("w")
+	h.press("W")
 	v := ansi.Strip(h.m.View().Content)
 	if h.m.picker == nil || h.m.pickKind != pickStorySource || h.m.picker.Choice() != "new branch" {
 		t.Fatalf("picker:\n%s", v)
@@ -1018,7 +1018,7 @@ func TestNewStoryFromAnExistingBranch(t *testing.T) {
 		{Name: "main", Local: true, Remote: true, CheckedOut: true, Time: now.Unix()}, // the project folder's
 		{Name: "develop", Local: true, Remote: true, Time: now.Add(-5 * 24 * time.Hour).Unix()},
 	}}
-	h.press("w", "Down")
+	h.press("W", "Down")
 	_, cmd := h.m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !strings.Contains(ansi.Strip(h.m.View().Content), "fetching origin… · esc to cancel") {
 		t.Fatalf("busy bar:\n%s", ansi.Strip(h.m.View().Content))
@@ -1045,7 +1045,7 @@ func TestNewStoryFromAnExistingBranch(t *testing.T) {
 func TestExistingBranchesAllCheckedOut(t *testing.T) {
 	h := start(t, 160, 30, "idle")
 	h.be.branchList = api.BranchList{Branches: []api.Branch{{Name: "main", Local: true, CheckedOut: true, Time: time.Now().Unix()}}}
-	h.press("w", "Down", "Enter")
+	h.press("W", "Down", "Enter")
 	if h.m.pickKind == pickStoryBranch && h.m.picker != nil || h.m.flash != "no branches in home-network" {
 		t.Fatalf("pickKind=%v flash=%q", h.m.pickKind, h.m.flash)
 	}
@@ -1055,7 +1055,7 @@ func TestWorkspaceExistingBranchShowsItsRepos(t *testing.T) {
 	h := start(t, 160, 30, "idle")
 	workspace(h)
 	h.be.branchList = api.BranchList{Branches: []api.Branch{{Name: "fix/x", Local: true, Time: time.Now().Unix(), Repos: []string{"api", "web"}}}}
-	h.press("w", "Down", "Enter")
+	h.press("W", "Down", "Enter")
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "fix/x  local · now · api, web") {
 		t.Fatalf("label:\n%s", v)
 	}
@@ -1084,7 +1084,7 @@ func TestNewStoryFromAPullRequest(t *testing.T) {
 		l.PRs[i].Repo, l.PRs[i].Slug = "", "acme/app"
 	}
 	h.be.prs = map[string]api.PRList{"": l}
-	h.press("w", "Down", "Down", "Enter")
+	h.press("W", "Down", "Down", "Enter")
 	v := ansi.Strip(h.m.View().Content)
 	if !strings.Contains(v, "pull requests") || !strings.Contains(v, "#123 Fix login timeout   alice · fix/login-timeout") || strings.Contains(v, "acme/app #") {
 		t.Fatalf("picker:\n%s", v)
@@ -1100,7 +1100,7 @@ func TestWorkspacePullRequestTicksItsRepo(t *testing.T) {
 	h := start(t, 160, 30, "idle")
 	workspace(h)
 	h.be.prs = map[string]api.PRList{"": prs()}
-	h.press("w", "Down", "Down", "Enter")
+	h.press("W", "Down", "Down", "Enter")
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "acme/web #123 Fix login timeout   alice · fix/login-timeout") {
 		t.Fatalf("picker:\n%s", v)
 	}
@@ -1123,20 +1123,20 @@ func TestPullRequestSearchAndDirectLookup(t *testing.T) {
 		"nothin":                             {},
 		"https://github.com/acme/web/pull/5": {PRs: []api.PR{{Number: 5, Title: "Old", Author: "dan", Branch: "fix/old"}}, Direct: true},
 	}
-	h.press("w", "Down", "Down", "Enter")
+	h.press("W", "Down", "Down", "Enter")
 	h.typeText("oauth")
 	h.press("Enter") // nothing matches: search GitHub
 	v := ansi.Strip(h.m.View().Content)
 	if h.m.picker == nil || !strings.Contains(v, "search: oauth") || !strings.Contains(v, "#99 OAuth flow   carol · feat/oauth") || h.m.picker.Filter() != "" {
 		t.Fatalf("search results:\n%s", v)
 	}
-	h.press("Esc", "w", "Down", "Down", "Enter")
+	h.press("Esc", "W", "Down", "Down", "Enter")
 	h.typeText("nothin")
 	h.press("Enter")
 	if h.m.picker == nil || h.m.flash != "no pull requests match nothin" {
 		t.Fatalf("flash=%q", h.m.flash)
 	}
-	h.press("Esc", "w", "Down", "Down", "Enter")
+	h.press("Esc", "W", "Down", "Down", "Enter")
 	h.update(tea.PasteMsg{Content: "https://github.com/acme/web/pull/5"})
 	h.press("Enter") // one pull request: created at once
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=pr pr=5" || h.m.picker != nil {
@@ -1160,7 +1160,7 @@ func TestPullRequestNumberIsThatPullRequest(t *testing.T) {
 	} {
 		h := start(t, 160, 30, "idle")
 		h.be.prs = map[string]api.PRList{"": l, q: {PRs: []api.PR{pr}, Direct: true}}
-		h.press("w", "Down", "Down", "Enter")
+		h.press("W", "Down", "Down", "Enter")
 		h.typeText(q)
 		h.press("Enter")
 		if got := strings.Join(h.be.actions, "|"); got != fmt.Sprintf("home-network stories source=pr pr=%d", pr.Number) {
@@ -1173,7 +1173,7 @@ func TestPullRequestNumberIsThatPullRequest(t *testing.T) {
 	// moving the cursor down picks the highlighted row instead
 	h := start(t, 160, 30, "idle")
 	h.be.prs = map[string]api.PRList{"": {PRs: append(l.PRs, api.PR{Number: 4567, Title: "Later", Author: "eve", Branch: "feat/later"})}}
-	h.press("w", "Down", "Down", "Enter")
+	h.press("W", "Down", "Down", "Enter")
 	h.typeText("#45") // #456 and #4567 match
 	h.press("Down", "Enter")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stories source=pr pr=4567" || strings.Join(h.be.reads, "|") != "prs " {
@@ -1189,7 +1189,7 @@ func TestPullRequestNumberIsThatPullRequest(t *testing.T) {
 func TestPullRequestGhErrors(t *testing.T) {
 	h := start(t, 160, 30, "idle")
 	h.be.prs = map[string]api.PRList{"": {Errors: []string{"acme requires SSO authorization"}}}
-	h.press("w", "Down", "Down", "Enter")
+	h.press("W", "Down", "Down", "Enter")
 	if h.m.picker != nil || h.m.flash != "gh: acme requires SSO authorization" {
 		t.Fatalf("picker=%v flash=%q", h.m.picker != nil, h.m.flash)
 	}
@@ -1197,7 +1197,7 @@ func TestPullRequestGhErrors(t *testing.T) {
 	l := prs()
 	l.Errors = []string{"acme/api: HTTP 401"}
 	h.be.prs = map[string]api.PRList{"": l}
-	h.press("w", "Down", "Down", "Enter")
+	h.press("W", "Down", "Down", "Enter")
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "pull requests · gh: acme/api: HTTP 401") {
 		t.Fatalf("title:\n%s", v)
 	}
@@ -1222,11 +1222,11 @@ func TestCloseStoryAsksAgainWhenDirty(t *testing.T) {
 
 func TestCloseStoryOnlyFromStoryRows(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("D") // the cursor starts on session 1
-	if h.m.prompt.Active() || strings.Contains(view(h), "Close story") {
-		t.Fatalf("D on a session row must do nothing:\n%s", h.m.View().Content)
+	h.press("D") // the cursor starts on session 1: D deletes it, the story stays
+	if v := view(h); strings.Contains(v, "Close story") || !strings.Contains(v, "Delete [1]?") {
+		t.Fatalf("D on a session row deletes the session:\n%s", h.m.View().Content)
 	}
-	h.press("k", "D")
+	h.press("Esc", "k", "D")
 	if !strings.Contains(view(h), "Close story s1?") {
 		t.Fatal(h.m.View().Content)
 	}
@@ -1234,7 +1234,7 @@ func TestCloseStoryOnlyFromStoryRows(t *testing.T) {
 
 func TestStopAsksThenStops(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("s")
+	h.press("S")
 	if v := view(h); !strings.Contains(v, "Stop [1]?") || !strings.Contains(v, "Add lease time") {
 		t.Fatal(h.m.View().Content)
 	}
@@ -1256,7 +1256,7 @@ func TestStopAsksWhenNotAlive(t *testing.T) {
 	if h.m.m.Alive(1) {
 		t.Fatal("session 1 should not be alive")
 	}
-	h.press("s")
+	h.press("S")
 	if !strings.Contains(view(h), "Stop [1]?") || len(h.be.actions) != 0 {
 		t.Fatalf("actions=%q\n%s", h.be.actions, h.m.View().Content)
 	}
@@ -1264,7 +1264,7 @@ func TestStopAsksWhenNotAlive(t *testing.T) {
 	if len(h.be.actions) != 0 {
 		t.Fatalf("n must not stop: %q", h.be.actions)
 	}
-	h.press("s", "y")
+	h.press("S", "y")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network stop 1" {
 		t.Fatalf("actions = %q", got)
 	}
@@ -1272,7 +1272,7 @@ func TestStopAsksWhenNotAlive(t *testing.T) {
 
 func TestNewSessionAsksFirst(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("n")
+	h.press("N")
 	if v := view(h); len(h.be.actions) != 0 || !strings.Contains(v, "in s1") || !strings.Contains(v, "y  Start") {
 		t.Fatalf("actions=%q\n%s", h.be.actions, v)
 	}
@@ -1280,7 +1280,7 @@ func TestNewSessionAsksFirst(t *testing.T) {
 	if len(h.be.actions) != 0 || h.m.prompt.Active() {
 		t.Fatalf("Esc cancels: %q", h.be.actions)
 	}
-	h.press("n", "Enter") // Enter also starts it
+	h.press("N", "Enter") // Enter also starts it
 	if got := strings.Join(h.be.actions, "|"); got != "home-network sessions s1" {
 		t.Fatalf("actions = %q", got)
 	}
@@ -1288,7 +1288,7 @@ func TestNewSessionAsksFirst(t *testing.T) {
 
 func TestStopTheOpenSessionClosesItsStream(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("Enter", "C-h", "s", "y")
+	h.press("Enter", "C-h", "S", "y")
 	if h.m.target.Num != 0 || !h.conns[0].closed || h.m.claudeFocused {
 		t.Fatalf("num=%d closed=%v focused=%v", h.m.target.Num, h.conns[0].closed, h.m.claudeFocused)
 	}
@@ -1329,7 +1329,7 @@ func TestEnterOnADoneSessionAsksThenResumes(t *testing.T) {
 func TestDeleteAsksTwiceWhenRunning(t *testing.T) {
 	h := start(t, 160, 30, "running")
 	h.be.running = map[int]bool{1: true}
-	h.press("d")
+	h.press("D")
 	if v := view(h); !strings.Contains(v, "Delete [1]?") || !strings.Contains(v, "Add lease time") {
 		t.Fatal(h.m.View().Content)
 	}
@@ -1349,7 +1349,7 @@ func TestDeleteAsksTwiceWhenRunning(t *testing.T) {
 // a then Enter opens the most urgent session, in another project too.
 func TestInboxOpensWaitingAcrossProjects(t *testing.T) {
 	h := start(t, 120, 30, "running", "waiting")
-	h.press("a", "Enter")
+	h.press("A", "Enter")
 	if h.m.project != "lab" || strings.Join(h.opened, "|") != "lab 1" || !h.m.claudeFocused {
 		t.Fatalf("project=%q opened=%q", h.m.project, h.opened)
 	}
@@ -1392,7 +1392,7 @@ func TestStaleConnectIsClosed(t *testing.T) {
 
 func TestAddFolderFromThePicker(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("o")
+	h.press("O")
 	h.typeText("existing")
 	h.press("Enter")
 	h.update(tea.PasteMsg{Content: "/srv/lab\r\n"}) // ⌘V, with the newline a copied path often has
@@ -1408,7 +1408,7 @@ func TestAddFolderFromThePicker(t *testing.T) {
 func TestAddFirstFolderWithNoProjects(t *testing.T) {
 	h := start(t, 120, 30) // no projects: the empty screen
 	h.be.snaps["lab"] = snapshot("lab", "running")
-	h.press("o")
+	h.press("O")
 	h.typeText("existing")
 	h.press("Enter")
 	h.typeText("/srv/lab")
@@ -1426,14 +1426,14 @@ func TestAddFirstFolderWithNoProjects(t *testing.T) {
 
 func TestCancelledOrFailedFirstAddStaysEmpty(t *testing.T) {
 	h := start(t, 120, 30)
-	h.press("o")
+	h.press("O")
 	h.typeText("existing")
 	h.press("Enter", "Esc")
 	if v := h.m.View().Content; h.m.picker != nil || !strings.Contains(v, "No project open.") {
 		t.Fatalf("Esc should go back to the empty screen:\n%s", v)
 	}
 	h.be.createErr = errors.New("not a git repository")
-	h.press("o", "Enter") // + Add existing folder
+	h.press("O", "Enter") // + Add existing folder
 	h.typeText("/srv/nope")
 	h.press("Enter")
 	if v := h.m.View().Content; h.m.picker != nil || !strings.Contains(v, "No project open.") || !strings.Contains(v, "not a git repository") {
@@ -1443,7 +1443,7 @@ func TestCancelledOrFailedFirstAddStaysEmpty(t *testing.T) {
 
 func TestCloneFromThePicker(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("o")
+	h.press("O")
 	h.update(tea.PasteMsg{Content: "clone"}) // a paste filters the picker
 	h.press("Enter")
 	if !strings.Contains(h.m.View().Content, "me/other") {
@@ -1493,7 +1493,7 @@ func (h *harness) shellEnded() {
 func TestNewShellAsksThenOpens(t *testing.T) {
 	h := start(t, 200, 30, "running")
 	h.setShells(nil, map[string]string{"": "/p/home-network", "s1": "/w/s1"})
-	h.press("t") // on session 1 of s1
+	h.press("T") // on session 1 of s1
 	if v := view(h); !strings.Contains(v, "New shell $1") || !strings.Contains(v, "in s1") || !strings.Contains(v, "/w/s1") || !strings.Contains(v, "y  Open") {
 		t.Fatalf("view:\n%s", v)
 	}
@@ -1501,7 +1501,7 @@ func TestNewShellAsksThenOpens(t *testing.T) {
 	if len(h.be.actions) != 0 || h.m.prompt.Active() {
 		t.Fatalf("n must do nothing: %q", h.be.actions)
 	}
-	h.press("t", "y")
+	h.press("T", "y")
 	if got := strings.Join(h.be.actions, "|"); got != "home-network shells s1" {
 		t.Fatalf("actions = %q", got)
 	}
@@ -1518,7 +1518,7 @@ func TestNewShellAsksThenOpens(t *testing.T) {
 		t.Fatalf("the cursor should be on the new shell: %+v", h.m.m.Selected())
 	}
 	h.press("C-h", "k", "k", "k") // $1 → session 1 → s1 → the chats row
-	h.press("t")
+	h.press("T")
 	if v := view(h); !strings.Contains(v, "New shell $1") || !strings.Contains(v, "in chats") || !strings.Contains(v, "/p/home-network") {
 		t.Fatalf("view:\n%s", v)
 	}
@@ -1535,7 +1535,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 2 {
 		t.Fatalf("selected %+v", h.m.m.Selected())
 	}
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "$2 npm › ⏎ open  R rename  d close  │") {
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "$2 npm › ⏎ open  R rename  D close  │") {
 		t.Fatalf("bar = %q", bar)
 	}
 	h.press("R")
@@ -1544,7 +1544,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 	if got := strings.Join(h.be.actions, "|"); got != "home-network shells/rename s1 api $2" {
 		t.Fatalf("actions = %q", got)
 	}
-	h.press("d")
+	h.press("D")
 	if v := view(h); !strings.Contains(v, "Close shell $2?") || !strings.Contains(v, "npm is still running and will be killed.") || !strings.Contains(v, "y  Close") {
 		t.Fatalf("view:\n%s", v)
 	}
@@ -1558,7 +1558,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 1 {
 		t.Fatalf("the cursor should move to the shell left: %+v", h.m.m.Selected())
 	}
-	h.press("d")
+	h.press("D")
 	if v := view(h); !strings.Contains(v, "Close shell $1?") || !strings.Contains(v, "zsh in s1") || strings.Contains(v, "still running") {
 		t.Fatalf("view:\n%s", v)
 	}
@@ -1570,7 +1570,7 @@ func TestShellRowRenameAndClose(t *testing.T) {
 
 func TestShellEndedKeepsTheOutputDimmed(t *testing.T) {
 	h := start(t, 200, 30, "running")
-	h.press("t", "y")
+	h.press("T", "y")
 	h.dropShells() // the shell exited
 	h.shellEnded()
 	if h.m.claudeFocused || !h.m.paneClosed {
@@ -1598,7 +1598,7 @@ func TestShellEndedKeepsTheOutputDimmed(t *testing.T) {
 		t.Fatalf("closed=%v opened=%q", h.m.paneClosed, h.opened)
 	}
 
-	h.press("C-h", "t", "y")
+	h.press("C-h", "T", "y")
 	delete(h.be.snaps["home-network"].Project.Stories, "s1") // D closed the story, and its shells
 	h.dropShells()
 	h.shellEnded()
@@ -1626,7 +1626,7 @@ func TestClosedShellKeepsItsLabel(t *testing.T) {
 // the shell had ended with the stream up, and stops retrying.
 func TestShellGoneDuringADropCloses(t *testing.T) {
 	h := start(t, 200, 30, "running")
-	h.press("t", "y")
+	h.press("T", "y")
 	h.update(streamClosedMsg{conn: h.conns[0], err: errors.New("EOF")})
 	h.dropShells()
 	h.dial = &StatusError{Code: http.StatusGone, Text: "failed to WebSocket dial: expected handshake response status code 101 but got 410"}
@@ -1653,7 +1653,7 @@ func TestShellGoneDuringADropCloses(t *testing.T) {
 // with the note when its story went with it.
 func TestShellMissingFromTheSnapshotAfterADropCloses(t *testing.T) {
 	h := start(t, 200, 30, "running")
-	h.press("t", "y")
+	h.press("T", "y")
 	h.update(streamClosedMsg{conn: h.conns[0], err: errors.New("EOF")})
 	delete(h.be.snaps["home-network"].Project.Stories, "s1")
 	h.dropShells()
@@ -1674,7 +1674,7 @@ func TestShellMissingFromTheSnapshotAfterADropCloses(t *testing.T) {
 // A snapshot without the shell while its stream is down closes the pane before any reconnect.
 func TestSnapshotWithoutTheShellWhileDownCloses(t *testing.T) {
 	h := start(t, 200, 30, "running")
-	h.press("t", "y")
+	h.press("T", "y")
 	h.update(streamClosedMsg{conn: h.conns[0], err: errors.New("EOF")})
 	h.dropShells()
 	h.update(snapshotMsg{project: "home-network", snap: h.be.snaps["home-network"]})
@@ -1718,9 +1718,9 @@ func TestCloseStoryCountsShells(t *testing.T) {
 
 func TestProjectStripAndSwitchKeys(t *testing.T) {
 	h := start(t, 240, 30, "waiting", "running") // the key bar with the switch keys is about 230 columns
-	h.press("o", "Enter", "[")                   // open lab, then back to home-network
+	h.press("O", "Enter", "[")                   // open lab, then back to home-network
 	v := ansi.Strip(h.m.View().Content)
-	if !strings.Contains(v, "1 home-network  2 lab ●1") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "a inbox") {
+	if !strings.Contains(v, "1 home-network  2 lab ●1") || !strings.Contains(v, "[ ] switch project") || !strings.Contains(v, "A inbox") {
 		t.Fatalf("strip and key bar:\n%s", v)
 	}
 	h.press("]")
@@ -1739,14 +1739,14 @@ func TestProjectStripAndSwitchKeys(t *testing.T) {
 
 func TestInboxListsEveryProject(t *testing.T) {
 	h := start(t, 160, 30, "unread", "waiting")
-	h.press("a") // the inbox
+	h.press("A") // the inbox
 	v := ansi.Strip(h.m.View().Content)
 	// lab waits, so it comes first
 	lab, home := strings.Index(v, "  lab "), strings.Index(v, "  home-network ")
 	if !strings.Contains(v, "bx inbox") || lab < 0 || home < 0 || lab > home {
 		t.Fatalf("inbox:\n%s", v)
 	}
-	if !strings.Contains(v, "s1 · asks: needs you") || !strings.Contains(v, "s1 · idle · unread") || !strings.Contains(v, "a back") || strings.Contains(v, "y yes") {
+	if !strings.Contains(v, "s1 · asks: needs you") || !strings.Contains(v, "s1 · idle · unread") || !strings.Contains(v, "A back") || strings.Contains(v, "y yes") {
 		t.Fatalf("rows and key bar:\n%s", v)
 	}
 	h.press("y") // the cursor starts on lab's waiting session: no quick answer
@@ -1766,12 +1766,12 @@ func TestInboxListsEveryProject(t *testing.T) {
 // Running and read idle sessions need nothing from you: the inbox leaves them out.
 func TestInboxEmpty(t *testing.T) {
 	h := start(t, 160, 30, "idle", "running")
-	h.press("a")
+	h.press("A")
 	v := ansi.Strip(h.m.View().Content)
-	if !strings.Contains(v, "Nothing needs you.") || !strings.Contains(v, "a back to home-network · o projects") {
+	if !strings.Contains(v, "Nothing needs you.") || !strings.Contains(v, "A back to home-network · O projects") {
 		t.Fatalf("empty inbox:\n%s", v)
 	}
-	h.press("a")
+	h.press("A")
 	if h.m.activity {
 		t.Fatal("a leaves the inbox")
 	}
@@ -1779,10 +1779,10 @@ func TestInboxEmpty(t *testing.T) {
 
 func TestSettingsScreenEditsAndSaves(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("S")
+	h.press("P")
 	v := ansi.Strip(h.m.View().Content)
 	if h.m.settings == nil || !strings.Contains(v, "bx settings") || !strings.Contains(v, "Permission mode") {
-		t.Fatalf("S should open the settings:\n%s", v)
+		t.Fatalf("P should open the settings:\n%s", v)
 	}
 	h.press("l", "j", "j", "l")
 	v = ansi.Strip(h.m.View().Content)
@@ -1805,7 +1805,7 @@ func TestSettingsScreenEditsAndSaves(t *testing.T) {
 func TestSettingsEditsATextField(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.values = map[string]string{"notifications.ntfy_url": "https://ntfy.sh/a"}
-	h.press("S", "l", "Tab", "Tab", "Tab", "j") // an unsaved model change, then git, mcp, then the ntfy URL under Enabled
+	h.press("P", "l", "Tab", "Tab", "Tab", "j") // an unsaved model change, then git, mcp, then the ntfy URL under Enabled
 	if !strings.Contains(h.m.bar(), "⏎ edit") {
 		t.Fatalf("bar on a text field: %q", h.m.bar())
 	}
@@ -1851,7 +1851,7 @@ func TestSettingsEditsATextField(t *testing.T) {
 
 func TestSettingsEscAsksBeforeDiscarding(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("S", "l", "Esc")
+	h.press("P", "l", "Esc")
 	if h.m.settings == nil || !strings.Contains(view(h), "Discard 1 change?") {
 		t.Fatalf("Esc with a change should ask:\n%s", ansi.Strip(h.m.View().Content))
 	}
@@ -1868,7 +1868,7 @@ func TestSettingsEscAsksBeforeDiscarding(t *testing.T) {
 func TestSettingsSaveErrorKeepsTheEdits(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.saveErr = errors.New("bx serve unreachable")
-	h.press("S", "l", "Enter")
+	h.press("P", "l", "Enter")
 	v := ansi.Strip(h.m.View().Content)
 	if h.m.settings == nil || len(h.m.settings.Changes()) != 1 || !strings.Contains(v, "bx serve unreachable") {
 		t.Fatalf("a failed save keeps the screen and its edits:\n%s", v)
@@ -1936,7 +1936,7 @@ func TestAddRepoAsksWhenTheOriginalIsDirty(t *testing.T) {
 
 func TestKeymapWithNoProjectOpen(t *testing.T) {
 	h := startIn(t, t.TempDir(), "", 120, 30, "running")
-	if v := h.m.View().Content; !strings.Contains(v, "S settings · ? keys") {
+	if v := h.m.View().Content; !strings.Contains(v, "P settings · ? keys") {
 		t.Fatal(v)
 	}
 	h.press("?")
@@ -1994,9 +1994,9 @@ func gitSettings(t *testing.T, list ...api.Branch) *harness {
 	h := start(t, 120, 30, "running", "running")
 	h.be.info.Detected = "origin/main"
 	h.be.branchList = api.BranchList{Branches: list}
-	h.press("S", "Tab")
+	h.press("P", "Tab")
 	if h.m.settings == nil || !h.m.settings.GitShown() {
-		t.Fatalf("S, Tab should open settings › git:\n%s", ansi.Strip(h.m.View().Content))
+		t.Fatalf("P, Tab should open settings › git:\n%s", ansi.Strip(h.m.View().Content))
 	}
 	return h
 }
@@ -2044,7 +2044,7 @@ func TestSettingsGitChangesAndRemovesAnOverride(t *testing.T) {
 	h.be.projects[1].BaseOverride = "develop"
 	h.be.branchList = api.BranchList{Branches: []api.Branch{{Name: "main", Remote: true}, {Name: "develop", Remote: true}, {Name: "release/1.4", Local: true}}}
 	drain(h.m, h.m.loadProjects())
-	h.press("S", "Tab")
+	h.press("P", "Tab")
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "› lab  develop") {
 		t.Fatalf("the override row:\n%s", v)
 	}
@@ -2098,10 +2098,10 @@ func TestArtifactsPickerOpensThePage(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	var browsed []string
 	h.m.browse = func(u string) tea.Cmd { browsed = append(browsed, u); return nil }
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "v artifacts") {
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "V artifacts") {
 		t.Fatalf("bar = %q", bar)
 	}
-	h.press("v")
+	h.press("V")
 	if !strings.Contains(h.m.View().Content, "no artifacts yet") {
 		t.Fatal(h.m.View().Content)
 	}
@@ -2110,7 +2110,7 @@ func TestArtifactsPickerOpensThePage(t *testing.T) {
 		{Name: "report.html", URL: report},
 		{Name: "old.html", URL: "http://100.64.0.1:7358/home-network/1/old.html"},
 	}}
-	h.press("v")
+	h.press("V")
 	v := h.m.View().Content
 	for _, want := range []string{"artifacts · [1]", "report.html", "old.html"} {
 		if !strings.Contains(v, want) {
@@ -2133,7 +2133,7 @@ func TestArtifactsWithFileServerOff(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.m.browse = func(string) tea.Cmd { t.Fatal("browsed with no link"); return nil }
 	h.be.artifacts = api.ArtifactList{Files: []api.Artifact{{Name: "report.html"}}}
-	h.press("v", "Enter")
+	h.press("V", "Enter")
 	if !strings.Contains(h.m.View().Content, "files_listen") {
 		t.Fatal(h.m.View().Content)
 	}

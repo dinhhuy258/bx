@@ -47,7 +47,7 @@ func (k Keys) ListAction(key string) string {
 }
 
 // ListActions returns every list action bound to key, sorted by name. One key can serve
-// actions that apply to different rows: d deletes a session and closes a shell.
+// actions that apply to different rows: D deletes a session, closes a shell or closes a story.
 func (k Keys) ListActions(key string) []string {
 	var out []string
 	for action, binds := range k.List {

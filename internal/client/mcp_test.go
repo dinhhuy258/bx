@@ -38,7 +38,7 @@ func mcpHarness(t *testing.T, typed func(string) string) (*harness, *[]editCall)
 		}
 		return func() tea.Msg { return done(nil) }
 	}
-	h.press("S", "Tab", "Tab")
+	h.press("P", "Tab", "Tab")
 	return h, calls
 }
 
