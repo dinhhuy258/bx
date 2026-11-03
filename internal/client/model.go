@@ -138,6 +138,7 @@ const (
 	pickOverrideProject // settings › git: the project of a new base override
 	pickOverrideBranch  // settings › git: the base branch of a project
 	pickArtifact        // a page of the selected session, opened in the browser
+	pickMCPProject      // settings › mcp: the project of new servers
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -195,8 +196,10 @@ type Model struct {
 	syncSeq      int          // bumped on every sync scan or apply; older replies are dropped
 	syncMac      claudesync.MacScan
 	syncPlan     api.SyncPlan
-	syncDone     bool          // a sync succeeded since the screen opened or the last r
-	override     overrideDraft // the base override being picked in settings › git; see story.go
+	syncDone     bool                                                          // a sync succeeded since the screen opened or the last r
+	override     overrideDraft                                                 // the base override being picked in settings › git; see story.go
+	edit         func(path string, line int, done func(error) tea.Msg) tea.Cmd // runs the editor on path; tests replace it
+	mcpDrafts    map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
 
 	activity bool        // the list pane shows the activity list of every project
 	act      ui.Activity // its cursor
@@ -220,7 +223,7 @@ type Model struct {
 // it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, browse: openBrowser, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, browse: openBrowser, edit: openEditor, mcpDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -421,6 +424,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case settingsMsg:
 		m.gotSettings(msg)
 		return m, nil
+	case mcpMsg:
+		m.gotMCP(msg)
+		return m, nil
+	case mcpDocMsg:
+		return m, m.gotMCPDoc(msg)
+	case mcpEditedMsg:
+		return m, m.gotMCPEdited(msg)
+	case mcpSavedMsg:
+		return m, m.gotMCPSaved(msg)
 	case syncPlanMsg:
 		m.gotSyncPlan(msg)
 		return m, nil
@@ -478,6 +490,7 @@ func (m *Model) gotProjects(msg projectsMsg) tea.Cmd {
 	m.projects = msg.list
 	if m.settings != nil {
 		m.settings.SetGitOverrides(m.gitOverrides())
+		m.settings.SetMCPTotal(len(m.projects))
 	}
 	if m.opened.keep(func(name string) bool {
 		return slices.ContainsFunc(msg.list, func(p api.ProjectSummary) bool { return p.Name == name })
@@ -1173,6 +1186,8 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			return m.chooseOverrideBranch(choice)
 		case pickOverrideBranch:
 			return m.setOverride(choice)
+		case pickMCPProject:
+			return m.editMCP(choice)
 		case pickCleanup:
 			m.pickCleanup(checked)
 			return nil
@@ -1215,7 +1230,8 @@ func (m *Model) openSettings() tea.Cmd {
 	}
 	m.settings, m.settingsNote, m.syncDone = ui.NewSettings(host), "loading settings…", false
 	m.settings.SetGitOverrides(m.gitOverrides())
-	return tea.Batch(m.loadSettings(), m.scanSync())
+	m.settings.SetMCPTotal(len(m.projects))
+	return tea.Batch(m.loadSettings(), m.scanSync(), m.loadMCP())
 }
 
 func (m *Model) loadSettings() tea.Cmd {
@@ -1251,7 +1267,7 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 			m.openPrompt(ui.PromptDiscardSettings, "", fmt.Sprintf("discard %s? y/n", plural(n, "change", "changes")), "")
 			return nil
 		}
-		m.settings = nil
+		m.settings, m.mcpDrafts = nil, map[string]mcpDraft{}
 	case ui.SettingsSave:
 		if !m.settings.Loaded() {
 			m.settingsNote = "loading settings…"
@@ -1278,6 +1294,17 @@ func (m *Model) settingsKey(key string) tea.Cmd {
 		m.setFlash("Nothing selected")
 	case ui.SettingsSyncApply:
 		return m.applySync()
+	case ui.SettingsMCPEdit:
+		row, _ := m.settings.MCPChoice()
+		if row.Add {
+			m.openMCPProjects()
+			return nil
+		}
+		return m.editMCP(row.Project)
+	case ui.SettingsMCPRemove:
+		m.removeMCPKey()
+	case ui.SettingsMCPReload:
+		return m.loadMCP()
 	case ui.SettingsGitChoose:
 		if project, add := m.settings.GitChoice(); !add {
 			return m.chooseOverrideBranch(project)
@@ -1387,7 +1414,9 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			return m.poll()
 		}
 	case ui.PromptDiscardSettings:
-		m.settings = nil
+		m.settings, m.mcpDrafts = nil, map[string]mcpDraft{}
+	case ui.PromptRemoveMCP:
+		return m.saveMCP(target, "", "")
 	case ui.PromptRemoveOverride:
 		return m.removeOverride(target)
 	case ui.PromptSettingText:
@@ -1833,6 +1862,8 @@ func (m *Model) bar() string {
 		text = m.prompt.Line()
 	case m.settings != nil && m.flash != "":
 		text = m.flash
+	case m.settings != nil && m.settingsOnMCPRow():
+		text = ui.SettingsMCPBar(m.narrow)
 	case m.settings != nil && m.settings.GitShown():
 		text = ui.SettingsGitBar(m.narrow)
 	case m.settings != nil:

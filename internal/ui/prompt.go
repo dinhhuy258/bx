@@ -24,6 +24,7 @@ const (
 	PromptNewShell       // y/n, Enter also opens: open a shell (Target is "story/k")
 	PromptCloseShell     // y/n: close a shell, killing what runs in it (Target is "story/k")
 	PromptRenameShell    // a shell's new title, empty = its command (Target is "story/k")
+	PromptRemoveMCP      // y/n: remove the MCP servers of a scope (Target is the project, "" = global)
 )
 
 // PromptResult is what a key did to the prompt.
@@ -57,7 +58,7 @@ func (p *Prompt) YesNo() bool {
 	switch p.Kind {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
 		PromptStop, PromptDelete, PromptDeleteForce, PromptUseBranch, PromptRemoveOverride,
-		PromptNewShell, PromptCloseShell:
+		PromptNewShell, PromptCloseShell, PromptRemoveMCP:
 		return true
 	}
 	return false
@@ -126,7 +127,7 @@ func (p *Prompt) verb() string {
 		return "delete"
 	case PromptUseBranch:
 		return "use"
-	case PromptRemoveOverride:
+	case PromptRemoveOverride, PromptRemoveMCP:
 		return "remove"
 	case PromptNewShell:
 		return "open"
