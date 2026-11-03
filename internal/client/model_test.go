@@ -64,6 +64,7 @@ type fakeBackend struct {
 	// settings › git: GitHub accounts
 	acc      api.GitAccounts
 	accSaves []accounts.Config
+	accErr   error // the next SaveGitAccounts fails with it
 	// attach
 	uploads   []string // "<project> <num> <name> <bytes>"
 	uploadErr error
@@ -2155,6 +2156,10 @@ func (f *fakeBackend) MCP(context.Context) (api.MCP, error) { return f.mcp, nil 
 func (f *fakeBackend) GitAccounts(context.Context) (api.GitAccounts, error) { return f.acc, nil }
 
 func (f *fakeBackend) SaveGitAccounts(_ context.Context, c accounts.Config) (api.GitAccounts, error) {
+	if err := f.accErr; err != nil {
+		f.accErr = nil
+		return api.GitAccounts{}, err
+	}
 	f.accSaves = append(f.accSaves, c)
 	f.acc.Config = c
 	return f.acc, nil

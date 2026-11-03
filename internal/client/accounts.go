@@ -38,12 +38,37 @@ func (m *Model) loadAccounts() tea.Cmd {
 	}
 }
 
-// saveAccounts sends the whole config; flash is said once it is saved.
+// accountSave keeps the saves of the accounts in order: one is sent at a time, and a config
+// saved meanwhile waits in next (a newer one replaces it), so quick edits such as J J build on
+// each other and reach the server in the order they were made.
+type accountSave struct {
+	busy bool
+	next *pendingSave
+}
+
+type pendingSave struct {
+	c     accounts.Config
+	flash string
+}
+
+// saveAccounts shows c at once and sends the whole config; flash is said once it is saved.
 func (m *Model) saveAccounts(c accounts.Config, flash string) tea.Cmd {
 	if err := c.Validate(); err != nil {
 		m.setFlash("accounts: " + err.Error())
 		return nil
 	}
+	x := m.settings.Accounts()
+	x.Config = c
+	m.settings.SetAccounts(x)
+	if m.accSave.busy {
+		m.accSave.next = &pendingSave{c, flash}
+		return nil
+	}
+	return m.sendAccounts(c, flash)
+}
+
+func (m *Model) sendAccounts(c accounts.Config, flash string) tea.Cmd {
+	m.accSave.busy = true
 	be, ctx := m.be, m.ctx
 	return func() tea.Msg {
 		x, err := be.SaveGitAccounts(ctx, c)
@@ -51,17 +76,35 @@ func (m *Model) saveAccounts(c accounts.Config, flash string) tea.Cmd {
 	}
 }
 
-func (m *Model) gotAccounts(msg accountsMsg) {
+func (m *Model) gotAccounts(msg accountsMsg) tea.Cmd {
+	if msg.put {
+		m.accSave.busy = false
+	}
+	if next := m.accSave.next; msg.put && next != nil {
+		// a newer config waits, even with settings closed: it is the last edit, so this reply
+		// is stale
+		m.accSave.next = nil
+		if msg.err != nil {
+			m.setFlash("accounts not saved: " + msg.err.Error())
+		}
+		return m.sendAccounts(next.c, next.flash)
+	}
 	if m.settings == nil {
-		return
+		if msg.put && msg.err != nil {
+			m.setFlash("accounts not saved: " + msg.err.Error())
+		}
+		return nil
+	}
+	if !msg.put && m.accSave.busy {
+		return nil // a read from before the save in flight
 	}
 	if msg.err != nil {
 		if msg.put {
 			m.setFlash("accounts not saved: " + msg.err.Error())
-			return
+			return m.loadAccounts() // the screen shows what was refused: read what is saved
 		}
 		m.settings.SetAccountsError(msg.err.Error())
-		return
+		return nil
 	}
 	m.settings.SetAccounts(msg.x)
 	if msg.put {
@@ -70,6 +113,7 @@ func (m *Model) gotAccounts(msg accountsMsg) {
 	if msg.flash != "" {
 		m.setFlash(msg.flash)
 	}
+	return nil
 }
 
 // config is a copy of the accounts config the screen shows, safe to change.

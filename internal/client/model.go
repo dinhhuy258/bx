@@ -210,6 +210,7 @@ type Model struct {
 	clipboard    func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
 	mcpDrafts    map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
 	accDraft     accountDraft                                                  // settings › git: the rule or override being picked; see accounts.go
+	accSave      accountSave                                                   // settings › git: the save in flight and the one waiting; see accounts.go
 
 	activity bool        // the list pane shows the inbox: what needs you in every project
 	act      ui.Activity // its cursor
@@ -435,8 +436,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gotSettings(msg)
 		return m, nil
 	case accountsMsg:
-		m.gotAccounts(msg)
-		return m, nil
+		return m, m.gotAccounts(msg)
 	case mcpMsg:
 		m.gotMCP(msg)
 		return m, nil

@@ -1,8 +1,11 @@
 package client
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -165,6 +168,50 @@ func TestSettingsGitReordersRules(t *testing.T) {
 	}
 	if r, _ := h.m.settings.GitRow(); r.Kind != ui.RowRule || r.Index != 1 {
 		t.Fatalf("the cursor follows the rule: %+v", r)
+	}
+}
+
+func TestSettingsGitQuickMovesKeepTheirOrder(t *testing.T) {
+	h := accountsSettings(t, accounts.Config{
+		Accounts: []accounts.Account{{ID: "work", Login: "huy-acme"}},
+		Rules:    []accounts.Rule{{Owner: "a/*", Account: "work"}, {Owner: "b/*", Account: "work"}, {Owner: "c/*", Account: "work"}},
+	})
+	gotoRow(t, h, ui.RowRule)
+	j := tea.KeyPressMsg{Code: 'J', Text: "J"}
+	_, first := h.m.Update(j) // its reply has not come back yet
+	_, second := h.m.Update(j)
+	if first == nil || second != nil {
+		t.Fatal("the second move waits for the first save")
+	}
+	if r, _ := h.m.settings.GitRow(); r.Index != 2 || h.m.settings.Accounts().Config.Rules[2].Owner != "a/*" {
+		t.Fatalf("the screen shows both moves at once: %+v %+v", r, h.m.settings.Accounts().Config.Rules)
+	}
+	h.update(first()) // the first reply sends the waiting config
+	if len(h.be.accSaves) != 2 {
+		t.Fatalf("saves = %+v", h.be.accSaves)
+	}
+	var got []string
+	for _, r := range h.be.acc.Config.Rules {
+		got = append(got, r.Owner)
+	}
+	if strings.Join(got, " ") != "b/* c/* a/*" {
+		t.Fatalf("saved %v, want b/* c/* a/*", got)
+	}
+}
+
+func TestSettingsGitRefusedSaveReloads(t *testing.T) {
+	h := accountsSettings(t, accounts.Config{
+		Accounts: []accounts.Account{{ID: "work", Login: "huy-acme"}},
+		Rules:    []accounts.Rule{{Owner: "a/*", Account: "work"}, {Owner: "b/*", Account: "work"}},
+	})
+	gotoRow(t, h, ui.RowRule)
+	h.be.accErr = errors.New("disk full")
+	h.press("J")
+	if !strings.Contains(h.m.flash, "accounts not saved: disk full") {
+		t.Fatalf("flash %q", h.m.flash)
+	}
+	if r := h.m.settings.Accounts().Config.Rules; r[0].Owner != "a/*" {
+		t.Fatalf("the screen still shows the refused order: %+v", r)
 	}
 }
 
