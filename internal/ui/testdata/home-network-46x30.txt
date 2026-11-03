@@ -4,7 +4,7 @@ bx  home-network                      ● 2  ◆ 1
    ├ ○ 6  What does pmxcfs do?              5m
    └ ○ 7  Explain the fasttrack rule       40m
  ▾ fstrim-cron
-   └ no sessions · n to start one
+   └ no sessions
  ▾ guest-vlan-fix             3 changed +42 -7
 ▌  ├ ● 1  Fix guest DHCP lease time         6m
    ├ ◆ 2  Write the test checklist          2m

@@ -1844,7 +1844,7 @@ func (m *Model) screen() string {
 
 // list is the list pane: the open project's list with the project strip, or the inbox.
 func (m *Model) list(width int, focused bool) string {
-	o := ui.RenderOptions{Focused: focused, NewKey: m.cfg.Keys.First(m.cfg.Keys.List, "new_session")}
+	o := ui.RenderOptions{Focused: focused}
 	if m.activity {
 		back := fmt.Sprintf("%s back to %s · %s projects", config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "inbox")), m.project, config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, "projects")))
 		return ui.RenderActivity(m.activityModels(), &m.act, width, m.height-1, o, back)

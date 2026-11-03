@@ -16,7 +16,7 @@ var update = flag.Bool("update", false, "rewrite golden files")
 
 func TestRenderGolden46x30(t *testing.T) {
 	m, _ := sampleModel()
-	got := Render(m, 46, 30, RenderOptions{Plain: true, NewKey: "n"})
+	got := Render(m, 46, 30, RenderOptions{Plain: true})
 	golden := "testdata/home-network-46x30.txt"
 	if *update {
 		os.WriteFile(golden, []byte(got), 0o644)
@@ -45,12 +45,9 @@ func TestRenderEmptyProject(t *testing.T) {
 	}
 	m := NewModel(p)
 	m.SetLive(live)
-	out := Render(m, 46, 20, RenderOptions{Plain: true, NewKey: "n"})
-	if !strings.Contains(out, "No stories yet.") || !strings.Contains(out, "no chats · n to start one") {
+	out := Render(m, 46, 20, RenderOptions{Plain: true})
+	if !strings.Contains(out, "No stories yet.") || !strings.Contains(out, "└ no chats\n") {
 		t.Fatalf("empty render:\n%s", out)
-	}
-	if out = Render(m, 46, 20, RenderOptions{Plain: true}); !strings.Contains(out, "no chats\n") {
-		t.Fatalf("new_session unbound: no key to name:\n%s", out)
 	}
 }
 
