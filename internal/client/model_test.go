@@ -708,13 +708,13 @@ func TestPaneKeysPastTheEdgeGoToTmux(t *testing.T) {
 func TestPromptsCallTheBackend(t *testing.T) {
 	h := start(t, 120, 30, "waiting")
 	h.press("k", "k") // session 1 → story s1 → chats
-	h.press("n")      // n on chats is a new chat
-	if bar := ansi.Strip(h.m.bar()); len(h.opened) != 0 || !strings.Contains(bar, "New chat  /p/home-network   y start  n cancel") {
-		t.Fatalf("n on chats asks for a new chat: opened=%q bar=%q", h.opened, bar)
+	h.press("n")      // a new session in chats
+	if bar := ansi.Strip(h.m.bar()); len(h.opened) != 0 || !strings.Contains(bar, "New session in chats  /p/home-network   y start  n cancel") {
+		t.Fatalf("n on chats asks first: opened=%q bar=%q", h.opened, bar)
 	}
 	h.press("y") // no title prompt: the chat opens and takes the focus
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
-		t.Fatalf("a new chat should open and focus: %q", h.opened)
+		t.Fatalf("a session in chats should open and focus: %q", h.opened)
 	}
 	h.press("C-h", "y")   // back to the list; y on the waiting session 1 does nothing
 	h.press("w", "Enter") // new branch

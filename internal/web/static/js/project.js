@@ -62,7 +62,7 @@ export function showProject(root, name) {
         h('button', { class: 'ib', 'aria-label': story ? 'Story actions' : 'Chats actions', onclick: () => storyMenu(story) }, icon('more'))),
       h('div', { class: 'card' }, rows.length || shells.length
         ? [rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow)]
-        : h('button', { class: 'card-add', onclick: () => newSession(story) }, icon('plus'), story ? 'New session' : 'New chat')));
+        : h('button', { class: 'card-add', onclick: () => newSession(story) }, icon('plus'), 'New session')));
   }
 
   // shellRow is [$k][ label / command or "shell" ][busy][⋯]: the command shows after a rename,
@@ -92,7 +92,7 @@ export function showProject(root, name) {
 
   function storyMenu(story) {
     const shellItem = { label: 'New shell', run: () => newShell(story) };
-    if (!story) { sheet('Chats', [{ label: 'New chat', run: () => newSession('') }, shellItem]); return; }
+    if (!story) { sheet('Chats', [{ label: 'New session', run: () => newSession('') }, shellItem]); return; }
     const items = [{ label: 'New session', run: () => newSession(story) }, shellItem];
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
     items.push({ label: 'Close story', run: async () => {
@@ -106,7 +106,7 @@ export function showProject(root, name) {
   }
 
   async function newSession(story) {
-    const v = await ask(story ? `New session in ${story}` : 'New chat',
+    const v = await ask(`New session in ${story || 'chats'}`,
       [{ name: 'title', label: 'Title (optional; named after the first prompt)' }], 'Start');
     if (v === null) return;
     const r = await act('sessions', { story, title: v.title });

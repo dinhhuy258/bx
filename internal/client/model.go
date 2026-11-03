@@ -881,7 +881,7 @@ func (m *Model) listAction(key string) string {
 }
 
 // activityKey handles a list key while the inbox is shown. Keys that act on one project's
-// list (new chat, rename, ...) do nothing here.
+// list (new session, rename, ...) do nothing here.
 func (m *Model) activityKey(action string) tea.Cmd {
 	rows := ui.ActivityRows(m.activityModels())
 	r := m.act.Selected(rows)
@@ -1334,12 +1334,9 @@ func (m *Model) create(p api.NewProject) tea.Cmd {
 	}
 }
 
-// askNewSession asks before starting a session in story ("" = a chat), naming its folder.
+// askNewSession asks before starting a session in story ("" = chats), naming its group and folder.
 func (m *Model) askNewSession(story string) {
-	label := "New chat  " + ui.ShortPath(m.m.Dir(story))
-	if story != "" {
-		label = fmt.Sprintf("New session in %s  %s", story, ui.ShortPath(m.m.Dir(story)))
-	}
+	label := fmt.Sprintf("New session in %s  %s", groupName(story), ui.ShortPath(m.m.Dir(story)))
 	m.openPrompt(ui.PromptNewSession, story, label, "")
 }
 

@@ -38,7 +38,7 @@ var keymapGroups = []keymapGroup{
 	}},
 	{"STORY", "a branch and its worktree", []keymapItem{
 		{"open", "fold or unfold"},
-		{"new_session", "new session in it · in chats, a new chat"},
+		{"new_session", "new session in it"},
 		{"add_repo", "add repositories (workspace)"},
 		{"close_story", "close · stop its sessions, remove worktree"},
 	}},
