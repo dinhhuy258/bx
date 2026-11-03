@@ -103,6 +103,8 @@ type Options struct {
 	PluginDirs                    []string // --plugin-dir, one per folder
 	AddDirs                       []string // --add-dir, one per folder
 	AppendSystemPrompt            string   // --append-system-prompt
+	MCPConfig                     string   // --mcp-config=<file>: one value, so the variadic flag never swallows a later argument
+	StrictMCPConfig               bool     // --strict-mcp-config: only the servers of MCPConfig
 }
 
 // StartArgs builds the command for a new or resumed session. Run it in the target folder.
@@ -117,6 +119,12 @@ func StartArgs(uuid string, resume bool, o Options) []string {
 		if f[1] != "" {
 			args = append(args, f[0], f[1])
 		}
+	}
+	if o.MCPConfig != "" {
+		args = append(args, "--mcp-config="+o.MCPConfig)
+	}
+	if o.StrictMCPConfig {
+		args = append(args, "--strict-mcp-config")
 	}
 	if len(o.DisallowedTools) > 0 {
 		args = append(args, "--disallowed-tools", strings.Join(o.DisallowedTools, ","))

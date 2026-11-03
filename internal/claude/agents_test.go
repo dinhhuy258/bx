@@ -86,3 +86,11 @@ func TestStartArgsArtifactFlags(t *testing.T) {
 		t.Fatalf("got  %q\nwant %q", got, want)
 	}
 }
+
+func TestStartArgsMCP(t *testing.T) {
+	got := StartArgs("u", false, Options{MCPConfig: "/bx/run/mcp/p/1/mcp.json", StrictMCPConfig: true})
+	want := []string{"claude", "--session-id", "u", "--mcp-config=/bx/run/mcp/p/1/mcp.json", "--strict-mcp-config"}
+	if !equal(got, want) {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+}
