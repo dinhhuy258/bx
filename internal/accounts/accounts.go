@@ -288,12 +288,13 @@ func Save(path string, c Config) error {
 }
 
 // Login is a gh login on a host, from `gh auth status --json hosts`. OK is false when gh
-// reports its token as bad.
+// reports its token as bad; Active is the login gh uses on its host when nothing says which.
 type Login struct {
 	Host   string `json:"host"`
 	Login  string `json:"login"`
 	Scopes string `json:"scopes,omitempty"`
 	OK     bool   `json:"ok"`
+	Active bool   `json:"active,omitempty"`
 }
 
 // ParseLogins reads the output of `gh auth status --json hosts`, sorted by host then login.
@@ -301,6 +302,7 @@ func ParseLogins(out []byte) ([]Login, error) {
 	var raw struct {
 		Hosts map[string][]struct {
 			State  string `json:"state"`
+			Active bool   `json:"active"`
 			Host   string `json:"host"`
 			Login  string `json:"login"`
 			Scopes string `json:"scopes"`
@@ -319,7 +321,7 @@ func ParseLogins(out []byte) ([]Login, error) {
 			if h == "" {
 				h = host
 			}
-			list = append(list, Login{Host: strings.ToLower(h), Login: l.Login, Scopes: l.Scopes, OK: l.State == "success"})
+			list = append(list, Login{Host: strings.ToLower(h), Login: l.Login, Scopes: l.Scopes, OK: l.State == "success", Active: l.Active})
 		}
 	}
 	slices.SortFunc(list, func(a, b Login) int {

@@ -37,6 +37,7 @@ const (
 	PromptRemoveRule            // y/n: remove an account rule (Target is its index)
 	PromptRemoveAccountOverride // y/n: remove a project's account override (Target is the project)
 	PromptDiscardAccount        // y/n: drop the edits of the account form
+	PromptLogin                 // y/n: open a shell running gh auth login for github.com
 )
 
 // PromptResult is what a key did to the prompt.
@@ -126,7 +127,7 @@ func (p *Prompt) YesNo() bool {
 	case PromptCloseStory, PromptCloseStoryForce, PromptDiscardSettings, PromptAddRepoForce,
 		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
 		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume,
-		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount:
+		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin:
 		return true
 	}
 	return false
@@ -281,6 +282,8 @@ func (p *Prompt) verb() string {
 		return "save"
 	case PromptRuleOwner:
 		return "next"
+	case PromptLogin:
+		return "log in"
 	}
 	return "yes"
 }

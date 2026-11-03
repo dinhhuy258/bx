@@ -68,6 +68,16 @@ func (a *App) ShellTarget(p *state.Project, story string, k int) (string, error)
 // number: the lowest one the story's shells do not use. The shell's tmux options say which
 // project, story and number it is.
 func (a *App) NewShell(p *state.Project, story string) (int, error) {
+	env, err := a.accountEnv(context.Background(), p.Name, a.Dir(p, story))
+	if err != nil {
+		return 0, err
+	}
+	return a.openShell(p, story, "", "", env)
+}
+
+// openShell starts shell k of a story running cmd ("" = the default shell) with env, titled
+// title ("" = its command).
+func (a *App) openShell(p *state.Project, story, cmd, title string, env []string) (int, error) {
 	if story != "" && p.Stories[story] == nil {
 		return 0, fmt.Errorf("no story %q", story)
 	}
@@ -85,11 +95,7 @@ func (a *App) NewShell(p *state.Project, story string) (int, error) {
 	for used[k] {
 		k++
 	}
-	env, err := a.accountEnv(context.Background(), p.Name, a.Dir(p, story))
-	if err != nil {
-		return 0, err
-	}
-	id, err := a.Tmux.NewShell(ShellName(p.Name, story, k), a.Dir(p, story), env...)
+	id, err := a.Tmux.NewShell(ShellName(p.Name, story, k), a.Dir(p, story), cmd, env...)
 	if err != nil {
 		return 0, err
 	}
@@ -98,6 +104,9 @@ func (a *App) NewShell(p *state.Project, story string) (int, error) {
 		opts = append(opts, [2]string{"@bx_story", story})
 	}
 	opts = append(opts, [2]string{"@bx_shell", strconv.Itoa(k)})
+	if title != "" {
+		opts = append(opts, [2]string{"@bx_title", title})
+	}
 	for _, o := range opts {
 		if err := a.Tmux.SetOption(id, o[0], o[1]); err != nil {
 			return 0, errors.Join(err, a.Tmux.KillSession(id))

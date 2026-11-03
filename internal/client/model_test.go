@@ -65,6 +65,7 @@ type fakeBackend struct {
 	acc      api.GitAccounts
 	accSaves []accounts.Config
 	accErr   error // the next SaveGitAccounts fails with it
+	logins   int   // shells/login calls
 	// attach
 	uploads   []string // "<project> <num> <name> <bytes>"
 	uploadErr error
@@ -221,6 +222,12 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 		snap.Shells = append(snap.Shells, api.Shell{Story: a.Story, K: k, Command: "zsh"})
 		f.snaps[project] = snap
 		return api.Result{Story: a.Story, K: k}, nil
+	case action == "shells/login":
+		f.logins++
+		snap := f.snaps[project]
+		snap.Shells = append(snap.Shells, api.Shell{K: 1, Title: "gh auth login", Command: "gh"})
+		f.snaps[project] = snap
+		return api.Result{K: 1}, nil
 	case action == "shells/close":
 		snap := f.snaps[project]
 		var kept []api.Shell

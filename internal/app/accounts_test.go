@@ -114,3 +114,26 @@ func TestEnvForDirFindsTheProject(t *testing.T) {
 		t.Fatalf("origin %+v", o)
 	}
 }
+
+func TestLoginShellRunsGHWithoutTheAccountTokens(t *testing.T) {
+	a, f, p := newApp(t)
+	withAccounts(t, a)
+	a.GH = func(_ context.Context, _ string, args ...string) (string, error) {
+		return `{"hosts":{"github.com":[{"state":"success","active":true,"host":"github.com","login":"me"}]}}`, nil
+	}
+	k, err := a.LoginShell(p)
+	if err != nil || k != 1 {
+		t.Fatalf("login shell %d %v", k, err)
+	}
+	got := calls(f)
+	for _, want := range []string{"env -u GH_TOKEN -u GH_ENTERPRISE_TOKEN -u GH_HOST sh -c",
+		"gh auth login --hostname github.com --git-protocol https --web",
+		"gh auth switch --hostname github.com --user me", "@bx_title gh auth login"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "BX_ACCOUNT") || strings.Contains(got, "GH_TOKEN=") {
+		t.Errorf("the login shell gets no account env:\n%s", got)
+	}
+}

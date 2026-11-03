@@ -56,7 +56,7 @@ func TestNewShellAndShells(t *testing.T) {
 			"$8\tbxsh-p-x\tp\t\tx\t\tzsh\n",
 	}}
 	tm := New(f)
-	id, err := tm.NewShell("bxsh-p-s1-1", "/w")
+	id, err := tm.NewShell("bxsh-p-s1-1", "/w", "")
 	if err != nil || id != "$7" {
 		t.Fatalf("%q %v", id, err)
 	}

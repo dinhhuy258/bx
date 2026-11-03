@@ -210,6 +210,7 @@ type Model struct {
 	clipboard    func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
 	mcpDrafts    map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
 	accDraft     accountDraft                                                  // settings › git: the rule or override being picked; see accounts.go
+	login        *loginWait                                                    // settings › git: the gh auth login shell bx waits on; see accounts.go
 	accSave      accountSave                                                   // settings › git: the save in flight and the one waiting; see accounts.go
 
 	activity bool        // the list pane shows the inbox: what needs you in every project
@@ -392,7 +393,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ended := websocket.CloseStatus(msg.err) == websocket.StatusNormalClosure && strings.Contains(msg.err.Error(), "session ended")
 		if ended && m.target.Shell() {
 			m.shellClosed()
-			return m, m.poll()
+			return m, tea.Batch(m.poll(), m.loginClosed())
 		}
 		if ended {
 			m.setFlash(fmt.Sprintf("session [%d] ended", m.target.Num))
@@ -1288,8 +1289,7 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 		case pickOverrideBranch:
 			return m.setOverride(choice)
 		case pickAccountLogin:
-			m.pickAccountLogin(choice)
-			return nil
+			return m.pickAccountLogin(choice)
 		case pickRuleAccount:
 			return m.pickRuleAccount(choice)
 		case pickAccountProject:
@@ -1325,6 +1325,7 @@ func (m *Model) openSettings() tea.Cmd {
 			host = "server " + u.Hostname()
 		}
 	}
+	m.login = nil // settings kept for a login shell are replaced
 	m.settings, m.settingsNote, m.syncDone = ui.NewSettings(host), "loading settings…", false
 	m.settings.SetGitOverrides(m.gitOverrides())
 	m.settings.SetMCPTotal(len(m.projects))

@@ -104,11 +104,18 @@ func (m *Model) gotAccounts(msg accountsMsg) tea.Cmd {
 			return m.loadAccounts() // the screen shows what was refused: read what is saved
 		}
 		m.settings.SetAccountsError(msg.err.Error())
+		if m.login != nil && m.login.back {
+			m.login = nil
+		}
 		return nil
 	}
 	m.settings.SetAccounts(msg.x)
 	if msg.put {
 		m.settings.CloseAccountForm()
+	}
+	if !msg.put && m.login != nil && m.login.back {
+		m.gotLogin(msg.x)
+		return nil
 	}
 	if msg.flash != "" {
 		m.setFlash(msg.flash)
@@ -195,7 +202,11 @@ func (m *Model) gitRemove() {
 	}
 }
 
-// openAccountLogins opens the picker of gh's logins that no account uses yet.
+// loginItem ends the add-account picker: it logs in to another account with gh.
+const loginItem = "+ log in to another GitHub account…"
+
+// openAccountLogins opens the picker of gh's logins that no account uses yet, then loginItem.
+// With none, it asks whether to log in to another account.
 func (m *Model) openAccountLogins() {
 	x := m.settings.Accounts()
 	if x.LoginError != "" {
@@ -216,19 +227,26 @@ func (m *Model) openAccountLogins() {
 		items = append(items, item)
 	}
 	if len(items) == 0 {
-		m.setFlash("every gh login has an account · run gh auth login in a shell (T), then r")
+		m.ask(ui.PromptLogin, "", "Log in to another GitHub account?", "Every gh login has an account.", "A shell runs gh auth login for github.com.")
 		return
 	}
-	m.picker, m.pickKind = ui.NewPicker("add account for gh login…", items), pickAccountLogin
+	m.picker, m.pickKind = ui.NewPicker("add account for gh login…", append(items, loginItem)), pickAccountLogin
 }
 
-// pickAccountLogin opens the form of a new account for the chosen login. The first account
-// becomes the default.
-func (m *Model) pickAccountLogin(choice string) {
-	l, ok := m.accDraft.logins[choice]
-	if !ok {
-		return
+// pickAccountLogin opens the form of a new account for the chosen login, or the login shell.
+func (m *Model) pickAccountLogin(choice string) tea.Cmd {
+	if choice == loginItem {
+		return m.loginShell()
 	}
+	if l, ok := m.accDraft.logins[choice]; ok {
+		m.newAccountFor(l)
+	}
+	return nil
+}
+
+// newAccountFor opens the form of a new account for login l. The first account becomes the
+// default.
+func (m *Model) newAccountFor(l accounts.Login) {
 	a := accounts.Account{ID: accountID(l.Login), Login: l.Login}
 	if l.Host != accounts.DefaultHost {
 		a.Host = l.Host
@@ -395,7 +413,8 @@ func (m *Model) pickOverrideAccount(id string) tea.Cmd {
 func (m *Model) submitAccounts(kind ui.PromptKind, text, target string) (tea.Cmd, bool) {
 	if m.settings == nil {
 		return nil, kind == ui.PromptAccountText || kind == ui.PromptRuleOwner || kind == ui.PromptRemoveAccount ||
-			kind == ui.PromptRemoveRule || kind == ui.PromptRemoveAccountOverride || kind == ui.PromptDiscardAccount
+			kind == ui.PromptRemoveRule || kind == ui.PromptRemoveAccountOverride || kind == ui.PromptDiscardAccount ||
+			kind == ui.PromptLogin
 	}
 	c := m.config()
 	switch kind {
@@ -404,6 +423,8 @@ func (m *Model) submitAccounts(kind ui.PromptKind, text, target string) (tea.Cmd
 		m.settings.SetAccountFormText(key, strings.TrimSpace(text))
 	case ui.PromptRuleOwner:
 		m.ruleOwner(text)
+	case ui.PromptLogin:
+		return m.loginShell(), true
 	case ui.PromptDiscardAccount:
 		m.settings.CloseAccountForm()
 	case ui.PromptRemoveAccount:
@@ -433,4 +454,71 @@ func (m *Model) submitAccounts(kind ui.PromptKind, text, target string) (tea.Cmd
 		return nil, false
 	}
 	return nil, true
+}
+
+// loginWait is a gh auth login shell bx waits on: settings are kept aside while it shows, and
+// come back when it closes; the logins gh had before tell the new one.
+type loginWait struct {
+	target   Target
+	settings *ui.Settings
+	known    map[string]bool // host/login, lower case
+	back     bool            // the shell closed: the next read of the accounts looks for the new login
+}
+
+func loginKey(l accounts.Login) string { return strings.ToLower(l.Host + "/" + l.Login) }
+
+// loginShell opens a shell in the open project's folder running gh auth login for github.com
+// and shows it; settings come back when it closes (see loginClosed).
+func (m *Model) loginShell() tea.Cmd {
+	if m.project == "" {
+		m.setFlash("open a project first: the login runs in a shell of it")
+		return nil
+	}
+	res, err := m.be.Do(m.ctx, m.project, "shells/login", api.Action{})
+	if err != nil {
+		m.setFlash("error: " + err.Error())
+		return nil
+	}
+	w := &loginWait{target: shellTarget("", res.K), settings: m.settings, known: map[string]bool{}}
+	for _, l := range m.settings.Accounts().Logins {
+		w.known[loginKey(l)] = true
+	}
+	m.login, m.settings = w, nil
+	t := w.target
+	m.pendingShell = &t
+	m.claudeFocused = true
+	m.resizeTerm()
+	return tea.Batch(m.show(t), m.poll())
+}
+
+// loginClosed brings settings back when the shell that closed is the login shell, and reads
+// the logins again to find the new one.
+func (m *Model) loginClosed() tea.Cmd {
+	if m.login == nil || m.login.back || m.target != m.login.target {
+		return nil
+	}
+	m.settings, m.login.back = m.login.settings, true
+	m.setFlash("checking gh logins…")
+	return m.loadAccounts()
+}
+
+// gotLogin opens the form of a new account for the login gh did not have before the login
+// shell, if any.
+func (m *Model) gotLogin(x api.GitAccounts) {
+	w := m.login
+	m.login = nil
+	for _, l := range x.Logins {
+		if !l.OK || w.known[loginKey(l)] {
+			continue
+		}
+		if slices.ContainsFunc(x.Config.Accounts, func(a accounts.Account) bool {
+			return strings.EqualFold(a.Login, l.Login) && strings.EqualFold(a.HostOrDefault(), l.Host)
+		}) {
+			continue
+		}
+		m.newAccountFor(l)
+		m.setFlash("new gh login " + l.Login + " · name the account, then ctrl-s")
+		return
+	}
+	m.setFlash("no new gh login")
 }

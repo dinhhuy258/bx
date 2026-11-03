@@ -144,7 +144,7 @@ func TestParseLogins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Login{{"ghe.acme.io", "c", "", true}, {"github.com", "a", "", false}, {"github.com", "b", "repo", true}}
+	want := []Login{{"ghe.acme.io", "c", "", true, false}, {"github.com", "a", "", false, false}, {"github.com", "b", "repo", true, true}}
 	if !slices.Equal(ls, want) {
 		t.Fatalf("%+v", ls)
 	}

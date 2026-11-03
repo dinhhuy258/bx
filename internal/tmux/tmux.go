@@ -118,17 +118,21 @@ type Shell struct {
 	Title, Command           string
 }
 
-// NewShell creates a detached session named name running the default shell in dir and
-// returns its id ($n). Pagers are off (PAGER and GIT_PAGER are cat): on a phone a pager
+// NewShell creates a detached session named name running cmd ("" = the default shell) in dir
+// and returns its id ($n). Pagers are off (PAGER and GIT_PAGER are cat): on a phone a pager
 // like less hides the rest of the output and has no obvious way out, so output prints
 // straight to the terminal instead.
 // env is set too, as in NewSession.
-func (t *Tmux) NewShell(name, dir string, env ...string) (string, error) {
+func (t *Tmux) NewShell(name, dir, cmd string, env ...string) (string, error) {
 	args := []string{"new-session", "-d", "-s", name, "-c", dir, "-e", "PAGER=cat", "-e", "GIT_PAGER=cat"}
 	for _, e := range env {
 		args = append(args, "-e", e)
 	}
-	return t.run(append(args, "-P", "-F", "#{session_id}")...)
+	args = append(args, "-P", "-F", "#{session_id}")
+	if cmd != "" {
+		args = append(args, cmd)
+	}
+	return t.run(args...)
 }
 
 // SetOption sets a session option (a user option starts with @) on target.

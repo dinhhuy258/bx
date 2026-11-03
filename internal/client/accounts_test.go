@@ -215,6 +215,49 @@ func TestSettingsGitRefusedSaveReloads(t *testing.T) {
 	}
 }
 
+func TestSettingsGitLogsInToANewAccount(t *testing.T) {
+	h := accountsSettings(t, accounts.Config{Accounts: []accounts.Account{
+		{ID: "personal", Login: "dinhhuy258"}, {ID: "work", Login: "huy-acme"},
+	}})
+	gotoRow(t, h, ui.RowAccountAdd)
+	h.press("Enter") // every login has an account: it asks to log in to another
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "Log in to another GitHub account?") || !strings.Contains(v, "gh auth login for github.com") {
+		t.Fatalf("login question:\n%s", v)
+	}
+	h.press("y")
+	if h.be.logins != 1 || h.m.settings != nil || !h.m.target.Shell() {
+		t.Fatalf("login shell: %d settings=%v target=%+v", h.be.logins, h.m.settings != nil, h.m.target)
+	}
+	// gh logs in to huy-oss, then the shell ends
+	h.be.acc.Logins = append(h.be.acc.Logins, accounts.Login{Host: "github.com", Login: "huy-oss", OK: true})
+	h.shellEnded()
+	if h.m.settings == nil || !h.m.settings.GitShown() {
+		t.Fatal("settings › git comes back")
+	}
+	a, _, isNew, _, ok := h.m.settings.AccountForm()
+	if !ok || !isNew || a.Login != "huy-oss" {
+		t.Fatalf("the new login's form: %+v %v %v", a, isNew, ok)
+	}
+}
+
+func TestSettingsGitLoginWithNoNewLogin(t *testing.T) {
+	h := accountsSettings(t, accounts.Config{})
+	gotoRow(t, h, ui.RowAccountAdd)
+	h.press("Enter")
+	if h.m.picker == nil || !strings.Contains(ansi.Strip(h.m.View().Content), loginItem) {
+		t.Fatal("the picker ends with the login item")
+	}
+	h.typeText("log in")
+	h.press("Enter") // straight to the login shell
+	if h.be.logins != 1 || h.m.settings != nil {
+		t.Fatalf("login shell: %d", h.be.logins)
+	}
+	h.shellEnded()
+	if _, _, _, _, open := h.m.settings.AccountForm(); open || h.m.flash != "no new gh login" {
+		t.Fatalf("flash %q", h.m.flash)
+	}
+}
+
 func TestAccountID(t *testing.T) {
 	for in, want := range map[string]string{"huy-acme": "huy-acme", "a.b": "a-b", "--": "account", "Ünï": "n"} {
 		if got := accountID(in); got != want {

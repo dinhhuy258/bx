@@ -182,3 +182,33 @@ func (a *App) ghEnv(ctx context.Context, dir string) []string {
 	}
 	return a.envForDir(ctx, dir)
 }
+
+// LoginShell opens a shell in p's folder that runs gh auth login for github.com, then
+// switches gh back to the login that was active before, so a new login changes nothing until
+// an account uses it. The account tokens bx gives shells are left out: gh stores no login
+// while GH_TOKEN is set. A GitHub Enterprise Server login is made with gh by hand: the
+// add-account picker lists the logins of every host.
+func (a *App) LoginShell(p *state.Project) (int, error) {
+	host := accounts.DefaultHost
+	script := shellJoin([]string{"gh", "auth", "login", "--hostname", host, "--git-protocol", "https", "--web"})
+	if prev := a.activeLogin(host); prev != "" {
+		script += "; " + shellJoin([]string{"gh", "auth", "switch", "--hostname", host, "--user", prev}) + " >/dev/null 2>&1"
+	}
+	script += "; printf '\\nPress Enter to go back to bx'; read _"
+	cmd := shellJoin([]string{"env", "-u", "GH_TOKEN", "-u", "GH_ENTERPRISE_TOKEN", "-u", "GH_HOST", "sh", "-c", script})
+	return a.openShell(p, "", cmd, "gh auth login", nil)
+}
+
+// activeLogin is the login gh uses on host now, "" for none or when gh cannot say.
+func (a *App) activeLogin(host string) string {
+	ls, err := a.Logins(context.Background())
+	if err != nil {
+		return ""
+	}
+	for _, l := range ls {
+		if l.Active && strings.EqualFold(l.Host, host) {
+			return l.Login
+		}
+	}
+	return ""
+}

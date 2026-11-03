@@ -83,6 +83,13 @@ func (s *Server) Handler() http.Handler {
 		}
 		return api.Result{Story: r.Story, K: k}, err
 	}))
+	mux.HandleFunc("POST /api/projects/{name}/shells/login", s.actionResult(func(p *state.Project, r api.Action) (api.Result, error) {
+		k, err := s.App.LoginShell(p)
+		if err == nil {
+			s.Log("shell %s %s$%d: gh auth login", p.Name, group(""), k)
+		}
+		return api.Result{K: k}, err
+	}))
 	mux.HandleFunc("POST /api/projects/{name}/shells/close", s.action(func(p *state.Project, r api.Action) (int, error) {
 		err := s.App.CloseShell(p, r.Story, r.K)
 		if err == nil {
