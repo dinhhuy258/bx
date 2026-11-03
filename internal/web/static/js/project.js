@@ -94,7 +94,9 @@ export function showProject(root, name) {
     const shellItem = { label: 'New shell', run: () => newShell(story) };
     if (!story) { sheet('Chats', [{ label: 'New session', run: () => newSession('') }, shellItem]); return; }
     const rv = ((snap.live && snap.live.review) || {})[story] || 0, d = ((snap.live && snap.live.diff) || {})[story];
-    const hint = [rv ? `${rv} to send` : '', d ? `+${d.add} −${d.del}` : ''].filter(Boolean).join(' · ');
+    const hint = rv || d ? [rv ? `${rv} to send` : null, rv && d ? ' · ' : null,
+      d ? h('span', { class: 'add' }, `+${d.add}`) : null, d ? ' ' : null, d ? h('span', { class: 'del' }, `−${d.del}`) : null]
+      .filter(Boolean) : '';
     const items = [{ label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } },
       { label: 'New session', run: () => newSession(story) }, shellItem];
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });

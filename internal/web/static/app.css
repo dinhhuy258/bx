@@ -10,7 +10,9 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.danger { background: var(--gone); border-color: var(--gone); color: #fff; }
 button.icon, a.icon { background: none; border: none; font-size: 22px; padding: 4px 10px; min-width: 44px; min-height: 44px; text-align: center; display: inline-flex; align-items: center; justify-content: center; }
 
-.bar { display: flex; align-items: center; gap: 4px; padding: 0 4px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 1; }
+.bar { display: flex; align-items: center; gap: 4px; padding: 0 4px; border-bottom: 1px solid var(--line); position: sticky; top: env(safe-area-inset-top); background: var(--bg); z-index: 1; }
+/* the body's safe-area padding scrolls away: cover the status-bar strip above a stuck bar */
+.bar::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: env(safe-area-inset-top); background: var(--bg); }
 .bar h1 { flex: 1; min-width: 0; font-size: 17px; margin: 0; display: flex; gap: 8px; align-items: center; overflow: hidden; white-space: nowrap; }
 .bar h1 > span:first-child { overflow: hidden; text-overflow: ellipsis; }
 .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -25,8 +27,8 @@ button.icon, a.icon { background: none; border: none; font-size: 22px; padding: 
 .sec-label .st.wait { color: var(--wait); }
 .sec-head .ib { width: 32px; height: 32px; }
 .diff { display: flex; gap: 6px; white-space: nowrap; font-family: Menlo, monospace; }
-.diff .add { color: var(--run); }
-.diff .del { color: var(--gone); }
+.diff .add, .ttl-meta .add, .sheet-hint .add { color: var(--run); }
+.diff .del, .ttl-meta .del, .sheet-hint .del { color: var(--gone); }
 .card { background: #1a1a1a; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .card > * + * { border-top: 1px solid var(--line); }
 .card.attn { border-color: rgba(245, 166, 35, .45); }

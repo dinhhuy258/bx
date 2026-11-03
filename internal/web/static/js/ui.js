@@ -196,7 +196,7 @@ export function icon(name, cls = 'i') {
 }
 
 // sheet is a bottom sheet of actions: items [{label, run, danger?, icon?, hint?, badge?,
-// chevron?, group?, control?}]. icon names an ICONS entry, hint is a dim second line, badge a
+// chevron?, group?, control?}]. icon names an ICONS entry, hint is a dim second line (text or nodes), badge a
 // count pill and chevron says the row opens more. Rows with the same group name share a group,
 // in the order the groups first appear; danger items go in their own group at the bottom, in
 // red. A row with a control (an element, e.g. A−/A+) is not a button: the control does the work

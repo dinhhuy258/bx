@@ -406,7 +406,8 @@ class El extends Node {
   fire(k, e = {}) { for (const f of this.on[k] || []) f(e); }
   setAttribute(k, v) { this[k] = v; }
   append(...c) { this.children.push(...c); }
-  replaceChildren(...c) { this.children = c; }
+  // like the DOM: anything but a node or string (null, an array) would be printed as text
+  replaceChildren(...c) { if (c.some((x) => !(x instanceof Node) && typeof x !== 'string')) fail('replaceChildren got ' + c.map(String)); this.children = c; }
   showModal() { this.open = true; }
   close() { this.open = false; this.fire('close'); }
   remove() {}

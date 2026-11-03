@@ -42,12 +42,14 @@ export function showReview(root, name, story) {
       h('span', { class: 'add' }, `+${add}`), ' ', h('span', { class: 'del' }, `−${del}`), sent ? ` · ${sent} sent` : '');
     send.textContent = unsent ? `Send ${unsent}` : 'Send';
     send.disabled = !unsent;
-    body.replaceChildren(
+    // replaceChildren neither skips null nor flattens arrays (it would print "null" and
+    // "[object HTMLElement],…"), so drop the empty slots and spread the file cards.
+    body.replaceChildren(...[
       data.note ? h('div', { class: 'warn rv-note' }, data.note) : null,
       h('div', { class: 'rv-tools' }, h('button', { onclick: load }, 'Refresh'),
         sent ? h('button', { onclick: () => clearSent(sent) }, `Clear ${sent} sent`) : null),
       data.files.length ? null : h('p', { class: 'help' }, `No changes since ${data.base || 'HEAD'}.`),
-      data.files.map(file));
+      ...data.files.map(file)].filter(Boolean));
   }
 
   function file(f) {
