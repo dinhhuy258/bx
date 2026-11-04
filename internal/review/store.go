@@ -35,8 +35,11 @@ func Load(path string) (File, error) {
 }
 
 // Save writes f atomically: a temp file in the same folder, fsync, rename.
-func Save(path string, f File) error {
-	data, err := json.MarshalIndent(f, "", "  ")
+func Save(path string, f File) error { return writeJSON(path, f) }
+
+// writeJSON writes v as indented JSON atomically: a temp file in the same folder, fsync, rename.
+func writeJSON(path string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}

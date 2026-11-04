@@ -11,6 +11,17 @@ export const unsentOf = (comments) => comments.filter((c) => !c.sent_at);
 export const firstOf = (c) => c.start_line || c.line;
 export const linesOf = (c) => (firstOf(c) < c.line ? `lines ${firstOf(c)}–${c.line}` : `line ${c.line}`);
 
+// whereOf names t's lines for a form title: "a.go:4–7 (removed lines)".
+function whereOf(t) {
+  const range = t.start_line && t.start_line < t.line;
+  return `${t.file}:${range ? `${t.start_line}–${t.line}` : t.line}${t.side === 'old' ? (range ? ' (removed lines)' : ' (removed line)') : ''}`;
+}
+
+// secs is how long ago unix time started was, in seconds.
+const secs = (started) => `${Math.max(0, Math.round(Date.now() / 1000 - started))}s`;
+// who names the conversation an explanation used.
+const who = (e) => (e.session ? `[${e.session}]` : 'code only');
+
 // quoteOf is ui.QuoteCode: code's first max lines without the indent they share, then how many
 // more there are.
 export function quoteOf(code, max) {
@@ -42,7 +53,9 @@ export function rangeOf(rows) {
 // showReview is #/p/{name}/d/{story}: the story's diff by file, tap a line to comment, Send
 // pastes the unsent comments into a session of the story (not submitted). The comment form's
 // Select more lines starts a range on its line: taps then move its ends inside that hunk, and
-// the bar at the bottom comments on it.
+// the bar at the bottom comments on it. ✦ Explain, in that form and in the bar, asks Claude about
+// the lines: the answer shows in a violet card under the last line, and the page reloads every
+// 2 s while one runs.
 export function showReview(root, name, story) {
   const meta = h('span', { class: 'ttl-meta' });
   const send = h('button', { class: 'primary', disabled: true, onclick: () => pickSession() }, 'Send');
@@ -50,12 +63,17 @@ export function showReview(root, name, story) {
   const body = h('div', { class: 'page rv-page' });
   const dockText = h('div', { class: 'rv-dock-text' });
   const dock = h('div', { class: 'rv-dock', hidden: true }, dockText,
-    h('button', { onclick: () => { sel = null; paint(); } }, 'Cancel'),
+    h('button', { onclick: () => { sel = null; render(); } }, 'Cancel'),
+    h('button', { class: 'vio', onclick: () => explainAsk(rangeTarget().target) }, '✦ Explain'),
     h('button', { class: 'primary', onclick: () => commentRange() }, 'Comment'));
   root.append(topBar(h('a', { href: `#/p/${enc(name)}`, class: 'ib', 'aria-label': 'Back' }, icon('back')),
     h('span', { class: 'ttl-name' }, story), meta, send), err, body, dock);
   const closed = new Set(); // files folded by a tap on their header
   let data = null, stopped = false;
+  let poll = null; // the timer of the next reload while an explanation runs
+  // the running seconds of the cards tick on their own, without a redraw
+  const tick = setInterval(() => document.querySelectorAll('.rv-ex-t').forEach((el) => { el.textContent = secs(Number(el.dataset.started)); }), 1000);
+  const explains = () => data.explains || [];
   // sel is the range being picked: rows lo..hi of hunk `hunk` of file `path`, and the comment
   // typed before. rowEls are the drawn rows, so a tap repaints them without a redraw (which
   // would lose the hunks' sideways scroll).
@@ -94,6 +112,23 @@ export function showReview(root, name, story) {
       data.files.length ? null : h('p', { class: 'help' }, `No changes since ${data.base || 'HEAD'}.`),
       ...data.files.map(file)].filter(Boolean));
     paint();
+    schedulePoll();
+  }
+
+  // schedulePoll reloads the review in 2 s while an explanation runs. It redraws only when
+  // something changed, and not while a range is being picked: Cancel and save redraw anyway.
+  function schedulePoll() {
+    if (stopped || poll || !explains().some((e) => e.state === 'running')) return;
+    poll = setTimeout(async () => {
+      poll = null;
+      let d;
+      try { d = await api.review(name, story); } catch { schedulePoll(); return; }
+      if (stopped) return;
+      const sig = (x) => JSON.stringify([x.version, x.comments, (x.explains || []).map((e) => [e.id, e.state])]);
+      const changed = sig(d) !== sig(data);
+      data = d;
+      if (changed && !sel) render(); else schedulePoll();
+    }, 2000);
   }
 
   // paint shows the range being picked, or none: its rows, the rows it can't take, the bar.
@@ -121,7 +156,8 @@ export function showReview(root, name, story) {
     paint();
   }
 
-  function commentRange() {
+  // rangeTarget is the lines being picked, and their unsent comment when it is one line.
+  function rangeTarget() {
     const f = data.files.find((x) => x.path === sel.path);
     const t = rangeOf(sel.rows.slice(sel.lo, sel.hi + 1));
     const target = { file: sel.path, side: t.side, start_line: t.start_line, line: t.line, code: t.code };
@@ -130,6 +166,11 @@ export function showReview(root, name, story) {
       target.code = t.last.text;
       existing = unsentOf(data.comments).find((c) => c.file === f.path && !c.outdated && c.side === t.side && c.line === t.line);
     }
+    return { target, existing };
+  }
+
+  function commentRange() {
+    const { target, existing } = rangeTarget();
     compose(target, existing, null, sel.draft);
   }
 
@@ -143,8 +184,10 @@ export function showReview(root, name, story) {
       mine.length ? h('span', { class: 'badge' }, String(mine.length)) : null);
     if (!open) return h('section', { class: 'card rv' }, head);
     const pinned = f.folded ? mine : mine.filter((c) => c.outdated);
+    const exs = explains().filter((e) => e.file === f.path);
     return h('section', { class: 'card rv' }, head,
       pinned.map((c) => bubble(c, true)),
+      (f.folded ? exs : exs.filter((e) => e.outdated)).map(explainCard),
       f.folded ? h('div', { class: 'help rv-folded' }, f.folded)
         : h('div', { class: 'rv-hunks' }, f.hunks.map((hk, hi) => {
           const head = h('div', { class: 'rv-hunk' }, hk.header);
@@ -167,7 +210,34 @@ export function showReview(root, name, story) {
     const el = h('div', { class: `rv-row rv-${r.kind}${covered ? ' rv-cov' : ''}`, onclick: tap },
       h('span', { class: 'rv-n' }, String(line)), h('span', { class: 'rv-code' }, sign + r.text));
     rowEls.push({ el, path: f.path, hunk: hi, idx });
-    return [el, here.map((c) => bubble(c, false))];
+    const exs = explains().filter((e) => e.file === f.path && !e.outdated && e.side === side && e.line === line);
+    return [el, here.map((c) => bubble(c, false)), exs.map(explainCard)];
+  }
+
+  // explainCard is an explanation under its last line, or pinned at the top of its file: running
+  // (with Stop), done (the answer clipped, Read all, Dismiss) or failed.
+  function explainCard(e) {
+    const lines = e.outdated ? `outdated · ${linesOf(e)}` : linesOf(e);
+    if (e.state === 'running') {
+      return h('div', { class: 'rv-ex' }, h('small', {}, h('b', {}, '✦ explain'), ' ', lines, ' · ', who(e)),
+        h('div', {}, h('span', { class: 'rv-spin' }), ' Explaining… ', h('span', { class: 'rv-ex-t', 'data-started': e.started }, secs(e.started))),
+        h('div', { class: 'rv-ex-acts' }, h('button', { onclick: () => dismiss(e) }, 'Stop')));
+    }
+    if (e.state === 'failed') {
+      return h('div', { class: 'rv-ex' }, h('small', {}, h('b', {}, '✦ explain failed'), ' ', lines, ' · ', who(e)),
+        h('div', {}, e.error), h('div', { class: 'rv-ex-acts' }, h('button', { onclick: () => dismiss(e) }, 'Dismiss')));
+    }
+    const text = h('div', { class: 'rv-ex-body clip' }, e.answer);
+    let open = false;
+    const read = h('button', { onclick: () => { open = !open; text.classList.toggle('clip', !open); read.textContent = open ? 'Show less' : 'Read all'; } }, 'Read all');
+    return h('div', { class: 'rv-ex' },
+      h('small', {}, h('b', {}, '✦ explain'), ' ', lines, ' · ', who(e), e.took_ms ? ` · ${Math.round(e.took_ms / 1000)}s` : ''),
+      text, h('div', { class: 'rv-ex-acts' }, read, h('button', { onclick: () => dismiss(e) }, 'Dismiss')));
+  }
+
+  // dismiss stops a running explanation or drops an answer.
+  async function dismiss(e) {
+    try { data = await api.deleteExplain(name, story, e.id); render(); } catch (x) { toast(x.message); }
   }
 
   // bubble is a comment under its line, or pinned at the top of its file. A tap edits an unsent
@@ -186,13 +256,14 @@ export function showReview(root, name, story) {
   // grow into a range (Select more lines), which keeps what was typed as draft.
   async function compose(t, existing, at, draft) {
     const range = t.start_line && t.start_line < t.line;
-    const where = `${t.file}:${range ? `${t.start_line}–${t.line}` : t.line}${t.side === 'old' ? (range ? ' (removed lines)' : ' (removed line)') : ''}`;
     const quote = quoteOf(t.code, 4);
-    const v = await ask(`Comment · ${where}`, [{ name: 'body', label: quote.length ? h('pre', { class: 'rv-quote' }, quote.join('\n')) : 'Comment',
+    const v = await ask(`Comment · ${whereOf(t)}`, [{ name: 'body', label: quote.length ? h('pre', { class: 'rv-quote' }, quote.join('\n')) : 'Comment',
       type: 'textarea', value: existing ? existing.body : draft || '', placeholder: 'Empty deletes it' }], 'Save',
-    { extra: at && !existing ? 'Select more lines' : null });
+    { extras: [at && !existing ? { label: '⇕ Select more lines', value: 'select' } : null,
+      { label: '✦ Explain', value: 'explain', class: 'vio' }].filter(Boolean) });
     if (v === null) return;
-    if (v.$extra) {
+    if (v.$extra === 'explain') { explainAsk(t); return; }
+    if (v.$extra === 'select') {
       sel = { path: at.path, hunk: at.hunk, rows: at.rows, lo: at.idx, hi: at.idx, draft: v.body };
       paint();
       return;
@@ -212,6 +283,34 @@ export function showReview(root, name, story) {
     } catch (e) {
       toast(e.status === 409 ? 'Comments changed on another device · reloaded' : e.message);
       if (e.status === 409) load();
+    }
+  }
+
+  // explainAsk asks which conversation Claude uses and an optional question about t's lines,
+  // then starts the explanation.
+  async function explainAsk(t) {
+    let snap;
+    try { snap = await api.snapshot(name); } catch (e) { toast(e.message); return; }
+    const agents = (snap.live && snap.live.agents) || {};
+    const rows = Object.entries(snap.project.sessions || {}).filter(([, s]) => s.story === story)
+      .map(([k, s]) => [Number(k), s]).sort((a, b) => b[0] - a[0]);
+    const options = rows.map(([num, s]) => ({ value: String(num),
+      label: `[${num}] ${s.title || 'untitled'} · ${!s.done && agents[s.uuid] ? 'running' : 'done'}` }));
+    options.push({ value: '-1', label: 'Code only (no conversation)' });
+    const last = String(data.explain_with || '');
+    const quote = quoteOf(t.code, 4);
+    const v = await ask(`Explain · ${whereOf(t)}`, [
+      { name: 'question', type: 'textarea', label: quote.length ? h('pre', { class: 'rv-quote' }, quote.join('\n')) : 'Question',
+        placeholder: 'Optional. Empty asks what it does and why.' },
+      { name: 'session', type: 'select', label: 'Conversation', options, value: options.some((o) => o.value === last) ? last : options[0].value }], 'Explain');
+    if (v === null) return;
+    try {
+      data = await api.explain(name, story, { file: t.file, side: t.side, line: t.line, code: t.code, question: v.question,
+        session: Number(v.session), ...(t.start_line && t.start_line < t.line ? { start_line: t.start_line } : {}) });
+      sel = null;
+      render();
+    } catch (e) {
+      toast(e.message);
     }
   }
 
@@ -247,5 +346,5 @@ export function showReview(root, name, story) {
   }
 
   load();
-  return { stop() { stopped = true; } };
+  return { stop() { stopped = true; clearTimeout(poll); clearInterval(tick); } };
 }

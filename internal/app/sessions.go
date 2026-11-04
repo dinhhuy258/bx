@@ -496,7 +496,8 @@ func (a *App) forgetStory(p *state.Project, name string) error {
 		a.removeSessionFiles(p.Name, n)
 		delete(p.Sessions, n)
 	}
-	_ = os.Remove(a.Cfg.ReviewFile(p.Name, name)) // its review comments go with it
+	_ = os.Remove(a.Cfg.ReviewFile(p.Name, name))  // its review comments go with it
+	_ = os.Remove(a.Cfg.ExplainFile(p.Name, name)) // and its explanations
 	delete(p.Stories, name)
 	return a.SaveProject(p)
 }

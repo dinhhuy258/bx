@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,8 @@ type fakeBackend struct {
 	sendRes     api.Result
 	sendErr     error
 	reviewErr   error                 // PUT fails with this
+	explains    []api.ExplainRequest  // every explain asked
+	dismissed   []string              // every explanation stopped or dismissed
 	artifacts   api.ArtifactList      // the reply of every artifacts list
 	reads       []string              // "storyinfo", "branches fetch", "prs <q>"
 	info        api.StoryInfo         // the reply of storyinfo
@@ -197,6 +200,19 @@ func (f *fakeBackend) SaveReview(_ context.Context, _, _ string, c api.ReviewCom
 func (f *fakeBackend) SendReview(_ context.Context, _, _ string, r api.ReviewSend) (api.Result, error) {
 	f.sends = append(f.sends, r)
 	return f.sendRes, f.sendErr
+}
+
+func (f *fakeBackend) Explain(_ context.Context, _, _ string, r api.ExplainRequest) (api.Review, error) {
+	f.explains = append(f.explains, r)
+	f.review.Explains = append(f.review.Explains, api.Explain{ID: fmt.Sprintf("e%d", len(f.explains)), File: r.File, Side: r.Side,
+		StartLine: r.StartLine, Line: r.Line, Code: r.Code, Question: r.Question, State: api.ExplainRunning, Started: time.Now().Unix()})
+	return f.review, nil
+}
+
+func (f *fakeBackend) DeleteExplain(_ context.Context, _, _, id string) (api.Review, error) {
+	f.dismissed = append(f.dismissed, id)
+	f.review.Explains = slices.DeleteFunc(f.review.Explains, func(e api.Explain) bool { return e.ID == id })
+	return f.review, nil
 }
 
 func (f *fakeBackend) ClearSent(context.Context, string, string) (api.Review, error) {

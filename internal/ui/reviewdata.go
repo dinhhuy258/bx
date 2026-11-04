@@ -14,6 +14,11 @@ type ReviewData struct {
 	Total int        `json:"total"`
 	Files []DiffFile `json:"files"`
 	ReviewComments
+	// Explains are Claude's answers about lines of the diff, placed like comments. They are
+	// never sent. ExplainWith is the conversation the story's last ask used: a session
+	// number, ExplainCodeOnly, or 0 when it never asked.
+	Explains    []Explain `json:"explains"`
+	ExplainWith int       `json:"explain_with,omitempty"`
 }
 
 // ReviewComments is the comment list with the version it was read at. PUT sends it back
@@ -127,4 +132,57 @@ func QuoteCode(code string, max int) []string {
 		lines = append(lines, fmt.Sprintf("… %d more lines", more))
 	}
 	return lines
+}
+
+// The states of an explanation.
+const (
+	ExplainRunning = "running"
+	ExplainDone    = "done"
+	ExplainFailed  = "failed"
+)
+
+// ExplainCodeOnly asks without a session's conversation.
+const ExplainCodeOnly = -1
+
+// Explain is Claude's answer about lines of the diff: their place as in Comment, the question
+// ("" asks what the code does and why), the session whose conversation it used (0 none) and
+// its title then, the state, and the answer or the error. Started is unix seconds; TookMS is
+// set when it ends. Outdated is set by the server on read, like a comment's.
+type Explain struct {
+	ID           string `json:"id"`
+	File         string `json:"file"`
+	Side         string `json:"side"`
+	StartLine    int    `json:"start_line,omitempty"`
+	Line         int    `json:"line"`
+	Code         string `json:"code"`
+	Question     string `json:"question,omitempty"`
+	Session      int    `json:"session,omitempty"`
+	SessionTitle string `json:"session_title,omitempty"`
+	State        string `json:"state"`
+	Answer       string `json:"answer,omitempty"`
+	Error        string `json:"error,omitempty"`
+	Started      int64  `json:"started"`
+	TookMS       int64  `json:"took_ms,omitempty"`
+	Outdated     bool   `json:"outdated,omitempty"`
+}
+
+// AsComment is the explanation's place as a comment, to share Comment's line helpers and
+// review.Place.
+func (e Explain) AsComment() Comment {
+	return Comment{ID: e.ID, File: e.File, Side: e.Side, StartLine: e.StartLine, Line: e.Line, Code: e.Code, Outdated: e.Outdated}
+}
+
+// Running says whether Claude is still answering.
+func (e Explain) Running() bool { return e.State == ExplainRunning }
+
+// ExplainRequest is POST …/review/explain: the lines, the question and the conversation (a
+// session number of the story, or ExplainCodeOnly).
+type ExplainRequest struct {
+	File      string `json:"file"`
+	Side      string `json:"side"`
+	StartLine int    `json:"start_line,omitempty"`
+	Line      int    `json:"line"`
+	Code      string `json:"code"`
+	Question  string `json:"question,omitempty"`
+	Session   int    `json:"session"`
 }

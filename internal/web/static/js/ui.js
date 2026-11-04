@@ -94,8 +94,9 @@ export function poll(fn, ms = 2000) {
 // Field: {name, label, type?: 'text'|'select'|'checks', value?, placeholder?, options?, list?, hint?}
 // Select options are strings or {value, label}. hint(values) returns a help line shown under the
 // field, redrawn as the form changes.
-// opts: {danger?: a red OK button, text?: a help line under the title, extra?: the label of a
-// third button on the left; it resolves to the values with $extra: true}
+// opts: {danger?: a red OK button, text?: a help line under the title, extras?: [{label, value,
+// class?}] buttons in a row above Cancel and OK; one closes the form and resolves to the values
+// with $extra: its value}
 export function ask(title, fields, ok = 'OK', opts = {}) {
   return new Promise((resolve) => {
     const inputs = [], hints = [];
@@ -135,12 +136,14 @@ export function ask(title, fields, ok = 'OK', opts = {}) {
     // which must be OK.
     const dlg = h('dialog', {}, h('form', { method: 'dialog', oninput: redraw, onchange: redraw }, h('h2', {}, title),
       opts.text ? h('p', { class: 'help' }, opts.text) : null, body,
-      h('menu', {}, opts.extra ? h('button', { type: 'button', class: 'ghost', onclick: () => dlg.close('extra') }, opts.extra) : null,
+      opts.extras && opts.extras.length ? h('div', { class: 'dlg-extras' }, opts.extras.map((x) =>
+        h('button', { type: 'button', class: x.class || 'ghost', onclick: () => dlg.close(`extra:${x.value}`) }, x.label))) : null,
+      h('menu', {},
         h('button', { type: 'button', onclick: () => dlg.close('cancel') }, 'Cancel'),
         h('button', { value: 'ok', class: opts.danger ? 'danger' : 'primary' }, ok))));
     redraw();
     dlg.addEventListener('close', () => {
-      const v = dlg.returnValue === 'ok' ? read() : dlg.returnValue === 'extra' ? { ...read(), $extra: true } : null;
+      const v = dlg.returnValue === 'ok' ? read() : (dlg.returnValue || '').startsWith('extra:') ? { ...read(), $extra: dlg.returnValue.slice(6) } : null;
       dlg.remove();
       resolve(v);
     });

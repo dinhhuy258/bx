@@ -232,6 +232,19 @@ func (c *API) ClearSent(ctx context.Context, project, story string) (api.Review,
 	return out, c.call(ctx, reposTimeout, http.MethodPost, reviewPath(project, story)+"/clear-sent", struct{}{}, &out)
 }
 
+// Explain is POST …/review/explain: ask Claude about diff lines; the review comes back with it
+// running.
+func (c *API) Explain(ctx context.Context, project, story string, req api.ExplainRequest) (api.Review, error) {
+	var out api.Review
+	return out, c.call(ctx, reposTimeout, http.MethodPost, reviewPath(project, story)+"/explain", req, &out)
+}
+
+// DeleteExplain is DELETE …/review/explain/{id}: stop it or dismiss its answer.
+func (c *API) DeleteExplain(ctx context.Context, project, story, id string) (api.Review, error) {
+	var out api.Review
+	return out, c.call(ctx, reposTimeout, http.MethodDelete, reviewPath(project, story)+"/explain/"+url.PathEscape(id), nil, &out)
+}
+
 // Upload is POST /api/projects/{name}/sessions/{num}/files: one file for the session, saved on
 // the server, which replies with its absolute path there.
 func (c *API) Upload(ctx context.Context, project string, num int, name string, content []byte) (api.UploadResult, error) {

@@ -422,6 +422,12 @@ globalThis.Node = Node;
 globalThis.document = { createElement: (t) => { const e = new El(t); made.push(e); return e; }, createElementNS: (_, t) => new El(t), body: new El('body'), querySelector: () => null };
 globalThis.location = { hash: '' };
 globalThis.window = globalThis;
+// the poll (2 s) and the card clock (1 s) must not keep node alive; short waits stay real
+const realTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (f, ms, ...a) => (ms >= 1000 ? 0 : realTimeout(f, ms, ...a));
+globalThis.setInterval = () => 0;
+globalThis.clearTimeout = () => {};
+globalThis.clearInterval = () => {};
 const fail = (m) => { console.error(m); process.exit(1); };
 const text = (e) => typeof e === 'string' ? e : (e.textContent ?? '') + (e.children || []).map(text).join('');
 
@@ -460,9 +466,10 @@ const dialog = () => made.filter((e) => e.tag === 'dialog').pop();
 rowEl('1').fire('click');
 const d1 = dialog();
 const more = made.find((e) => e.tag === 'button' && e.className === 'ghost');
-if (!more || text(more) !== 'Select more lines') fail('no Select more lines');
+if (!more || text(more) !== '⇕ Select more lines') fail('no Select more lines');
+if (!made.some((e) => e.tag === 'button' && e.className === 'vio' && text(e) === '✦ Explain')) fail('no Explain in the comment form');
 made.find((e) => e.tag === 'textarea').value = 'pull out';
-d1.returnValue = 'extra';
+d1.returnValue = 'extra:select';
 d1.close();
 await new Promise((r) => setTimeout(r, 0));
 if (!rowEl('1').className.includes('rv-sel') || rowEl('2').className.includes('rv-sel')) fail('select starts on line 1: ' + rowEl('1').className);
@@ -480,6 +487,31 @@ await new Promise((r) => setTimeout(r, 0));
 const c = saved.length && saved[0].comments.pop();
 if (!c || c.start_line !== 1 || c.line !== 2 || c.side !== 'new' || c.code !== 'x\ny' || c.body !== 'pull out') fail('saved: ' + JSON.stringify(c));
 if (!dockEl.hidden) fail('the dock stays after saving');
+
+// Explain: tap line 2, pick the Explain extra, answer the second form with code only.
+const asked = [];
+api.snapshot = async () => ({ project: { sessions: { 1: { story: 's1', title: 'Add lease time', uuid: 'u1' } } }, live: { agents: {} } });
+api.explain = async (n, s, body) => {
+  asked.push(body);
+  return { ...(await api.review()), explains: [{ id: 'e1', file: 'a.go', side: 'new', line: 2, state: 'running', started: 1 }] };
+};
+rowEl('2').fire('click');
+const d3 = dialog();
+d3.returnValue = 'extra:explain';
+d3.close();
+await new Promise((r) => setTimeout(r, 0));
+await new Promise((r) => setTimeout(r, 0));
+const d4 = dialog();
+if (d4 === d3 || !text(d4).includes('Explain · a.go:2') || !text(d4).includes('[1] Add lease time · done') || !text(d4).includes('Code only (no conversation)')) fail('explain form: ' + text(d4));
+made.filter((e) => e.tag === 'select').pop().value = '-1';
+made.filter((e) => e.tag === 'textarea').pop().value = 'why?';
+d4.returnValue = 'ok';
+d4.close();
+await new Promise((r) => setTimeout(r, 0));
+await new Promise((r) => setTimeout(r, 0));
+if (asked.length !== 1 || JSON.stringify(asked[0]) !== JSON.stringify({ file: 'a.go', side: 'new', line: 2, code: 'y', question: 'why?', session: -1 })) fail('asked: ' + JSON.stringify(asked));
+const card = made.filter((e) => e.className === 'rv-ex').pop();
+if (!card || !text(card).includes('Explaining…') || !text(card).includes('code only')) fail('card: ' + (card && text(card)));
 
 made.length = 0;
 ask('Comment', [{ name: 'body', label: 'Comment', type: 'textarea', value: 'hi' }], 'Save');

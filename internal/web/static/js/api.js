@@ -56,6 +56,9 @@ export const api = {
   // body is {session: n} or {new: true}; the reply's .message says what happened
   sendReview: (p, s, body) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/send`, body),
   clearSent: (p, s) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/clear-sent`, {}),
+  // ask Claude about diff lines (the review comes back with it running), or stop / dismiss one
+  explain: (p, s, body) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/explain`, body),
+  deleteExplain: (p, s, id) => call('DELETE', `/api/projects/${enc(p)}/stories/${enc(s)}/review/explain/${enc(id)}`),
   shellStreamURL: (p, story, k, cols, rows) =>
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/shells/stream?story=${enc(story)}&k=${k}&cols=${cols}&rows=${rows}`,
 };

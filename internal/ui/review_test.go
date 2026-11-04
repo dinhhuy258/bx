@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -149,7 +150,7 @@ func TestReviewSelectsARange(t *testing.T) {
 	if !ok || l != want {
 		t.Fatalf("range without the removed row:\n%+v\nwant\n%+v", l, want)
 	}
-	if r.Bar(false) != "SELECT 86–89 · 4 lines · j/k move end · o other end · c comment · esc cancel" {
+	if r.Bar(false) != "SELECT 86–89 · 4 lines · j/k move end · o other end · c comment · e explain · esc cancel" {
 		t.Fatalf("bar: %s", r.Bar(false))
 	}
 	r.Key("j", false) // the next row is in the next hunk
@@ -245,5 +246,75 @@ func TestQuoteCode(t *testing.T) {
 func TestReviewTextDropsControls(t *testing.T) {
 	if got := ReviewText("a\tb\x1b[31mc\r"); got != "a    b[31mc" || strings.ContainsRune(got, 0x1b) {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestExplainAsComment(t *testing.T) {
+	e := Explain{ID: "e1", File: "a.go", Side: "new", StartLine: 3, Line: 5, Code: "x\ny\nz"}
+	c := e.AsComment()
+	if c.ID != "e1" || c.File != "a.go" || c.First() != 3 || c.Line != 5 || c.Code != "x\ny\nz" || c.Lines() != "lines 3–5" {
+		t.Fatalf("%+v", c)
+	}
+	if !(Explain{State: ExplainRunning}).Running() || (Explain{State: ExplainDone}).Running() {
+		t.Fatal("Running")
+	}
+}
+
+func explainReview() ReviewData {
+	d := twoHunks()
+	d.Explains = []Explain{
+		{ID: "e1", File: "internal/git/git.go", Side: "new", StartLine: 86, Line: 88, State: ExplainDone, Session: 3,
+			SessionTitle: "Add lease time", TookMS: 21000, Answer: "One.\nTwo.\n\nThree.\nFour."},
+		{ID: "e2", File: "internal/git/git.go", Side: "new", Line: 89, State: ExplainRunning, Started: 100},
+	}
+	return d
+}
+
+func TestReviewExplainKeys(t *testing.T) {
+	r := NewReview("login-timeout")
+	r.Now = func() time.Time { return time.Unix(114, 0) }
+	r.SetData(explainReview())
+	if r.Key("e", false) != ReviewExplain { // on 86
+		t.Fatal("e on a row")
+	}
+	for range 4 { // 87, 88 old, 88 new, the card of e1
+		r.Key("j", false)
+	}
+	if e := r.SelectedExplain(); e == nil || e.ID != "e1" {
+		t.Fatalf("on the card: %+v", e)
+	}
+	if r.Key("x", false) != ReviewExplainDelete {
+		t.Fatal("x dismisses")
+	}
+	r.Key("Enter", false)
+	golden(t, "review-explain-read-120", ansi.Strip(r.Render(120, 12, true, false)+"\n"+r.Bar(false)), 120)
+	r.Key("Esc", false)
+	golden(t, "review-explain-120", ansi.Strip(r.Render(120, 18, true, false)+"\n"+r.Bar(false)), 120)
+	r.Key("v", false) // not on a row: nothing
+	r.Key("k", false)
+	r.Key("v", false)
+	r.Key("k", false) // 88 old
+	r.Key("k", false) // 87: 87 and 88 new, without the removed row
+	if r.Key("e", false) != ReviewExplain {
+		t.Fatal("e on a selection")
+	}
+	if l, _ := r.Selected(); l.StartLine == 0 {
+		t.Fatalf("the selection: %+v", l)
+	}
+}
+
+func TestReviewKeepsTheCursorWhenACardAppears(t *testing.T) {
+	r := NewReview("s")
+	d := twoHunks()
+	r.SetData(d)
+	r.Key("j", false)
+	r.Key("j", false)
+	r.Key("j", false)
+	r.Key("v", false) // 88 new
+	r.Key("j", false) // 89
+	d.Explains = []Explain{{ID: "e", File: "internal/git/git.go", Side: "new", Line: 86, State: ExplainRunning}}
+	r.SetData(d) // a card under 86, above the cursor
+	if l, _ := r.Selected(); l.StartLine != 88 || l.Line != 89 {
+		t.Fatalf("the selection moved: %+v", l)
 	}
 }

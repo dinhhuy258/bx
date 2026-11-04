@@ -41,6 +41,7 @@ const (
 	PromptComment               // a review comment on a diff line, empty = delete it
 	PromptClearSent             // y/n: drop the sent comments of a review (Target is the story)
 	PromptSyncBusy              // y/n: sync a story Claude works in (Target is the story, "" = chats)
+	PromptExplain               // a question about diff lines; Types are the conversations
 )
 
 // PromptResult is what a key did to the prompt.
@@ -138,6 +139,13 @@ func (p *Prompt) OpenComment(title, code, initial string) {
 	}
 }
 
+// OpenExplain starts the explain form on diff lines: title names them, the body quotes their
+// code, the field takes an optional question and Types are the conversations to use.
+func (p *Prompt) OpenExplain(title, code string, convs []string, conv int) {
+	p.OpenComment(title, code, "")
+	p.Kind, p.Label, p.Types, p.Type = PromptExplain, "Question (empty: what it does and why)", convs, conv
+}
+
 // Active reports whether a prompt is open.
 func (p *Prompt) Active() bool { return p.Kind != PromptNone }
 
@@ -225,6 +233,9 @@ func (p *Prompt) Line() string {
 		}
 		return "y " + p.verb() + " · n cancel · ⏎ " + enter + " · esc cancel"
 	}
+	if p.Kind == PromptExplain {
+		return "⏎ " + p.verb() + " · tab next field · ←→ conversation · esc cancel"
+	}
 	if len(p.Types) > 0 {
 		return "⏎ " + p.verb() + " · tab next field · ←→ change type · esc cancel"
 	}
@@ -241,6 +252,14 @@ var titles = map[PromptKind]string{
 // Dialog is the prompt's dialog: a form with its one field, or a question with its buttons.
 func (p *Prompt) Dialog() Dialog {
 	verb := strings.ToUpper(p.verb()[:1]) + p.verb()[1:]
+	if p.Kind == PromptExplain {
+		return Dialog{
+			Title: p.Title, Tone: ToneForm, Body: p.Body, Focus: p.Focus,
+			Fields:  []Field{{Label: p.Label, Value: p.Input}, {Label: "Conversation", Choices: p.Types, Choice: p.Type}},
+			Hint:    "tab next  ←→ conversation",
+			Buttons: []Button{{Key: "esc", Label: "Cancel"}, {Key: "⏎", Label: "Explain", Default: true}},
+		}
+	}
 	if len(p.Types) > 0 {
 		after := []string{"Branch  " + p.StoryBranch()}
 		if p.Base != "" {
@@ -313,6 +332,8 @@ func (p *Prompt) verb() string {
 		return "clear"
 	case PromptSyncBusy:
 		return "sync"
+	case PromptExplain:
+		return "explain"
 	}
 	return "yes"
 }

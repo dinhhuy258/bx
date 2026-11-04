@@ -61,6 +61,8 @@ type Backend interface {
 	SaveReview(ctx context.Context, project, story string, c api.ReviewComments) (api.Review, error)
 	SendReview(ctx context.Context, project, story string, r api.ReviewSend) (api.Result, error)
 	ClearSent(ctx context.Context, project, story string) (api.Review, error)
+	Explain(ctx context.Context, project, story string, req api.ExplainRequest) (api.Review, error)
+	DeleteExplain(ctx context.Context, project, story, id string) (api.Review, error)
 }
 
 // Conn is one open session stream.
@@ -131,7 +133,11 @@ type (
 		r     api.Review
 		err   error
 		done  string
+		// explain says the request was an explanation's, whose 409 is a limit, not a conflict
+		explain bool
 	}
+	// reviewPollMsg reloads the review of story while an explanation runs.
+	reviewPollMsg struct{ story string }
 	reviewSentMsg struct {
 		story string
 		res   api.Result
@@ -218,22 +224,27 @@ type Model struct {
 	cleanIDs    []string          // the ticked ids; non-nil while the confirm box is open
 	cleanLabels []string          // their labels, shown in the box
 
-	review       *ui.Review     // the review screen, nil when closed
-	reviewLine   ui.ReviewLine  // the line the open comment form is on
-	reviewSend   map[string]int // the send picker's labels → session number (0 = a new session)
-	settings     *ui.Settings   // the settings screen, full screen while open
-	settingsNote string         // shown in its place until the server's sections arrive
-	syncSeq      int            // bumped on every sync scan or apply; older replies are dropped
-	syncMac      claudesync.MacScan
-	syncPlan     api.SyncPlan
-	syncDone     bool                                                          // a sync succeeded since the screen opened or the last r
-	override     overrideDraft                                                 // the base override being picked in settings › git; see story.go
-	edit         func(path string, line int, done func(error) tea.Msg) tea.Cmd // runs the editor on path; tests replace it
-	clipboard    func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
-	mcpDrafts    map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
-	accDraft     accountDraft                                                  // settings › git: the rule or override being picked; see accounts.go
-	login        *loginWait                                                    // settings › git: the gh auth login shell bx waits on; see accounts.go
-	accSave      accountSave                                                   // settings › git: the save in flight and the one waiting; see accounts.go
+	review      *ui.Review     // the review screen, nil when closed
+	reviewLine  ui.ReviewLine  // the line the open comment form is on
+	reviewSend  map[string]int // the send picker's labels → session number (0 = a new session)
+	reviewConvs []int          // the explain form's conversations: session numbers, ExplainCodeOnly last
+	// reviewPolling is set while a reload of the review waits for its 2 s; reviewTick makes that
+	// wait, nil = tea.Tick. Tests replace it.
+	reviewPolling bool
+	reviewTick    func(story string) tea.Cmd
+	settings      *ui.Settings // the settings screen, full screen while open
+	settingsNote  string       // shown in its place until the server's sections arrive
+	syncSeq       int          // bumped on every sync scan or apply; older replies are dropped
+	syncMac       claudesync.MacScan
+	syncPlan      api.SyncPlan
+	syncDone      bool                                                          // a sync succeeded since the screen opened or the last r
+	override      overrideDraft                                                 // the base override being picked in settings › git; see story.go
+	edit          func(path string, line int, done func(error) tea.Msg) tea.Cmd // runs the editor on path; tests replace it
+	clipboard     func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
+	mcpDrafts     map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
+	accDraft      accountDraft                                                  // settings › git: the rule or override being picked; see accounts.go
+	login         *loginWait                                                    // settings › git: the gh auth login shell bx waits on; see accounts.go
+	accSave       accountSave                                                   // settings › git: the save in flight and the one waiting; see accounts.go
 
 	activity bool        // the list pane shows the inbox: what needs you in every project
 	act      ui.Activity // its cursor
@@ -487,6 +498,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case reviewMsg:
 		return m, m.gotReview(msg)
+	case reviewPollMsg:
+		m.reviewPolling = false
+		if m.review != nil && m.review.Story == msg.story {
+			return m, m.loadReview(msg.story)
+		}
+		return m, nil
 	case reviewSentMsg:
 		return m, m.gotReviewSent(msg)
 	case attachedMsg:
@@ -1537,6 +1554,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	switch kind {
 	case ui.PromptComment:
 		return m.commentDone(text)
+	case ui.PromptExplain:
+		return m.explainDone(text, m.prompt.Type)
 	case ui.PromptClearSent:
 		return m.clearSent(target)
 	case ui.PromptAddRepoForce:

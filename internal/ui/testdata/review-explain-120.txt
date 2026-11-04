@@ -1,0 +1,19 @@
+review · login-timeout vs develop · 2 files · +3 −1 · 1 to send
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>M internal/git/git.go       +2 −1 ●1 │@@ -86,4 +86,5 @@ func (g *Git) diff(dir, base string) error {
+ A cmd/bx/main.go               +1 −0 │  86   86      if base == "" {
+                                      │  87   87          return nil
+                                      │  88      -    mb := g.base(dir)
+                                      │       88 +    mb, err := g.mergeBase(dir, base)
+                                      │           ┃ Wrap this error
+                                      │>          ✦ explain · 86–88 · [3] Add lease time · 21s
+                                      │           ┊ One.
+                                      │           ┊ Two.
+                                      │           ┊ Three.
+                                      │           ┊ … 1 more lines · ⏎ read
+                                      │       89 +    if err != nil { return err }
+                                      │           ✦ explaining with code only… 14s · x stop
+                                      │@@ -120,2 +121,3 @@ func (g *Git) run(
+                                      │ 120  121      cmd := exec.Command("git")
+                                      │      122 +    cmd.Dir = dir
+⏎ read · x dismiss · j/k line · esc back

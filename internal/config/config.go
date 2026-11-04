@@ -166,6 +166,11 @@ func (c *Config) ReviewFile(project, story string) string {
 	return filepath.Join(c.Root, "review", project, story+".json")
 }
 
+// ExplainFile is a story's review explanations: <root>/review/<project>/<story>.explain.json.
+func (c *Config) ExplainFile(project, story string) string {
+	return filepath.Join(c.Root, "review", project, story+".explain.json")
+}
+
 // StateFile is <root>/state/<project>.json.
 func (c *Config) StateFile(project string) string {
 	return filepath.Join(c.Root, "state", project+".json")

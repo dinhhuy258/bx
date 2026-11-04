@@ -44,7 +44,8 @@ type Server struct {
 	unread   unread                  // the sessions that finished a turn nobody watched; see unread.go
 	pages    pages                   // the pages Claude wrote, by session; see pages.go
 
-	sending map[string]bool // "project/story" of a review send in progress
+	sending    map[string]bool               // "project/story" of a review send in progress
+	explaining map[string]context.CancelFunc // by explanation id, the ones running; see explain.go
 
 	prepared func() // tests: called by newStory between PrepareStory and taking write; nil in production
 }
@@ -60,7 +61,7 @@ type diffCache struct {
 // New builds a Server.
 func New(a *app.App, cfg *config.Config, l claude.Lister, log func(string, ...any)) *Server {
 	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{},
-		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread(), sending: map[string]bool{}, pages: newPages()}
+		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread(), sending: map[string]bool{}, explaining: map[string]context.CancelFunc{}, pages: newPages()}
 }
 
 // Handler routes the API.

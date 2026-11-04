@@ -1,0 +1,13 @@
+review · login-timeout vs develop · 2 files · +3 −1 · 1 to send
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>M internal/git/git.go       +2 −1 ●1 │✦ explain · 86–88 · [3] Add lease time · 21s
+ A cmd/bx/main.go               +1 −0 │
+                                      │One.
+                                      │Two.
+                                      │
+                                      │Three.
+                                      │Four.
+                                      │
+                                      │
+                                      │
+j/k scroll · x dismiss · esc close

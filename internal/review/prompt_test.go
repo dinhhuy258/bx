@@ -1,6 +1,7 @@
 package review
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dinhhuy258/bx/internal/api"
@@ -55,5 +56,29 @@ func TestPrompt(t *testing.T) {
 	}
 	if got := Prompt("s", "", cs[:1]); got[:52] != "Review comments on your changes in s (diff vs HEAD):" {
 		t.Fatalf("empty base: %s", got)
+	}
+}
+
+func TestExplainPrompt(t *testing.T) {
+	e := api.Explain{File: "internal/git/git.go", Side: "new", StartLine: 89, Line: 92,
+		Code: "\tmb, err := g.mergeBase(dir, base)\n\tif err != nil {\n\t\treturn err\n\t}"}
+	want := "Explain internal/git/git.go lines 89-92 of the changes on this branch:\n" +
+		"\n" +
+		"    mb, err := g.mergeBase(dir, base)\n" +
+		"    if err != nil {\n" +
+		"    \treturn err\n" +
+		"    }\n" +
+		"\n" +
+		"What does this code do, and why is it written this way?\n" +
+		"\n" +
+		"Use what you know from our conversation. Answer in a few short paragraphs of plain text. Don't change any files."
+	if got := ExplainPrompt(e, true); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+	e = api.Explain{File: "a.go", Side: "old", Line: 4, Code: "x()", Question: "Why was this\x1b[31m removed?"}
+	got := ExplainPrompt(e, false)
+	if !strings.HasPrefix(got, "Explain a.go line 4 (a line the changes removed) of the changes on this branch:\n\n    x()\n\nWhy was this[31m removed?\n\n") ||
+		!strings.HasSuffix(got, "Read the files you need. Answer in a few short paragraphs of plain text. Don't change any files.") {
+		t.Fatalf("code only: %q", got)
 	}
 }

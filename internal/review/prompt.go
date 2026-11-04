@@ -62,3 +62,40 @@ func clean(s string) string {
 
 // oneLine is clean with newlines dropped too.
 func oneLine(s string) string { return strings.ReplaceAll(clean(s), "\n", " ") }
+
+// MaxExplainQuote is how many lines of code an explain prompt quotes.
+const MaxExplainQuote = 60
+
+// ExplainPrompt asks Claude about e's lines: the code, the question (or what it does and
+// why), and how to answer. withSession says Claude has the session's conversation.
+func ExplainPrompt(e api.Explain, withSession bool) string {
+	c := e.AsComment()
+	where := fmt.Sprintf("%s line %d", oneLine(e.File), e.Line)
+	if c.First() < c.Line {
+		where = fmt.Sprintf("%s lines %d-%d", oneLine(e.File), c.First(), c.Line)
+	}
+	if e.Side == "old" {
+		if c.First() < c.Line {
+			where += " (lines the changes removed)"
+		} else {
+			where += " (a line the changes removed)"
+		}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Explain %s of the changes on this branch:\n\n", where)
+	for _, l := range c.Quote(MaxExplainQuote) {
+		fmt.Fprintf(&b, "    %s\n", oneLine(l))
+	}
+	q := strings.TrimSpace(clean(e.Question))
+	if q == "" {
+		q = "What does this code do, and why is it written this way?"
+	}
+	fmt.Fprintf(&b, "\n%s\n\n", q)
+	if withSession {
+		b.WriteString("Use what you know from our conversation. ")
+	} else {
+		b.WriteString("Read the files you need. ")
+	}
+	b.WriteString("Answer in a few short paragraphs of plain text. Don't change any files.")
+	return b.String()
+}

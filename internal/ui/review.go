@@ -3,21 +3,25 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // ReviewAction is what a key did on the review screen.
 type ReviewAction int
 
 const (
-	ReviewKeep      ReviewAction = iota
-	ReviewBack                   // Esc: leave the screen
-	ReviewRefresh                // R: load the diff again
-	ReviewComment                // c: open the comment form on Selected
-	ReviewDelete                 // x: delete Selected's unsent comment
-	ReviewSend                   // S: pick a session for the unsent comments
-	ReviewClearSent              // C: ask to drop the sent comments
+	ReviewKeep          ReviewAction = iota
+	ReviewBack                       // Esc: leave the screen
+	ReviewRefresh                    // R: load the diff again
+	ReviewComment                    // c: open the comment form on Selected
+	ReviewDelete                     // x: delete Selected's unsent comment
+	ReviewSend                       // S: pick a session for the unsent comments
+	ReviewClearSent                  // C: ask to drop the sent comments
+	ReviewExplain                    // e: open the explain form on Selected
+	ReviewExplainDelete              // x on an explanation: stop it or dismiss it
 )
 
 // ReviewLine is the line under the cursor and its unsent comment, or the selected lines.
@@ -46,11 +50,13 @@ const ReviewFilesWidth = 38
 type itemKind int
 
 const (
-	itemHunk    itemKind = iota
-	itemRow              // a diff line: the cursor stops here
-	itemPinned           // a comment that has no line in the diff (outdated, folded file): the cursor stops here
-	itemComment          // one line of a comment under its diff line
-	itemNote             // a folded file's note
+	itemHunk        itemKind = iota
+	itemRow                  // a diff line: the cursor stops here
+	itemPinned               // a comment that has no line in the diff (outdated, folded file): the cursor stops here
+	itemComment              // one line of a comment under its diff line
+	itemNote                 // a folded file's note
+	itemExplain              // the header of an explanation's card: the cursor stops here
+	itemExplainLine          // one line of its answer
 )
 
 type reviewItem struct {
@@ -59,7 +65,8 @@ type reviewItem struct {
 	row   DiffRow
 	hunk  int // a row's hunk
 	c     *Comment
-	first bool // a comment's first line
+	e     *Explain // an explanation's card
+	first bool     // a comment's first line
 }
 
 // Review is the review screen of a story: its files, the diff of the selected one and the
@@ -77,6 +84,12 @@ type Review struct {
 	selecting bool
 	anchor    int
 	hint      string
+
+	// reading is the id of the explanation whose answer fills the diff pane, scrolled to
+	// readTop. Now is the clock of the running seconds; nil is time.Now.
+	reading string
+	readTop int
+	Now     func() time.Time
 }
 
 // NewReview starts an empty screen for story, until SetData.
@@ -85,20 +98,67 @@ func NewReview(story string) *Review { return &Review{Story: story} }
 // Data is the review last set.
 func (r *Review) Data() ReviewData { return r.data }
 
-// SetData shows a new load of the review, staying on the same file when it is still there.
+// SetData shows a new load of the review, staying on the same file when it is still there. The
+// cursor, and the selection when both its ends are still there, stay on the same rows: a
+// reload that adds a card above them moves their index.
 func (r *Review) SetData(d ReviewData) {
-	path := ""
+	path, cur, anc := "", "", ""
 	if r.file < len(r.data.Files) {
 		path = r.data.Files[r.file].Path
 	}
+	its := r.items(r.file)
+	if r.line < len(its) {
+		cur = itemKey(its[r.line])
+	}
+	if r.selecting && r.anchor < len(its) {
+		anc = itemKey(its[r.anchor])
+	}
+	wasSelecting := r.selecting
 	r.data, r.file = d, 0
-	r.selecting, r.hint = false, ""
+	same := false
 	for i, f := range d.Files {
 		if f.Path == path {
-			r.file = i
+			r.file, same = i, true
+		}
+	}
+	r.selecting, r.hint = false, ""
+	if r.reading != "" && r.explainByID(r.reading) == nil {
+		r.reading = ""
+	}
+	its = r.items(r.file)
+	if same && cur != "" {
+		if ci := findKey(its, cur); ci >= 0 {
+			r.line = ci
+			if ai := findKey(its, anc); wasSelecting && anc != "" && ai >= 0 {
+				r.anchor, r.selecting = ai, true
+			}
+			return
 		}
 	}
 	r.snap(1)
+}
+
+// itemKey names a stop so it can be found again after a reload: a row by its place in the
+// hunk, a comment or an explanation by its id.
+func itemKey(it reviewItem) string {
+	switch {
+	case it.kind == itemRow:
+		return fmt.Sprintf("r%d/%d/%d/%s", it.hunk, it.row.Old, it.row.New, it.row.Kind)
+	case it.e != nil:
+		return "c" + it.e.ID
+	case it.c != nil:
+		return "c" + it.c.ID
+	}
+	return ""
+}
+
+func findKey(its []reviewItem, key string) int {
+	for i, it := range its {
+		if stops(it) && itemKey(it) == key {
+			return i
+		}
+	}
+	return -1
 }
 
 // Unsent and SentCount count the comments.
@@ -141,7 +201,14 @@ func (r *Review) items(i int) []reviewItem {
 			mine = append(mine, &r.data.Comments[j])
 		}
 	}
+	var mineE []*Explain
+	for j := range r.data.Explains {
+		if r.data.Explains[j].File == f.Path {
+			mineE = append(mineE, &r.data.Explains[j])
+		}
+	}
 	placed := map[*Comment]bool{}
+	placedE := map[*Explain]bool{}
 	var body []reviewItem
 	if f.Folded != "" {
 		body = append(body, reviewItem{kind: itemNote, text: f.Folded})
@@ -156,6 +223,12 @@ func (r *Review) items(i int) []reviewItem {
 					body = append(body, commentItems(itemComment, c)...)
 				}
 			}
+			for _, e := range mineE {
+				if !e.Outdated && f.Folded == "" && e.Side == sideOf(row) && e.Line == lineOf(row) {
+					placedE[e] = true
+					body = append(body, explainItems(e)...)
+				}
+			}
 		}
 	}
 	var pinned []reviewItem
@@ -164,7 +237,72 @@ func (r *Review) items(i int) []reviewItem {
 			pinned = append(pinned, commentItems(itemPinned, c)...)
 		}
 	}
+	for _, e := range mineE {
+		if !placedE[e] {
+			pinned = append(pinned, explainItems(e)...)
+		}
+	}
 	return append(pinned, body...)
+}
+
+// maxCardLines is how many lines of an answer a card shows; the rest is read with Enter.
+const maxCardLines = 3
+
+// explainItems is an explanation's card: its header, then when it is done the first lines of
+// its answer and how many more there are.
+func explainItems(e *Explain) []reviewItem {
+	out := []reviewItem{{kind: itemExplain, e: e, first: true}}
+	if e.State != ExplainDone {
+		return out
+	}
+	var lines []string
+	for _, l := range strings.Split(e.Answer, "\n") {
+		if strings.TrimSpace(l) != "" {
+			lines = append(lines, l)
+		}
+	}
+	for i, l := range lines {
+		if i == maxCardLines {
+			out = append(out, reviewItem{kind: itemExplainLine, e: e, text: fmt.Sprintf("… %d more lines · ⏎ read", len(lines)-maxCardLines)})
+			break
+		}
+		out = append(out, reviewItem{kind: itemExplainLine, e: e, text: strings.TrimSpace(l)})
+	}
+	return out
+}
+
+// explainByID is the explanation with id, or nil.
+func (r *Review) explainByID(id string) *Explain {
+	for i := range r.data.Explains {
+		if r.data.Explains[i].ID == id {
+			return &r.data.Explains[i]
+		}
+	}
+	return nil
+}
+
+// cardAtCursor is the explanation whose card header the cursor is on, or nil.
+func (r *Review) cardAtCursor() *Explain {
+	its := r.items(r.file)
+	if r.line < len(its) && its[r.line].kind == itemExplain {
+		return its[r.line].e
+	}
+	return nil
+}
+
+// SelectedExplain is the explanation being read, or else the one under the cursor.
+func (r *Review) SelectedExplain() *Explain {
+	if r.reading != "" {
+		return r.explainByID(r.reading)
+	}
+	return r.cardAtCursor()
+}
+
+func (r *Review) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
 }
 
 // commentItems is a comment's lines; the first is of kind first, the others itemComment.
@@ -180,7 +318,9 @@ func commentItems(first itemKind, c *Comment) []reviewItem {
 	return out
 }
 
-func stops(it reviewItem) bool { return it.kind == itemRow || it.kind == itemPinned }
+func stops(it reviewItem) bool {
+	return it.kind == itemRow || it.kind == itemPinned || it.kind == itemExplain
+}
 
 // snap moves the cursor to the nearest stop in direction d (1 down, -1 up), then the other way.
 func (r *Review) snap(d int) {
@@ -261,7 +401,7 @@ func (r *Review) commentsOn(file int, row DiffRow) []*Comment {
 // (folded, empty).
 func (r *Review) Selected() (ReviewLine, bool) {
 	its := r.items(r.file)
-	if r.line >= len(its) || !stops(its[r.line]) {
+	if r.line >= len(its) || (its[r.line].kind != itemRow && its[r.line].kind != itemPinned) {
 		return ReviewLine{}, false
 	}
 	it := its[r.line]
@@ -343,6 +483,8 @@ func (r *Review) selectKey(key string) ReviewAction {
 		r.anchor, r.line = r.line, r.anchor
 	case "c":
 		return ReviewComment
+	case "e":
+		return ReviewExplain
 	case "v", "Esc":
 		r.selecting = false
 	}
@@ -368,6 +510,9 @@ func (r *Review) moveEnd(d int) {
 func (r *Review) Key(key string, narrow bool) ReviewAction {
 	if r.selecting {
 		return r.selectKey(key)
+	}
+	if r.reading != "" {
+		return r.readKey(key)
 	}
 	switch key {
 	case "R":
@@ -419,7 +564,18 @@ func (r *Review) Key(key string, narrow bool) ReviewAction {
 		if its := r.items(r.file); r.line < len(its) && its[r.line].kind == itemRow {
 			r.selecting, r.anchor, r.hint = true, r.line, ""
 		}
+	case "e":
+		if its := r.items(r.file); r.line < len(its) && its[r.line].kind == itemRow {
+			return ReviewExplain
+		}
+	case "Enter":
+		if e := r.cardAtCursor(); e != nil {
+			r.reading, r.readTop = e.ID, 0
+		}
 	case "x":
+		if r.cardAtCursor() != nil {
+			return ReviewExplainDelete
+		}
 		if l, ok := r.Selected(); ok && l.Edit != nil {
 			return ReviewDelete
 		}
@@ -429,6 +585,21 @@ func (r *Review) Key(key string, narrow bool) ReviewAction {
 			return ReviewKeep
 		}
 		return ReviewBack
+	}
+	return ReviewKeep
+}
+
+// readKey handles a key while an answer is open in the diff pane.
+func (r *Review) readKey(key string) ReviewAction {
+	switch key {
+	case "j", "Down":
+		r.readTop++
+	case "k", "Up":
+		r.readTop = max(r.readTop-1, 0)
+	case "x":
+		return ReviewExplainDelete
+	case "Esc":
+		r.reading = ""
 	}
 	return ReviewKeep
 }
@@ -478,9 +649,9 @@ func (r *Review) Render(w, h int, plain, narrow bool) string {
 	case narrow && r.pane == 0:
 		lines = append(lines, r.fileLines(w, bh, pal)...)
 	case narrow:
-		lines = append(lines, r.diffLines(w, bh, pal, true)...)
+		lines = append(lines, r.paneLines(w, bh, pal, true)...)
 	default:
-		left, right := r.fileLines(ReviewFilesWidth, bh, pal), r.diffLines(max(w-ReviewFilesWidth-1, 10), bh, pal, false)
+		left, right := r.fileLines(ReviewFilesWidth, bh, pal), r.paneLines(max(w-ReviewFilesWidth-1, 10), bh, pal, false)
 		for i := 0; i < bh; i++ {
 			l, rt := "", ""
 			if i < len(left) {
@@ -539,6 +710,78 @@ func (r *Review) fileLines(w, h int, pal palette) []string {
 	return out
 }
 
+// paneLines is the diff pane: the open answer, or the selected file's diff.
+func (r *Review) paneLines(w, h int, pal palette, narrow bool) []string {
+	if r.reading != "" {
+		return r.readLines(w, h, pal)
+	}
+	return r.diffLines(w, h, pal, narrow)
+}
+
+// readLines is the open explanation: its header, the question, then the answer wrapped to w,
+// scrolled by readTop.
+func (r *Review) readLines(w, h int, pal palette) []string {
+	e := r.explainByID(r.reading)
+	if e == nil {
+		return nil
+	}
+	all := []string{r.explainHeader(e, pal, w), ""}
+	if q := strings.TrimSpace(e.Question); q != "" {
+		all = append(all, wrapText("Q: "+q, w, pal.dim)...)
+		all = append(all, "")
+	}
+	switch {
+	case e.Running():
+		all = append(all, pal.dim.Render("Claude is still answering…"))
+	case e.State == ExplainDone:
+		all = append(all, wrapText(e.Answer, w, lipgloss.NewStyle())...)
+	default:
+		all = append(all, wrapText(e.Error, w, pal.red)...)
+	}
+	r.readTop = min(max(r.readTop, 0), max(len(all)-h, 0))
+	return all[r.readTop:min(r.readTop+h, len(all))]
+}
+
+// wrapText wraps each line of text to w cells, keeping blank lines and indents, drawn in style.
+func wrapText(text string, w int, style lipgloss.Style) []string {
+	var out []string
+	for _, l := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		l = strings.TrimRight(ReviewText(l), " ")
+		if l == "" {
+			out = append(out, "")
+			continue
+		}
+		for _, part := range strings.Split(ansi.Wrap(l, w, ""), "\n") {
+			out = append(out, style.Render(part))
+		}
+	}
+	return out
+}
+
+// explainHeader is the one line that names an explanation and tells how it is going.
+func (r *Review) explainHeader(e *Explain, pal palette, w int) string {
+	who := "code only"
+	if e.Session > 0 {
+		who = fmt.Sprintf("[%d] %s", e.Session, ReviewText(e.SessionTitle))
+	}
+	switch e.State {
+	case ExplainRunning:
+		secs := max(r.now().Unix()-e.Started, 0)
+		return pal.brand.Render(truncate(fmt.Sprintf("✦ explaining with %s… %ds · x stop", who, secs), w))
+	case ExplainFailed:
+		return pal.red.Render(truncate("✦ explain failed · "+ReviewText(strings.ReplaceAll(e.Error, "\n", " ")), w))
+	}
+	parts := []string{"✦ explain"}
+	if e.Outdated {
+		parts = append(parts, "outdated")
+	}
+	parts = append(parts, ReviewLine{StartLine: e.StartLine, Line: e.Line}.Lines(), who)
+	if e.TookMS > 0 {
+		parts = append(parts, fmt.Sprintf("%ds", (e.TookMS+500)/1000))
+	}
+	return pal.brand.Render(truncate(strings.Join(parts, " · "), w))
+}
+
 // diffLines is the selected file's diff, scrolled to keep the cursor in view.
 func (r *Review) diffLines(w, h int, pal palette, narrow bool) []string {
 	its := r.items(r.file)
@@ -595,6 +838,10 @@ func (r *Review) diffLines(w, h int, pal palette, narrow bool) []string {
 			}
 		case itemPinned, itemComment:
 			line = r.commentLine(it, w, code, pal)
+		case itemExplain:
+			line = truncate(strings.Repeat(" ", code)+r.explainHeader(it.e, pal, w-code), w)
+		case itemExplainLine:
+			line = pal.arrow.Render(truncate(strings.Repeat(" ", code)+"┊ "+ReviewText(it.text), w))
 		}
 		switch {
 		case i >= lo && i <= hi && pal.selBG != "":
@@ -651,13 +898,16 @@ func (r *Review) commentLine(it reviewItem, w, indent int, pal palette) string {
 
 // Bar is the key bar of the screen.
 func (r *Review) Bar(narrow bool) string {
+	if r.reading != "" {
+		return "j/k scroll · x dismiss · esc close"
+	}
 	if r.selecting {
 		l, _ := r.Selected()
 		n := 1
 		if l.StartLine > 0 {
 			n = l.Line - l.StartLine + 1
 		}
-		bar := fmt.Sprintf("SELECT %s · %s · j/k move end · o other end · c comment · esc cancel", l.Lines(), pluralWord(n, "line", "lines"))
+		bar := fmt.Sprintf("SELECT %s · %s · j/k move end · o other end · c comment · e explain · esc cancel", l.Lines(), pluralWord(n, "line", "lines"))
 		if narrow {
 			bar = fmt.Sprintf("SELECT %s · c comment · esc cancel", l.Lines())
 		}
@@ -672,7 +922,14 @@ func (r *Review) Bar(narrow bool) string {
 	}
 	clear := ""
 	if r.SentCount() > 0 {
-		clear = " · C clear sent"
+		clear = " · C clear"
+	}
+	if e := r.cardAtCursor(); e != nil && (!narrow || r.pane == 1) {
+		stop := "x dismiss"
+		if e.Running() {
+			stop = "x stop"
+		}
+		return "⏎ read · " + stop + " · j/k line · esc back"
 	}
 	switch {
 	case narrow && r.pane == 0:
@@ -680,5 +937,5 @@ func (r *Review) Bar(narrow bool) string {
 	case narrow:
 		return "c comment · x del" + send + " · esc files"
 	}
-	return "j/k line · J/K file · c comment · v select · x delete · n/N comments" + send + clear + " · R refresh · esc back"
+	return "j/k line · J/K file · c comment · v select · e explain · x delete · n/N next" + send + clear + " · R refresh · esc back"
 }

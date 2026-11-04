@@ -41,7 +41,10 @@ type App struct {
 	Transcripts string
 	// GH runs gh in dir ("" = bx's own folder); in a repository gh takes the repository and
 	// host from its origin. It is killed when ctx is done.
-	GH       func(ctx context.Context, dir string, args ...string) (string, error)
+	GH func(ctx context.Context, dir string, args ...string) (string, error)
+	// Claude runs claude in dir with env added and stdin, and returns its stdout. It is killed
+	// when ctx is done. Tests replace it.
+	Claude   func(ctx context.Context, dir string, env []string, stdin string, args ...string) ([]byte, error)
 	Settings *settings.Store
 	// Log records best-effort failures that do not fail the operation; nil is silent.
 	Log func(format string, args ...any)
@@ -63,6 +66,7 @@ func New(cfg *config.Config) *App {
 	a.GH = func(ctx context.Context, dir string, args ...string) (string, error) {
 		return runGH(ctx, dir, a.ghEnv(ctx, dir), args...)
 	}
+	a.Claude = runClaude
 	a.Git.Env = func(dir string) []string { return a.envForDir(context.Background(), dir) }
 	return a
 }

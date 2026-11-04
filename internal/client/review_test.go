@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dinhhuy258/bx/internal/api"
@@ -105,5 +106,45 @@ func TestReviewRangeComment(t *testing.T) {
 	}
 	if c := h.be.saveRev[0].Comments[0]; c.StartLine != 1 || c.Line != 2 || c.Code != "x\ny" || c.Body != "pull out" {
 		t.Fatalf("saved %+v", c)
+	}
+}
+
+func TestReviewExplainFlow(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.m.reviewTick = func(string) tea.Cmd { return nil } // the real wait would never end here
+	h.be.review = reviewFixture()
+	h.press("k", "G", "v", "j", "e")
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "Explain · a.go:1–2") || !strings.Contains(v, "Conversation") || !strings.Contains(v, "[1] Add lease time") {
+		t.Fatalf("form:\n%s", v)
+	}
+	h.press("Tab", "Right") // Code only
+	h.press("Enter")
+	if len(h.be.explains) != 1 {
+		t.Fatalf("explains %+v", h.be.explains)
+	}
+	if q := h.be.explains[0]; q.StartLine != 1 || q.Line != 2 || q.Code != "x\ny" || q.Session != api.ExplainCodeOnly {
+		t.Fatalf("request %+v", q)
+	}
+	if !h.m.reviewPolling {
+		t.Fatal("a running explanation polls")
+	}
+	// the card is under line 2; x stops it
+	h.press("Esc") // the selection
+	h.press("j")
+	h.m.flash = "" // "explaining…" fades by itself
+	if !strings.Contains(ansi.Strip(h.m.bar()), "x stop") {
+		t.Fatalf("bar %q", ansi.Strip(h.m.bar()))
+	}
+	h.press("x")
+	if len(h.be.dismissed) != 1 || h.be.dismissed[0] != "e1" || len(h.m.review.Data().Explains) != 0 {
+		t.Fatalf("dismissed %v", h.be.dismissed)
+	}
+	// the poll reloads the review once
+	h.m.reviewPolling = false
+	n := len(h.be.reads)
+	h.update(reviewPollMsg{"s1"})
+	if len(h.be.reads) != n+1 {
+		t.Fatalf("reads %v", h.be.reads)
 	}
 }

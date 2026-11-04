@@ -31,6 +31,8 @@ func (s *Server) reviewRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/projects/{name}/stories/{story}/review", s.putReview)
 	mux.HandleFunc("POST /api/projects/{name}/stories/{story}/review/send", s.sendReview)
 	mux.HandleFunc("POST /api/projects/{name}/stories/{story}/review/clear-sent", s.clearSent)
+	mux.HandleFunc("POST /api/projects/{name}/stories/{story}/review/explain", s.postExplain)
+	mux.HandleFunc("DELETE /api/projects/{name}/stories/{story}/review/explain/{id}", s.deleteExplain)
 }
 
 // codeError is an error with the HTTP status it answers with.
@@ -123,7 +125,7 @@ func reviewBase(rs []reviewRepo) string {
 // diff fails is left out with a note; a single repo's failure is the error.
 func (s *Server) buildReview(ctx context.Context, p *state.Project, story string, f review.File) (api.Review, error) {
 	repos := s.reviewRepos(p, story)
-	out := api.Review{Base: reviewBase(repos), Files: []api.DiffFile{}, ReviewComments: api.ReviewComments{Version: f.Version}}
+	out := api.Review{Base: reviewBase(repos), Files: []api.DiffFile{}, Explains: []api.Explain{}, ReviewComments: api.ReviewComments{Version: f.Version}}
 	var notes []string
 	for _, rp := range repos {
 		d, err := review.Diff(ctx, s.App.Git, rp.dir, rp.base)
@@ -151,7 +153,12 @@ func (s *Server) buildReview(ctx context.Context, p *state.Project, story string
 		out.Total += d.Total
 	}
 	out.Note = strings.Join(notes, " · ")
-	out.Files, out.Comments = review.Place(out.Files, f.Comments)
+	ef, err := s.readExplains(s.Cfg.ExplainFile(p.Name, story))
+	if err != nil {
+		return api.Review{}, err
+	}
+	out.Files, out.Comments, out.Explains = review.PlaceAll(out.Files, f.Comments, s.liveExplains(ef.Explains))
+	out.ExplainWith = ef.With
 	return out, nil
 }
 

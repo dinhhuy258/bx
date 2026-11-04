@@ -206,11 +206,15 @@ func TestReviewCalls(t *testing.T) {
 	_, _ = c.SaveReview(ctx, "p", "s1", api.ReviewComments{Version: 4})
 	res, _ := c.SendReview(ctx, "p", "s1", api.ReviewSend{Session: 3})
 	_, _ = c.ClearSent(ctx, "p", "s1")
+	_, _ = c.Explain(ctx, "p", "s1", api.ExplainRequest{File: "a.go", Side: "new", Line: 2, Session: api.ExplainCodeOnly})
+	_, _ = c.DeleteExplain(ctx, "p", "s1", "e 1")
 	want := []string{
 		"GET /api/projects/home%20network/stories/s1/review ",
 		`PUT /api/projects/p/stories/s1/review {"version":4,"comments":null}`,
 		`POST /api/projects/p/stories/s1/review/send {"session":3}`,
 		"POST /api/projects/p/stories/s1/review/clear-sent {}",
+		`POST /api/projects/p/stories/s1/review/explain {"file":"a.go","side":"new","line":2,"code":"","session":-1}`,
+		"DELETE /api/projects/p/stories/s1/review/explain/e%201 ",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") || res.Num != 3 {
 		t.Fatalf("%s\n%+v", strings.Join(got, "\n"), res)

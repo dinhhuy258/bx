@@ -14,4 +14,4 @@ review · login-timeout vs develop · 2 files · +3 −1 · 1 to send
                                       │
                                       │
                                       │
-SELECT 86–87 · 2 lines · j/k move end · o other end · c comment · esc cancel
+SELECT 86–87 · 2 lines · j/k move end · o other end · c comment · e explain · esc cancel

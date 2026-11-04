@@ -321,6 +321,16 @@ type (
 	Hunk           = ui.Hunk
 	DiffRow        = ui.DiffRow
 	Comment        = ui.Comment
+	Explain        = ui.Explain
+	ExplainRequest = ui.ExplainRequest
+)
+
+// The states of an explanation, and the conversation that is no session.
+const (
+	ExplainRunning  = ui.ExplainRunning
+	ExplainDone     = ui.ExplainDone
+	ExplainFailed   = ui.ExplainFailed
+	ExplainCodeOnly = ui.ExplainCodeOnly
 )
 
 // ReviewSend is POST …/review/send: the session to paste into, or New for a new one.

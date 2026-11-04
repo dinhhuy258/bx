@@ -4,4 +4,4 @@ review · s1 vs main · 0 files · +0 −0
 No changes since main.
 
 
-j/k line · J/K file · c comment · v select · x delete · n/N comments · R refresh · esc back
+j/k line · J/K file · c comment · v select · e explain · x delete · n/N next · R refresh · esc back

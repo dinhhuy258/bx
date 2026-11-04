@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	tea "charm.land/bubbletea/v2" // use the same import path model.go uses for Bubble Tea
 
@@ -34,7 +35,7 @@ func (m *Model) gotReview(msg reviewMsg) tea.Cmd {
 	}
 	var se *StatusError
 	switch {
-	case errors.As(msg.err, &se) && se.Code == 409:
+	case errors.As(msg.err, &se) && se.Code == 409 && !msg.explain:
 		m.setFlash("comments changed on another device · reloaded")
 		return m.loadReview(msg.story)
 	case msg.err != nil:
@@ -47,7 +48,20 @@ func (m *Model) gotReview(msg reviewMsg) tea.Cmd {
 	} else if m.flash == "refreshing…" {
 		m.flash = ""
 	}
-	return nil
+	return m.pollReview()
+}
+
+// pollReview reloads the review in 2 s while an explanation runs, once at a time.
+func (m *Model) pollReview() tea.Cmd {
+	if m.review == nil || m.reviewPolling || !slices.ContainsFunc(m.review.Data().Explains, api.Explain.Running) {
+		return nil
+	}
+	m.reviewPolling = true
+	story := m.review.Story
+	if m.reviewTick != nil {
+		return m.reviewTick(story)
+	}
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return reviewPollMsg{story} })
 }
 
 func (m *Model) reviewKey(key string) tea.Cmd {
@@ -74,6 +88,23 @@ func (m *Model) reviewKey(key string) tea.Cmd {
 		}
 		m.prompt.OpenComment(title, l.Code, initial)
 		m.flash = ""
+	case ui.ReviewExplain:
+		l, _ := r.Selected()
+		m.reviewLine = l
+		title := fmt.Sprintf("Explain · %s:%s", l.File, l.Lines())
+		switch {
+		case l.Side == "old" && l.StartLine > 0:
+			title += " (removed lines)"
+		case l.Side == "old":
+			title += " (removed line)"
+		}
+		labels, idx := m.explainConvs()
+		m.prompt.OpenExplain(title, l.Code, labels, idx)
+		m.flash = ""
+	case ui.ReviewExplainDelete:
+		if e := r.SelectedExplain(); e != nil {
+			return m.deleteExplain(e.ID)
+		}
 	case ui.ReviewDelete:
 		l, _ := r.Selected()
 		return m.saveComments(without(r.Data().Comments, l.Edit.ID), "")
@@ -120,6 +151,56 @@ func (m *Model) saveComments(cs []api.Comment, done string) tea.Cmd {
 	return func() tea.Msg {
 		r, err := be.SaveReview(ctx, project, story, body)
 		return reviewMsg{story: story, r: r, err: err, done: done}
+	}
+}
+
+// explainConvs lists the conversations an explanation can use: the story's sessions, newest
+// first, then none. It fills reviewConvs and returns their labels and the one the story's last
+// ask used (the first when that is gone).
+func (m *Model) explainConvs() ([]string, int) {
+	nums := m.m.P.SessionsOf(m.review.Story)
+	m.reviewConvs = nil
+	var labels []string
+	for i := len(nums) - 1; i >= 0; i-- {
+		n, s := nums[i], m.m.P.Sessions[nums[i]]
+		title := s.Title
+		if title == "" {
+			title = "untitled"
+		}
+		state := "running"
+		if s.Done || m.m.Gone(n) {
+			state = "done"
+		}
+		labels = append(labels, fmt.Sprintf("[%d] %s · %s", n, title, state))
+		m.reviewConvs = append(m.reviewConvs, n)
+	}
+	labels = append(labels, "Code only (no conversation)")
+	m.reviewConvs = append(m.reviewConvs, api.ExplainCodeOnly)
+	return labels, max(slices.Index(m.reviewConvs, m.review.Data().ExplainWith), 0)
+}
+
+// explainDone asks Claude about the lines the form was opened on, in conversation number conv
+// of reviewConvs.
+func (m *Model) explainDone(question string, conv int) tea.Cmd {
+	if m.review == nil || conv < 0 || conv >= len(m.reviewConvs) {
+		return nil
+	}
+	l := m.reviewLine
+	req := api.ExplainRequest{File: l.File, Side: l.Side, StartLine: l.StartLine, Line: l.Line, Code: l.Code,
+		Question: question, Session: m.reviewConvs[conv]}
+	be, ctx, project, story := m.be, m.ctx, m.project, m.review.Story
+	return func() tea.Msg {
+		r, err := be.Explain(ctx, project, story, req)
+		return reviewMsg{story: story, r: r, err: err, done: "explaining…", explain: true}
+	}
+}
+
+// deleteExplain stops a running explanation or dismisses an answer.
+func (m *Model) deleteExplain(id string) tea.Cmd {
+	be, ctx, project, story := m.be, m.ctx, m.project, m.review.Story
+	return func() tea.Msg {
+		r, err := be.DeleteExplain(ctx, project, story, id)
+		return reviewMsg{story: story, r: r, err: err, explain: true}
 	}
 }
 
