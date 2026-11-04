@@ -17,6 +17,7 @@ type BarContext struct {
 	Projects      int    // how many projects the client has open; the switch keys show from two
 	Shell         bool   // the pane shows a live shell rather than Claude
 	Page          bool   // the pane's session has a page Claude just wrote: the open page key shows
+	Scrolling     bool   // the pane is back in history: keys go to tmux copy-mode
 }
 
 var labels = map[string]string{
@@ -42,12 +43,11 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		return ""
 	}
 	var parts []string
+	if ctx.ClaudeFocused && ctx.Scrolling {
+		return join([]string{"SCROLL", "hjkl move", "^u/^d page", "/ search", "v select", "y copy", "⏎ copy and exit", "q clear", "esc back to live", k(cfg.Client.SwitchPane, "to list")})
+	}
 	if ctx.ClaudeFocused && ctx.Shell {
-		parts = []string{"SHELL", "type to run · exit closes it", k(cfg.Client.SwitchPane, "to list")}
-		if cfg.Client.CopyMode != "" {
-			parts = append(parts, k(cfg.Client.CopyMode, "copy"))
-		}
-		return join(parts)
+		return join([]string{"SHELL", "type to run · exit closes it", k(cfg.Client.SwitchPane, "to list")})
 	}
 	if ctx.ClaudeFocused {
 		back := k(cfg.Client.SwitchPane, "to list")

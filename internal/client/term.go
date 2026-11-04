@@ -243,11 +243,6 @@ func (s *Stream) Scroll(ctx context.Context, lines int) error {
 	return s.control(ctx, api.Control{Type: "scroll", Lines: lines})
 }
 
-// CopyMode puts the session in tmux copy-mode.
-func (s *Stream) CopyMode(ctx context.Context) error {
-	return s.control(ctx, api.Control{Type: "copy"})
-}
-
 // PageSeen tells the server the session's page was opened or dismissed.
 func (s *Stream) PageSeen(ctx context.Context) error {
 	return s.control(ctx, api.Control{Type: "page_seen"})

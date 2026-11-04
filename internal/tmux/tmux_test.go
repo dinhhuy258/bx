@@ -135,13 +135,10 @@ func TestScroll(t *testing.T) {
 	}
 }
 
-func TestCopyMode(t *testing.T) {
+func TestPrepareCopy(t *testing.T) {
 	f := &Fake{Replies: map[string]string{"display-message -p -t $4 #{pane_in_mode}": "1\n"}}
 	tm := New(f)
 	if err := tm.PrepareCopy(); err != nil {
-		t.Fatal(err)
-	}
-	if err := tm.CopyMode("$4"); err != nil {
 		t.Fatal(err)
 	}
 	if in, err := tm.InMode("$4"); err != nil || !in {
@@ -156,8 +153,10 @@ func TestCopyMode(t *testing.T) {
 		"set-option -g mode-keys vi", "set-option -g assume-paste-time 0", "set-option -s set-clipboard on",
 		"set-option -s terminal-features[90] xterm-256color:clipboard",
 		"bind-key -T copy-mode-vi v send-keys -X begin-selection",
-		"bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel",
-		"copy-mode -t $4",
+		"bind-key -T copy-mode-vi y send-keys -X copy-pipe",
+		"bind-key -T copy-mode-vi Enter send-keys -X copy-pipe-and-cancel",
+		"bind-key -T copy-mode-vi q send-keys -X clear-selection",
+		"bind-key -T copy-mode-vi Escape send-keys -X cancel",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in\n%s", want, got)

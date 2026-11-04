@@ -178,8 +178,8 @@ type Settings struct {
 
 // Control is a text frame from the client. Binary frames are terminal bytes in both directions.
 type Control struct {
-	// client: "resize", "scroll", "copy" (enter copy-mode) or "page_seen" (the page was opened
-	// or dismissed); server: "copy_end", "page" (Claude wrote a page; also sent when the stream
+	// client: "resize", "scroll" (back into history in copy-mode) or "page_seen" (the page was opened
+	// or dismissed); server: "copy_end" (the pane left copy-mode), "page" (Claude wrote a page; also sent when the stream
 	// opens, until a client sends page_seen) or "page_seen" (another client saw it)
 	Type  string `json:"type"`
 	Cols  int    `json:"cols,omitempty"`

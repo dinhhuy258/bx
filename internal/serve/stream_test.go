@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -371,14 +372,14 @@ func TestRealStream(t *testing.T) {
 		}
 		inMode(step.want)
 	}
-	// copy-mode: select the echoed line, yank it; tmux sends it as OSC 52 and the server
+	// scrolled back: select the echoed line, copy it with Enter; tmux sends it as OSC 52 and the server
 	// reports that copy-mode ended
-	ctl, _ = json.Marshal(api.Control{Type: "copy"})
+	ctl, _ = json.Marshal(api.Control{Type: "scroll", Lines: -1})
 	if err := c.Write(ctx, websocket.MessageText, ctl); err != nil {
 		t.Fatal(err)
 	}
 	inMode("1")
-	for _, k := range []string{"k", "0", "v", "$", "h", "y"} { // back to back: not taken for a paste
+	for _, k := range []string{"k", "0", "v", "$", "h", "\r"} { // back to back: not taken for a paste
 		if err := c.Write(ctx, websocket.MessageBinary, []byte(k)); err != nil {
 			t.Fatal(err)
 		}
@@ -412,5 +413,34 @@ func TestRealStream(t *testing.T) {
 			t.Fatalf("want a normal close \"session ended\", got %v", err)
 		}
 		return
+	}
+}
+
+func TestLeftModeEndsOnceWhenThePaneIsLive(t *testing.T) {
+	var copying atomic.Bool
+	ends := 0
+	end := func() { ends++ }
+	in, err := true, error(nil)
+	inMode := func() (bool, error) { return in, err }
+
+	leftMode(&copying, inMode, end) // never scrolled back: nothing to end
+	in = false
+	leftMode(&copying, inMode, end)
+	if ends != 0 {
+		t.Fatalf("ends = %d without a scroll back", ends)
+	}
+	copying.Store(true)
+	in = true
+	leftMode(&copying, inMode, end) // still scrolled back
+	in, err = false, errors.New("tmux busy")
+	leftMode(&copying, inMode, end) // a failed ask changes nothing
+	if ends != 0 || !copying.Load() {
+		t.Fatalf("ends = %d copying = %v while the pane may still be scrolled back", ends, copying.Load())
+	}
+	err = nil
+	leftMode(&copying, inMode, end) // e.g. the phone's ↓ Live cancelled it
+	leftMode(&copying, inMode, end) // the next poll
+	if ends != 1 || copying.Load() {
+		t.Fatalf("ends = %d copying = %v, want one copy_end", ends, copying.Load())
 	}
 }

@@ -147,8 +147,13 @@ func TestKeyBar(t *testing.T) {
 	if strings.Contains(kb, "D delete") {
 		t.Error("D closes a shell, it deletes nothing:", kb)
 	}
-	if got, want := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Shell: true}), "SHELL  type to run · exit closes it  ^q to list  M-c copy"; got != want {
+	if got, want := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Shell: true}), "SHELL  type to run · exit closes it  ^q to list"; got != want {
 		t.Errorf("shell pane bar:\n got %q\nwant %q", got, want)
+	}
+	for _, ctx := range []BarContext{{ClaudeFocused: true, Scrolling: true}, {ClaudeFocused: true, Shell: true, Scrolling: true}} {
+		if got := KeyBar(m, cfg, ctx); !strings.HasPrefix(got, "SCROLL  hjkl move") || !strings.Contains(got, "esc back to live") {
+			t.Errorf("scrolled pane bar %+v: %q", ctx, got)
+		}
 	}
 }
 

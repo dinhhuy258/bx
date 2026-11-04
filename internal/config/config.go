@@ -34,7 +34,6 @@ type Serve struct {
 type Client struct {
 	Server     string `toml:"server"`
 	SwitchPane string `toml:"switch_pane"`
-	CopyMode   string `toml:"copy_mode"` // tmux copy-mode with vi keys; a yank goes to the clipboard
 	OpenPage   string `toml:"open_page"` // opens the page Claude just made in the open session
 }
 
@@ -65,7 +64,7 @@ func Default(root string) *Config {
 				"new_session": {"N"}, "new_story": {"W"},
 				"shell": {"T"}, "keymap": {"?"},
 				"rename": {"R"}, "close_story": {"D"}, "add_repo": {"+"},
-				"inbox": {"A"}, "projects": {"O"}, "scroll_up": {"PgUp"}, "scroll_down": {"PgDn"},
+				"inbox": {"A"}, "projects": {"O"},
 				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
@@ -74,7 +73,7 @@ func Default(root string) *Config {
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
-		Client: Client{SwitchPane: "C-q", CopyMode: "M-c", OpenPage: "M-o"},
+		Client: Client{SwitchPane: "C-q", OpenPage: "M-o"},
 	}
 }
 
@@ -109,7 +108,6 @@ type rawConfig struct {
 	Client struct {
 		Server     *string `toml:"server"`
 		SwitchPane *string `toml:"switch_pane"`
-		CopyMode   *string `toml:"copy_mode"`
 		OpenPage   *string `toml:"open_page"`
 	} `toml:"client"`
 }
@@ -127,9 +125,6 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 	if r.Client.SwitchPane != nil {
 		c.Client.SwitchPane = *r.Client.SwitchPane
-	}
-	if r.Client.CopyMode != nil {
-		c.Client.CopyMode = *r.Client.CopyMode
 	}
 	if r.Client.OpenPage != nil {
 		c.Client.OpenPage = *r.Client.OpenPage

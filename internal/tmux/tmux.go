@@ -234,8 +234,8 @@ func (t *Tmux) Scroll(sid string, lines int) error {
 	return nil
 }
 
-// PrepareCopy sets up copy-mode on bx's server: vi keys, v/y as in vim, and a yank sent to the
-// attached clients as OSC 52 so it reaches the clipboard of the machine running bx. It runs
+// PrepareCopy sets up copy-mode on bx's server: vi keys; v selects, y copies and stays, Enter
+// copies and leaves, q clears the selection and Esc leaves; and a copy sent to the attached clients as OSC 52 so it reaches the clipboard of the machine running bx. It runs
 // before every attach (terminal-features are read when a client attaches) and is idempotent,
 // so an existing tmux.conf needs no change.
 func (t *Tmux) PrepareCopy() error {
@@ -247,7 +247,10 @@ func (t *Tmux) PrepareCopy() error {
 		{"set-option", "-s", "set-clipboard", "on"},
 		{"set-option", "-s", "terminal-features[90]", "xterm-256color:clipboard"},
 		{"bind-key", "-T", "copy-mode-vi", "v", "send-keys", "-X", "begin-selection"},
-		{"bind-key", "-T", "copy-mode-vi", "y", "send-keys", "-X", "copy-pipe-and-cancel"},
+		{"bind-key", "-T", "copy-mode-vi", "y", "send-keys", "-X", "copy-pipe"},
+		{"bind-key", "-T", "copy-mode-vi", "Enter", "send-keys", "-X", "copy-pipe-and-cancel"},
+		{"bind-key", "-T", "copy-mode-vi", "q", "send-keys", "-X", "clear-selection"},
+		{"bind-key", "-T", "copy-mode-vi", "Escape", "send-keys", "-X", "cancel"},
 		{"bind-key", "-T", "copy-mode-vi", "C-v", "send-keys", "-X", "rectangle-toggle"},
 	} {
 		if _, err := t.x.Run(args...); err != nil {
@@ -263,12 +266,6 @@ func (t *Tmux) PrepareCopy() error {
 // bx never rewrites an existing conf.
 func (t *Tmux) KeepServer() error {
 	_, err := t.x.Run("set-option", "-s", "exit-empty", "off")
-	return err
-}
-
-// CopyMode puts a session in copy-mode; it stays there until q, y or Enter.
-func (t *Tmux) CopyMode(sid string) error {
-	_, err := t.x.Run("copy-mode", "-t", sid)
 	return err
 }
 

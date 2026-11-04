@@ -23,8 +23,8 @@ type stream struct{ cancel context.CancelFunc }
 
 // stream serves GET /api/projects/{name}/sessions/{num}/stream: a pty running
 // `tmux attach` to the session, bridged to a WebSocket. Binary frames are terminal bytes both
-// ways; a text frame from the client resizes, scrolls, enters copy-mode (see Tmux.Scroll) or
-// says the page was seen, and a "copy_end" frame from the server tells the client that tmux left
+// ways; a text frame from the client resizes, scrolls back into history in copy-mode (see Tmux.Scroll)
+// or says the page was seen, and a "copy_end" frame from the server tells the client that tmux left
 // copy-mode; "page" and "page_seen" frames carry the page Claude wrote (see pages.go). When the
 // session ends (Claude exited, story closed) the socket closes normally with reason
 // "session ended", and the client does not reconnect. Several clients may watch one session; tmux sizes it to the latest.
@@ -148,7 +148,14 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label
 			}
 		}
 	}()
-	var copying atomic.Bool // the client is in copy-mode
+	var copying atomic.Bool // the client scrolled back: the pane is in copy-mode
+	// left tells the client once the pane is back at live
+	left := func() {
+		leftMode(&copying, func() (bool, error) { return s.App.Tmux.InMode(sid) }, func() {
+			b, _ := json.Marshal(api.Control{Type: "copy_end"})
+			_ = c.Write(ctx, websocket.MessageText, b)
+		})
+	}
 	var check *time.Timer
 	checkMode := func() { // a little after a key: tmux handles it asynchronously
 		if !copying.Load() {
@@ -157,13 +164,24 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label
 		if check != nil {
 			check.Stop()
 		}
-		check = time.AfterFunc(modeCheckDelay, func() {
-			if in, err := s.App.Tmux.InMode(sid); err == nil && !in && copying.CompareAndSwap(true, false) {
-				b, _ := json.Marshal(api.Control{Type: "copy_end"})
-				_ = c.Write(ctx, websocket.MessageText, b)
-			}
-		})
+		check = time.AfterFunc(modeCheckDelay, left)
 	}
+	// copy-mode belongs to the pane, so it can also end with nothing on this stream: another
+	// client (the phone's ↓ Live, or opening the session) cancels it
+	go func() {
+		t := time.NewTicker(modePollInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if copying.Load() {
+					left()
+				}
+			}
+		}
+	}()
 	go func() { // socket → pty
 		defer cancel()
 		for {
@@ -189,16 +207,12 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label
 					// before the next frame is read, so a key sent after "back to live" reaches Claude
 					if err := s.App.Tmux.Scroll(sid, ctl.Lines); err != nil {
 						s.Log("stream %s: scroll: %v", label, err)
+					} else if ctl.Lines < 0 {
+						copying.Store(true) // tell the client when Esc, Enter or the bottom leaves it
 					}
 					checkMode()
 				case ctl.Type == "page_seen" && uuid != "":
 					s.pageSeen(uuid, st)
-				case ctl.Type == "copy":
-					if err := s.App.Tmux.CopyMode(sid); err != nil {
-						s.Log("stream %s: copy-mode: %v", label, err)
-					} else {
-						copying.Store(true)
-					}
 				}
 			}
 		}
@@ -250,6 +264,21 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label
 
 // modeCheckDelay is how long after a key in copy-mode the server asks tmux whether it left.
 const modeCheckDelay = 50 * time.Millisecond
+
+// modePollInterval is how often the server asks tmux whether a scrolled-back pane left
+// copy-mode without a key or scroll on this stream.
+const modePollInterval = 500 * time.Millisecond
+
+// leftMode calls end once when the pane is in copy-mode for the client (copying) and tmux says
+// it no longer is. A failed ask changes nothing; the next one tries again.
+func leftMode(copying *atomic.Bool, inMode func() (bool, error), end func()) {
+	if !copying.Load() {
+		return
+	}
+	if in, err := inMode(); err == nil && !in && copying.CompareAndSwap(true, false) {
+		end()
+	}
+}
 
 // pingInterval is how often the server pings a stream's client; one that does not answer
 // within pingTimeout is dropped. Variables so tests can shorten them.

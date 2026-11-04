@@ -68,7 +68,6 @@ type Backend interface {
 type Conn interface {
 	Resize(ctx context.Context, cols, rows int) error
 	Scroll(ctx context.Context, lines int) error
-	CopyMode(ctx context.Context) error
 	PageSeen(ctx context.Context) error
 	Close()
 }
@@ -251,8 +250,7 @@ type Model struct {
 	narrow        bool
 	claudeFocused bool
 	focusMode     bool          // Claude pane fills the width
-	scrolled      bool          // the Claude pane may be back in history; the next key returns to live first
-	copying       bool          // the Claude pane is in tmux copy-mode: keys go to tmux until it leaves
+	scrolling     bool          // the Claude pane is back in history in tmux copy-mode: keys go to tmux until it leaves
 	page          *api.Artifact // the page Claude just wrote in the pane's session, until it is opened or dismissed
 	pageNew       bool          // page is the first write of its name: "New page", else "Updated"
 	prompt        ui.Prompt
@@ -504,7 +502,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	case copyEndMsg:
 		if msg.conn == m.conn {
-			m.copying = false
+			m.scrolling = false
 		}
 		return m, nil
 	case pageMsg:
@@ -530,7 +528,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		// a terminal pastes only text: with an image on the clipboard the paste is empty, so
 		// attach it, as the attach key does
-		case msg.Content == "" && m.claudeFocused && m.conn != nil && !m.copying && !m.target.Shell():
+		case msg.Content == "" && m.claudeFocused && m.conn != nil && !m.scrolling && !m.target.Shell():
 			return m, m.attach()
 		case m.prompt.Active():
 			m.prompt.Paste(msg.Content)
@@ -538,8 +536,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switcher.Paste(msg.Content)
 		case m.picker != nil:
 			m.picker.Paste(msg.Content)
-		case m.claudeFocused && m.conn != nil && !m.copying:
-			m.live()
+		case m.claudeFocused && m.conn != nil && !m.scrolling:
 			m.term.Paste(msg.Content)
 		}
 		return m, nil
@@ -710,12 +707,12 @@ func (m *Model) closeStream() {
 	m.gen++
 	if m.conn != nil {
 		// copy-mode belongs to the pane; the next client to attach (e.g. the phone) would open in it
-		if m.scrolled || m.copying {
+		if m.scrolling {
 			_ = m.conn.Scroll(m.ctx, 0)
 		}
 		m.conn.Close()
 	}
-	m.conn, m.connecting, m.target, m.scrolled, m.copying, m.paneClosed, m.shellLabel = nil, false, Target{}, false, false, false, ""
+	m.conn, m.connecting, m.target, m.scrolling, m.paneClosed, m.shellLabel = nil, false, Target{}, false, false, ""
 	m.page = nil // a page still unseen comes again when the session's stream opens
 	cols, rows := m.term.Cols(), m.term.Rows()
 	m.term.Close()
@@ -785,10 +782,6 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if key == m.cfg.Client.CopyMode && key != "" { // from both panes
-		m.copyMode()
-		return m, nil
-	}
 	if key == m.cfg.Client.OpenPage && key != "" && m.page != nil { // from both panes
 		return m, m.openPage()
 	}
@@ -809,7 +802,6 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.attach()
 		}
 		if m.conn != nil {
-			m.live()
 			m.term.SendKey(k)
 		}
 		return m, nil
@@ -953,10 +945,6 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.askNewShell(row.Story)
 	case "keymap":
 		m.showKeys = true
-	case "scroll_up":
-		m.scroll(-max(m.term.Rows()/2, 1))
-	case "scroll_down":
-		m.scroll(max(m.term.Rows()/2, 1))
 	}
 	return m, nil
 }
@@ -1015,10 +1003,6 @@ func (m *Model) activityKey(action string) tea.Cmd {
 		return m.openSettings()
 	case "keymap":
 		m.showKeys = true
-	case "scroll_up":
-		m.scroll(-max(m.term.Rows()/2, 1))
-	case "scroll_down":
-		m.scroll(max(m.term.Rows()/2, 1))
 	}
 	return nil
 }
@@ -1061,23 +1045,6 @@ func (m *Model) openSession(project string, num int) tea.Cmd {
 	return tea.Batch(cmd, m.show(sessionTarget(num)))
 }
 
-// copyMode puts the open session in tmux copy-mode and gives the Claude pane the keys, which
-// then go to tmux (vi keys, v selects, y copies) until the server reports that it left.
-func (m *Model) copyMode() {
-	if m.conn == nil {
-		return
-	}
-	if err := m.conn.CopyMode(m.ctx); err != nil {
-		m.setFlash("copy-mode: " + err.Error())
-		return
-	}
-	m.copying, m.scrolled = true, false
-	if !m.claudeFocused {
-		m.claudeFocused = true
-		m.resizeTerm()
-	}
-}
-
 // wheelLines is how far one wheel notch scrolls the Claude pane.
 const wheelLines = 3
 
@@ -1099,24 +1066,22 @@ func (m *Model) wheel(msg tea.MouseWheelMsg) {
 	}
 }
 
-// scroll moves the open session's view through its history: tmux copy-mode on the server
-// draws it into the stream. lines < 0 goes back, > 0 toward live.
+// scroll moves the open session's view through its history. Scrolling back puts the pane in
+// tmux copy-mode on the server, which draws the history into the stream, and gives the Claude
+// pane the keys: tmux's vi keys move (hjkl, C-u/C-d, g/G, / search), v selects, q clears it, y
+// copies, and Enter (copies too), Esc or scrolling back to the bottom returns to live, which the server reports as copy_end.
+// lines < 0 goes back, > 0 toward live.
 func (m *Model) scroll(lines int) {
-	if m.conn == nil {
+	if m.conn == nil || lines > 0 && !m.scrolling {
 		return
 	}
-	if lines < 0 && !m.copying {
-		m.scrolled = true
-	}
 	_ = m.conn.Scroll(m.ctx, lines)
-}
-
-// live returns the Claude pane to the live screen before a key goes to Claude, so copy-mode
-// never eats what is typed. scrolled is never set in copy-mode, where the keys are for tmux.
-func (m *Model) live() {
-	if m.scrolled {
-		m.scrolled = false
-		_ = m.conn.Scroll(m.ctx, 0)
+	if lines < 0 && !m.scrolling {
+		m.scrolling = true
+		if !m.claudeFocused {
+			m.claudeFocused = true
+			m.resizeTerm()
+		}
 	}
 }
 
@@ -1198,7 +1163,7 @@ func (m *Model) closeShell(story string, k int) tea.Cmd {
 // target is shown, and the next snapshot moves the cursor off its row and says it closed.
 func (m *Model) shellClosed() {
 	t := m.target
-	m.paneClosed, m.scrolled, m.copying = true, false, false
+	m.paneClosed, m.scrolling = true, false
 	m.claudeFocused, m.focusMode = false, false
 	m.resizeTerm()
 	m.afterShell, m.afterShellNote = &t, true
@@ -1780,11 +1745,10 @@ func (m *Model) gotAttached(msg attachedMsg) {
 		m.setFlash("attach: " + msg.err.Error())
 		return
 	}
-	if m.project != msg.project || m.target != sessionTarget(msg.num) || m.conn == nil || m.copying {
+	if m.project != msg.project || m.target != sessionTarget(msg.num) || m.conn == nil || m.scrolling {
 		m.setFlash("uploaded " + msg.path)
 		return
 	}
-	m.live()
 	m.term.Paste(msg.path + " ")
 	m.setFlash("attached " + msg.name)
 }
@@ -2093,13 +2057,9 @@ func (m *Model) shellTitle() string {
 	return m.titleLine(left, right)
 }
 
-// titleLine lays out the pane's title: left, then right at the end of the line, with the COPY
-// tag in front of right while in copy-mode. A narrow pane cuts the left side and keeps the right.
+// titleLine lays out the pane's title: left, then right at the end of the line. A narrow pane cuts the left side and keeps the right.
 func (m *Model) titleLine(left, right string) string {
 	cols := m.term.Cols()
-	if m.copying {
-		right = lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(lipgloss.Color("#e0af68")).Render(" COPY ") + " " + right
-	}
 	left = ansi.Truncate(left, max(cols-ansi.StringWidth(right)-1, 0), "…")
 	return left + strings.Repeat(" ", max(cols-ansi.StringWidth(left)-ansi.StringWidth(right), 0)) + right
 }
@@ -2143,7 +2103,7 @@ func (m *Model) bar() string {
 		r := m.act.Selected(ui.ActivityRows(m.activityModels()))
 		text = ui.ActivityBar(m.cfg, r.Num == 0, ui.BarContext{Flash: m.flash, Narrow: m.narrow})
 	default:
-		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.target.Num, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects), Shell: m.target.Shell() && !m.paneClosed, Page: m.page != nil})
+		text = ui.KeyBar(m.m, m.cfg, ui.BarContext{ClaudeFocused: m.claudeFocused, Session: m.target.Num, Seq: m.seq, Flash: m.flash, Narrow: m.narrow, Projects: len(m.opened.Projects), Shell: m.target.Shell() && !m.paneClosed, Page: m.page != nil, Scrolling: m.scrolling})
 	}
 	// cut the text to one line: Width would wrap it and push the bar off the screen
 	text = ansi.Truncate(" "+text, max(m.width, 1), "…")

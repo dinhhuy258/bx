@@ -57,8 +57,6 @@ var keymapGroups = []keymapGroup{
 		{"up", "move up"},
 		{"fold_all", "fold all stories"},
 		{"inbox", "inbox · sessions that need you"},
-		{"scroll_up", "scroll the Claude pane up"},
-		{"scroll_down", "scroll the Claude pane down"},
 		{"cleanup", "clean up leftovers, all projects"},
 		{"settings", "settings"},
 		{"keymap", "this keymap"},
@@ -91,7 +89,6 @@ func Keymap(cfg *config.Config, width int) string {
 	for _, l := range []line{
 		{keys(cfg.Client.SwitchPane), "between the list and Claude"},
 		{keys("C-c"), "quit bx · Claude keeps running; esc interrupts it · a shell keeps ^c"},
-		{keys(cfg.Client.CopyMode), "copy mode · vi keys, v select, y copy, q quit"},
 		{keys(cfg.Client.OpenPage), "open the page Claude just made (or click it on the line under the title)"},
 	} {
 		if l.keys != "" {
@@ -99,6 +96,13 @@ func Keymap(cfg *config.Config, width int) string {
 		}
 	}
 	blocks = append(blocks, panes)
+	// no key enters it: the wheel over the Claude pane does, and tmux's vi keys run it
+	blocks = append(blocks, block{head: pal.bold.Render("SCROLL") + pal.dim.Render(" · wheel up over Claude"), lines: []line{
+		{"hjkl", "move · ^u/^d page · / search"},
+		{"v", "select · q clears it"},
+		{"y / ⏎", "copy to the clipboard · ⏎ also goes back to live"},
+		{"esc", "back to live · so does scrolling to the bottom"},
+	}})
 	grouped := map[string]bool{}
 	for _, g := range keymapGroups {
 		b := block{head: pal.bold.Render(g.title)}
