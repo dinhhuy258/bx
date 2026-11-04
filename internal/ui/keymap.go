@@ -89,8 +89,8 @@ func Keymap(cfg *config.Config, width int) string {
 	var blocks []block
 	panes := block{head: pal.bold.Render("PANES") + pal.dim.Render(" · from the list and from Claude")}
 	for _, l := range []line{
-		{keys(cfg.Client.PaneLeft), "to the list; past it, the tmux pane on the left"},
-		{keys(cfg.Client.PaneRight), "to Claude; past it, the tmux pane on the right"},
+		{keys(cfg.Client.SwitchPane), "between the list and Claude"},
+		{keys("C-c"), "quit bx · Claude keeps running; esc interrupts it · a shell keeps ^c"},
 		{keys(cfg.Client.CopyMode), "copy mode · vi keys, v select, y copy, q quit"},
 		{keys(cfg.Client.OpenPage), "open the page Claude just made (or click it on the line under the title)"},
 	} {

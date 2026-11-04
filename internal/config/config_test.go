@@ -119,7 +119,7 @@ func TestRootFromEnv(t *testing.T) {
 
 func TestServeAndClientSections(t *testing.T) {
 	root := t.TempDir()
-	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\npane_left = \"C-g\"\ncopy_mode = \"\"\n"
+	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\nswitch_pane = \"C-g\"\ncopy_mode = \"\"\n"
 	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -130,11 +130,11 @@ func TestServeAndClientSections(t *testing.T) {
 	if c.Serve.Listen != "100.100.1.2:7357" {
 		t.Fatalf("serve.listen = %q", c.Serve.Listen)
 	}
-	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.PaneLeft != "C-g" || c.Client.PaneRight != "C-l" || c.Client.CopyMode != "" {
+	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.SwitchPane != "C-g" || c.Client.CopyMode != "" {
 		t.Fatalf("client = %+v", c.Client)
 	}
 	d := Default(root)
-	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.PaneLeft != "C-h" || d.Client.PaneRight != "C-l" || d.Client.CopyMode != "M-c" || d.Client.OpenPage != "M-o" {
+	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.SwitchPane != "C-q" || d.Client.CopyMode != "M-c" || d.Client.OpenPage != "M-o" {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
 	}
 }

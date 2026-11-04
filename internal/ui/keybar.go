@@ -43,14 +43,14 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 	}
 	var parts []string
 	if ctx.ClaudeFocused && ctx.Shell {
-		parts = []string{"SHELL", "type to run · exit closes it", k(cfg.Client.PaneLeft, "to list")}
+		parts = []string{"SHELL", "type to run · exit closes it", k(cfg.Client.SwitchPane, "to list")}
 		if cfg.Client.CopyMode != "" {
 			parts = append(parts, k(cfg.Client.CopyMode, "copy"))
 		}
 		return join(parts)
 	}
 	if ctx.ClaudeFocused {
-		back := k(cfg.Client.PaneLeft, "to list")
+		back := k(cfg.Client.SwitchPane, "to list")
 		if n := ctx.Session; n != 0 && strings.HasPrefix(m.StateText(n), "asks:") {
 			parts = []string{"CLAUDE", "↑↓ move", "⏎ confirm", "esc no", back}
 		} else {
@@ -59,6 +59,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		if ctx.Page && cfg.Client.OpenPage != "" {
 			parts = append(parts, k(cfg.Client.OpenPage, "open page"))
 		}
+		parts = append(parts, k("C-c", "quit bx"))
 		return join(parts)
 	}
 	row, rowKeys := rowPart(m, cfg, ctx)
@@ -76,7 +77,7 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 	global = append(global, lk("close_project"))
 	if ctx.Narrow {
 		// one pane at a time: say how to come back
-		global = append(global, k(cfg.Client.PaneRight, "back"))
+		global = append(global, k(cfg.Client.SwitchPane, "back"))
 	}
 	if keys := join(rowKeys); keys != "" {
 		return row + " › " + keys + "  │  " + join(global)
@@ -178,7 +179,7 @@ func ActivityBar(cfg *config.Config, header bool, ctx BarContext) string {
 	}
 	parts = append(parts, lk("inbox", "back"), switchKeys(cfg))
 	if ctx.Narrow {
-		parts = append(parts, config.Pretty(cfg.Client.PaneRight)+" back")
+		parts = append(parts, config.Pretty(cfg.Client.SwitchPane)+" back")
 	}
 	return join(parts)
 }

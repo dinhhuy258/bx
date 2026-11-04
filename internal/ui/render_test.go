@@ -89,7 +89,7 @@ func TestKeyBar(t *testing.T) {
 	if kb = KeyBar(m, cfg, BarContext{}); strings.Contains(kb, "y yes") {
 		t.Error("no quick answer on a waiting session:", kb)
 	}
-	if got := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Session: 2}); got != "CLAUDE  ↑↓ move  ⏎ confirm  esc no  ^h to list" || strings.Contains(got, "1-3") {
+	if got := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Session: 2}); got != "CLAUDE  ↑↓ move  ⏎ confirm  esc no  ^q to list  ^c quit bx" || strings.Contains(got, "1-3") {
 		t.Errorf("Claude bar while asking: %q", got)
 	}
 	for _, want := range []string{"S stop", "R rename", "D delete"} {
@@ -124,7 +124,7 @@ func TestKeyBar(t *testing.T) {
 		t.Error(kb)
 	}
 	kb = KeyBar(m, cfg, BarContext{ClaudeFocused: true})
-	if !strings.Contains(kb, "esc interrupt") || !strings.Contains(kb, "^h to list") {
+	if !strings.Contains(kb, "esc interrupt") || !strings.Contains(kb, "^q to list") {
 		t.Error(kb)
 	}
 	kb = KeyBar(m, cfg, BarContext{Seq: "z"})
@@ -147,7 +147,7 @@ func TestKeyBar(t *testing.T) {
 	if strings.Contains(kb, "D delete") {
 		t.Error("D closes a shell, it deletes nothing:", kb)
 	}
-	if got, want := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Shell: true}), "SHELL  type to run · exit closes it  ^h to list  M-c copy"; got != want {
+	if got, want := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Shell: true}), "SHELL  type to run · exit closes it  ^q to list  M-c copy"; got != want {
 		t.Errorf("shell pane bar:\n got %q\nwant %q", got, want)
 	}
 }
@@ -183,8 +183,8 @@ func TestRenderShellRows(t *testing.T) {
 func TestFocusLine(t *testing.T) {
 	m, _ := sampleModel()
 	m.SelectSession(1)
-	line := FocusLine(m, "A", "C-h", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
-	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · A inbox · ● 1 running · ^h exit"
+	line := FocusLine(m, "A", "C-q", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
+	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · A inbox · ● 1 running · ^q exit"
 	if line != want {
 		t.Fatalf("\n got %q\nwant %q", line, want)
 	}

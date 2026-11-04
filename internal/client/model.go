@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"runtime"
 	"slices"
@@ -182,7 +181,6 @@ type Model struct {
 	open Streamer
 	send func(tea.Msg)
 	tick func() tea.Cmd
-	tmux func(dir string) tea.Cmd // moves to the tmux pane beside bx; see tmuxSelect
 
 	projects []api.ProjectSummary
 	opened   opened               // the projects this client has open, saved between runs
@@ -270,7 +268,7 @@ type Model struct {
 // it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, tmux: tmuxSelect, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -280,20 +278,6 @@ func (m *Model) SetStreamer(s Streamer) { m.open = s }
 func (m *Model) SetSender(send func(tea.Msg)) { m.send = send }
 
 func (m *Model) Init() tea.Cmd { return tea.Batch(m.loadProjects(), m.tick()) }
-
-// tmuxSelect moves to the tmux pane on side dir ("L" or "R") of bx, if there is one: past the
-// edge of bx, PaneLeft and PaneRight act like vim-tmux-navigator. Outside tmux it does nothing.
-func tmuxSelect(dir string) tea.Cmd {
-	pane := os.Getenv("TMUX_PANE")
-	if os.Getenv("TMUX") == "" || pane == "" {
-		return nil
-	}
-	edge := map[string]string{"L": "#{pane_at_left}", "R": "#{pane_at_right}"}[dir]
-	return func() tea.Msg {
-		_ = exec.Command("tmux", "if-shell", "-F", "-t", pane, edge, "", "select-pane -t "+pane+" -"+dir).Run()
-		return nil
-	}
-}
 
 // openBrowser opens u in this machine's browser: `open` on macOS, `xdg-open` elsewhere. A
 // failure is quiet, because the key bar shows the link anyway.
@@ -809,13 +793,15 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.openPage()
 	}
 	if m.claudeFocused {
-		switch key {
-		case m.cfg.Client.PaneLeft:
+		if key == m.cfg.Client.SwitchPane && key != "" {
 			m.claudeFocused, m.focusMode = false, false
 			m.resizeTerm()
 			return m, nil
-		case m.cfg.Client.PaneRight:
-			return m, m.tmux("R")
+		}
+		// C-c closes bx from Claude too; Claude keeps running, and Esc interrupts it. A shell
+		// keeps C-c for its commands.
+		if key == "C-c" && !m.target.Shell() {
+			return m, m.quit()
 		}
 		// C-v is Claude Code's image paste, but Claude reads the server's clipboard: attach
 		// brings this machine's instead. A shell gets C-v as it is.
@@ -843,12 +829,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key == "C-c" {
 		return m, m.quit()
 	}
-	switch key {
-	case m.cfg.Client.PaneLeft:
-		return m, m.tmux("L")
-	case m.cfg.Client.PaneRight:
-		if m.target.Zero() || m.paneClosed { // nothing live in the pane: on to the tmux pane
-			return m, m.tmux("R")
+	if key == m.cfg.Client.SwitchPane && key != "" {
+		if m.target.Zero() || m.paneClosed { // nothing live in the pane to go to
+			return m, nil
 		}
 		return m, m.backToClaude()
 	}
@@ -1257,7 +1240,7 @@ func groupName(story string) string {
 	return story
 }
 
-// backToClaude gives the keys back to the session already in the Claude pane. PaneRight never
+// backToClaude gives the keys back to the session already in the Claude pane. SwitchPane never
 // opens the session under the cursor (Enter does).
 func (m *Model) backToClaude() tea.Cmd {
 	m.claudeFocused = true
@@ -2155,7 +2138,7 @@ func (m *Model) bar() string {
 				waiting = append(waiting, ui.WaitingElsewhere{Project: p.Name, Num: n})
 			}
 		}
-		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "inbox"), m.cfg.Client.PaneLeft, run, waiting)
+		text = ui.FocusLine(m.m, m.cfg.Keys.First(m.cfg.Keys.List, "inbox"), m.cfg.Client.SwitchPane, run, waiting)
 	case m.activity && !m.claudeFocused && m.seq == "":
 		r := m.act.Selected(ui.ActivityRows(m.activityModels()))
 		text = ui.ActivityBar(m.cfg, r.Num == 0, ui.BarContext{Flash: m.flash, Narrow: m.narrow})

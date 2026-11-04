@@ -79,7 +79,7 @@ func (k Keys) First(section map[string][]string, action string) string {
 	return ""
 }
 
-// Pretty renders a key name the way the prototype does: Enter→⏎, Space→space, Down→↓, C-h→^h.
+// Pretty renders a key name the way the prototype does: Enter→⏎, Space→space, Tab→tab, Down→↓, C-x→^x.
 func Pretty(key string) string {
 	parts := strings.Fields(key)
 	for i, p := range parts {
@@ -90,6 +90,8 @@ func Pretty(key string) string {
 			parts[i] = "esc"
 		case "Space":
 			parts[i] = "space"
+		case "Tab":
+			parts[i] = "tab"
 		case "Down":
 			parts[i] = "↓"
 		case "Up":

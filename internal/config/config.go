@@ -29,14 +29,13 @@ type Serve struct {
 }
 
 // Client holds `bx` client settings: the server URL and the keys that work from both panes.
-// PaneLeft and PaneRight move between the list and the Claude pane; past either edge they move
-// to the tmux pane on that side, like vim-tmux-navigator.
+// SwitchPane moves between the list and the Claude pane, both ways. Moving to the tmux panes
+// beside bx is left to tmux.
 type Client struct {
-	Server    string `toml:"server"`
-	PaneLeft  string `toml:"pane_left"`
-	PaneRight string `toml:"pane_right"`
-	CopyMode  string `toml:"copy_mode"` // tmux copy-mode with vi keys; a yank goes to the clipboard
-	OpenPage  string `toml:"open_page"` // opens the page Claude just made in the open session
+	Server     string `toml:"server"`
+	SwitchPane string `toml:"switch_pane"`
+	CopyMode   string `toml:"copy_mode"` // tmux copy-mode with vi keys; a yank goes to the clipboard
+	OpenPage   string `toml:"open_page"` // opens the page Claude just made in the open session
 }
 
 // Keys holds the list binds. A bind is a list of key names; "z M" is a two-key sequence.
@@ -75,7 +74,7 @@ func Default(root string) *Config {
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
-		Client: Client{PaneLeft: "C-h", PaneRight: "C-l", CopyMode: "M-c", OpenPage: "M-o"},
+		Client: Client{SwitchPane: "C-q", CopyMode: "M-c", OpenPage: "M-o"},
 	}
 }
 
@@ -108,11 +107,10 @@ type rawConfig struct {
 		FilesListen *string `toml:"files_listen"`
 	} `toml:"serve"`
 	Client struct {
-		Server    *string `toml:"server"`
-		PaneLeft  *string `toml:"pane_left"`
-		PaneRight *string `toml:"pane_right"`
-		CopyMode  *string `toml:"copy_mode"`
-		OpenPage  *string `toml:"open_page"`
+		Server     *string `toml:"server"`
+		SwitchPane *string `toml:"switch_pane"`
+		CopyMode   *string `toml:"copy_mode"`
+		OpenPage   *string `toml:"open_page"`
 	} `toml:"client"`
 }
 
@@ -127,11 +125,8 @@ func (r rawConfig) applyTo(c *Config) {
 	if r.Client.Server != nil {
 		c.Client.Server = *r.Client.Server
 	}
-	if r.Client.PaneLeft != nil {
-		c.Client.PaneLeft = *r.Client.PaneLeft
-	}
-	if r.Client.PaneRight != nil {
-		c.Client.PaneRight = *r.Client.PaneRight
+	if r.Client.SwitchPane != nil {
+		c.Client.SwitchPane = *r.Client.SwitchPane
 	}
 	if r.Client.CopyMode != nil {
 		c.Client.CopyMode = *r.Client.CopyMode

@@ -407,8 +407,7 @@ type harness struct {
 	be     *fakeBackend
 	opened []string // "project num"
 	conns  []*fakeConn
-	tmux   []string // tmux pane moves: "L" or "R"
-	dial   error    // when set, every dial fails with it
+	dial   error // when set, every dial fails with it
 }
 
 // start builds a client over projects (each with session 1 in story s1), opening the first one
@@ -445,7 +444,6 @@ func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *
 	hs := &harness{be: be}
 	hs.m = NewModel(config.Default(root), be, project)
 	hs.m.tick = func() tea.Cmd { return nil }
-	hs.m.tmux = func(dir string) tea.Cmd { hs.tmux = append(hs.tmux, dir); return nil }
 	hs.m.SetStreamer(func(_ context.Context, project string, t Target, cols, rows int, term *Term, _ func(tea.Msg)) (Conn, error) {
 		if t.Shell() {
 			hs.opened = append(hs.opened, fmt.Sprintf("%s sh %s %d", project, t.Story, t.K))
@@ -503,7 +501,7 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyTab}
 		case "PgUp":
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
-		case "C-h", "C-l", "C-v", "C-s":
+		case "C-c", "C-h", "C-l", "C-q", "C-v", "C-s":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModCtrl}
 		default:
 			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
@@ -650,13 +648,13 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("key was not forwarded")
 	}
-	h.press("C-h")
+	h.press("C-q")
 	if h.m.claudeFocused {
-		t.Fatal("C-h must return to the list")
+		t.Fatal("C-q must return to the list")
 	}
-	h.press("C-l")
+	h.press("C-q")
 	if !h.m.claudeFocused || len(h.opened) != 1 {
-		t.Fatalf("C-l on the open session must not reconnect: %q", h.opened)
+		t.Fatalf("C-q on the open session must not reconnect: %q", h.opened)
 	}
 	h.update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	if got := h.conns[0].resized; len(got) == 0 || got[len(got)-1] != [2]int{140 - ui.ListWidth - 1, 37} {
@@ -711,7 +709,7 @@ func TestWheelAndPgUpScrollTheClaudePane(t *testing.T) {
 	}
 	h.press("y") // already live: no extra frame
 	<-h.m.term.Input()
-	h.press("C-h", "PgUp")
+	h.press("C-q", "PgUp")
 	if got, want := fmt.Sprint(c.scrolled), fmt.Sprint([]int{-wheelLines, wheelLines, 0, -h.m.term.Rows() / 2}); got != want {
 		t.Fatalf("scroll frames %s, want %s", got, want)
 	}
@@ -777,7 +775,7 @@ func TestEmptyPasteAttachesTheClipboardImage(t *testing.T) {
 	if len(h.be.uploads) != 1 || termInput(h) != "text" {
 		t.Fatalf("a text paste must go to Claude as text: %v", h.be.uploads)
 	}
-	h.press("C-h")
+	h.press("C-q")
 	h.update(tea.PasteMsg{Content: ""})
 	if len(h.be.uploads) != 1 {
 		t.Fatalf("an empty paste on the list must not attach: %v", h.be.uploads)
@@ -845,7 +843,7 @@ func TestPasteGoesToClaude(t *testing.T) {
 	if got := input(); got != "\x1b[200~hi\x1b[201~" {
 		t.Fatalf("bracketed paste forwarded as %q", got)
 	}
-	h.press("C-h")
+	h.press("C-q")
 	h.update(tea.PasteMsg{Content: "list"})
 	h.update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt}) // M-c: copy-mode
 	h.update(tea.PasteMsg{Content: "copy-mode"})
@@ -856,7 +854,7 @@ func TestPasteGoesToClaude(t *testing.T) {
 
 func TestCopyModeSendsKeysToTmuxAndCopies(t *testing.T) {
 	h := start(t, 120, 30, "idle")
-	h.press("Enter", "C-h") // a session open, keys back on the list
+	h.press("Enter", "C-q") // a session open, keys back on the list
 	c := h.conns[0]
 	h.update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModAlt})
 	if c.copies != 1 || !h.m.copying || !h.m.claudeFocused {
@@ -887,30 +885,67 @@ func TestCopyModeSendsKeysToTmuxAndCopies(t *testing.T) {
 	}
 }
 
-func TestPaneRightReturnsToTheOpenSessionOnly(t *testing.T) {
+func TestSwitchPaneReturnsToTheOpenSessionOnly(t *testing.T) {
 	h := start(t, 160, 30, "waiting")
-	h.press("C-l")
-	if h.m.claudeFocused || len(h.opened) != 0 || strings.Join(h.tmux, "") != "R" {
-		t.Fatalf("with no session open C-l goes on to tmux: focused=%v opened=%q tmux=%q", h.m.claudeFocused, h.opened, h.tmux)
+	h.press("C-q")
+	if h.m.claudeFocused || len(h.opened) != 0 {
+		t.Fatalf("with no session open C-q does nothing: focused=%v opened=%q", h.m.claudeFocused, h.opened)
 	}
-	h.press("Enter", "C-h") // open session 1, back to the list
-	h.press("k")            // cursor to the chats row, away from session 1
-	h.press("C-l")
+	h.press("Enter", "C-q") // open session 1, back to the list
+	if h.m.claudeFocused {
+		t.Fatal("C-q in Claude must return to the list")
+	}
+	h.press("k") // cursor to the chats row, away from session 1
+	h.press("C-q")
 	if !h.m.claudeFocused || h.m.target.Num != 1 || len(h.opened) != 1 {
-		t.Fatalf("C-l should go back to session 1 without opening another: focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.target.Num, h.opened)
+		t.Fatalf("C-q should go back to session 1 without opening another: focused=%v num=%d opened=%q", h.m.claudeFocused, h.m.target.Num, h.opened)
 	}
 }
 
-func TestPaneKeysPastTheEdgeGoToTmux(t *testing.T) {
+func TestSwitchPaneNeverReachesClaude(t *testing.T) {
 	h := start(t, 160, 30, "waiting")
-	h.press("C-h") // already in the list: the tmux pane on the left
-	h.press("Enter", "C-l", "C-l")
-	if !h.m.claudeFocused || strings.Join(h.tmux, "") != "LRR" {
-		t.Fatalf("focused=%v tmux=%q", h.m.claudeFocused, h.tmux)
+	h.press("Enter", "C-q", "C-q", "C-h", "C-l") // C-h and C-l are tmux's now: they go to Claude
+	if !h.m.claudeFocused {
+		t.Fatal("C-h must not leave Claude")
+	}
+	var got []byte
+	for len(got) < 2 {
+		select {
+		case b := <-h.m.term.Input():
+			got = append(got, b...)
+		case <-time.After(time.Second):
+			t.Fatalf("Claude got %q, want C-h C-l", got)
+		}
+	}
+	if string(got) != "\x08\x0c" {
+		t.Fatalf("Claude got %q, want only C-h C-l", got)
+	}
+}
+
+func TestCtrlCQuitsFromClaudeButNotFromAShell(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.setShells(nil, map[string]string{"": "/p/home-network", "s1": "/w/s1"})
+	h.press("T", "y", "C-c") // a shell keeps C-c for its commands
+	if h.m.ctx.Err() != nil {
+		t.Fatal("C-c in a shell closed bx")
 	}
 	select {
 	case b := <-h.m.term.Input():
-		t.Fatalf("C-l reached Claude: %q", b)
+		if string(b) != "\x03" {
+			t.Fatalf("the shell got %q", b)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("C-c did not reach the shell")
+	}
+
+	h = start(t, 200, 30, "running")
+	h.press("Enter", "C-c") // in Claude: closes bx, Claude never sees it
+	if h.m.ctx.Err() == nil {
+		t.Fatal("C-c in Claude must close bx")
+	}
+	select {
+	case b := <-h.m.term.Input():
+		t.Fatalf("C-c reached Claude: %q", b)
 	default:
 	}
 }
@@ -926,7 +961,7 @@ func TestPromptsCallTheBackend(t *testing.T) {
 	if !h.m.claudeFocused || strings.Join(h.opened, "|") != "home-network 9" {
 		t.Fatalf("a session in chats should open and focus: %q", h.opened)
 	}
-	h.press("C-h", "y")   // back to the list; y on the waiting session 1 does nothing
+	h.press("C-q", "y")   // back to the list; y on the waiting session 1 does nothing
 	h.press("W", "Enter") // new branch
 	h.typeText("guest")
 	h.press("Enter", "Enter") // the name, then feat
@@ -1387,7 +1422,7 @@ func TestNewSessionAsksFirst(t *testing.T) {
 
 func TestStopTheOpenSessionClosesItsStream(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("Enter", "C-h", "S", "y")
+	h.press("Enter", "C-q", "S", "y")
 	if h.m.target.Num != 0 || !h.conns[0].closed || h.m.claudeFocused {
 		t.Fatalf("num=%d closed=%v focused=%v", h.m.target.Num, h.conns[0].closed, h.m.claudeFocused)
 	}
@@ -1610,13 +1645,13 @@ func TestNewShellAsksThenOpens(t *testing.T) {
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "s1 › $1 zsh") || !strings.Contains(v, "SHELL") {
 		t.Fatalf("pane title:\n%s", v)
 	}
-	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "SHELL  type to run · exit closes it  ^h to list  M-c copy") {
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "SHELL  type to run · exit closes it  ^q to list  M-c copy") {
 		t.Fatalf("bar = %q", bar)
 	}
 	if sh, ok := h.m.m.SelectedShell(); !ok || sh.K != 1 {
 		t.Fatalf("the cursor should be on the new shell: %+v", h.m.m.Selected())
 	}
-	h.press("C-h", "k", "k", "k") // $1 → session 1 → s1 → the chats row
+	h.press("C-q", "k", "k", "k") // $1 → session 1 → s1 → the chats row
 	h.press("T")
 	if v := view(h); !strings.Contains(v, "New shell $1") || !strings.Contains(v, "in chats") || !strings.Contains(v, "/p/home-network") {
 		t.Fatalf("view:\n%s", v)
@@ -1697,7 +1732,7 @@ func TestShellEndedKeepsTheOutputDimmed(t *testing.T) {
 		t.Fatalf("closed=%v opened=%q", h.m.paneClosed, h.opened)
 	}
 
-	h.press("C-h", "T", "y")
+	h.press("C-q", "T", "y")
 	delete(h.be.snaps["home-network"].Project.Stories, "s1") // D closed the story, and its shells
 	h.dropShells()
 	h.shellEnded()
@@ -1856,7 +1891,7 @@ func TestInboxListsEveryProject(t *testing.T) {
 	if h.m.project != "lab" || !h.m.claudeFocused || strings.Join(h.opened, "|") != "lab 1" || !h.m.activity {
 		t.Fatalf("project=%q focused=%v opened=%q activity=%v", h.m.project, h.m.claudeFocused, h.opened, h.m.activity)
 	}
-	h.press("C-h", "k", "Enter") // back to the list, up to lab's header: its list
+	h.press("C-q", "k", "Enter") // back to the list, up to lab's header: its list
 	if h.m.activity || h.m.project != "lab" {
 		t.Fatalf("activity=%v project=%q", h.m.activity, h.m.project)
 	}
@@ -2320,7 +2355,7 @@ func TestPageStripOpensFromEitherPane(t *testing.T) {
 	}
 
 	// from the list too; a page_seen from another client closes it
-	h.press("C-h")
+	h.press("C-q")
 	h.update(pageMsg{conn: c, page: api.Artifact{Name: "report.html", URL: u}})
 	h.update(pageSeenMsg{conn: c})
 	if h.m.page != nil || c.seen != 1 {
