@@ -50,14 +50,21 @@ func (a *App) removeSessionFiles(project string, num int) {
 	}
 }
 
-// pageHookTools are the Claude tools that write a page.
-const pageHookTools = "Write|Edit|MultiEdit"
+// pageHookTools are the Claude tools that write a page: the file tools, and Bash, whose
+// heredocs, sed -i and scripts write pages too.
+const pageHookTools = "Write|Edit|MultiEdit|Bash"
 
-// pageHooks are the --settings hooks that run `bx page-hook <api>` after each write or edit. The
-// hook does nothing unless the file is a page in the session's artifacts folder ($BX_ARTIFACTS).
+// pageHooks are the --settings hooks that run `bx page-hook <api>` after each write, edit or
+// command, and `bx page-hook --before` before each command, which notes the session's pages so
+// the hook after it can tell which the command wrote. The hooks do nothing unless a page in the
+// session's artifacts folder ($BX_ARTIFACTS) changed.
 func pageHooks(self, api string) map[string]any {
-	hook := map[string]any{"type": "command", "command": shellJoin([]string{self, "page-hook", api}), "timeout": 5}
-	return map[string]any{"PostToolUse": []any{map[string]any{"matcher": pageHookTools, "hooks": []any{hook}}}}
+	before := map[string]any{"type": "command", "command": shellJoin([]string{self, "page-hook", "--before"}), "timeout": 5}
+	after := map[string]any{"type": "command", "command": shellJoin([]string{self, "page-hook", api}), "timeout": 5}
+	return map[string]any{
+		"PreToolUse":  []any{map[string]any{"matcher": "Bash", "hooks": []any{before}}},
+		"PostToolUse": []any{map[string]any{"matcher": pageHookTools, "hooks": []any{after}}},
+	}
 }
 
 // withHooks merges the hook events of add into hooks (nil is empty), keeping both sides' entries.
