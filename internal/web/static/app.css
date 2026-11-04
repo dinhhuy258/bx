@@ -236,5 +236,19 @@ dialog.copy[open] { display: flex; flex-direction: column; }
 .rv-bubble.sent { opacity: .55; border-left-color: var(--dim); background: #1d1d1d; }
 .rv-bubble small { display: block; color: var(--dim); font-size: 12px; }
 .rv-folded { padding: 10px 12px; }
+/* a range: the selected rows, the rows it can't take (other hunks), the rows a comment covers */
+.rv-row.rv-sel { background: rgba(76, 154, 255, .26); box-shadow: inset 3px 0 0 var(--accent); }
+.rv-row.rv-sel .rv-n { color: var(--fg); }
+.rv-out { opacity: .32; }
+.rv-row.rv-cov { box-shadow: inset 3px 0 0 var(--wait); }
+.rv-row.rv-cov .rv-n { color: var(--wait); }
+.rv-page.selecting { padding-bottom: 110px; }
+.rv-dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 10px; background: #161616; border-top: 1px solid var(--line);
+  padding: 10px calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)); }
+.rv-dock-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rv-dock-text b { font-size: 15px; }
+.rv-dock-text span { font-size: 12px; color: var(--dim); }
+.rv-quote { margin: 0; font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--dim); white-space: pre; tab-size: 4; overflow-x: auto; border-left: 2px solid var(--line); padding-left: 8px; }
+dialog menu .ghost { margin-right: auto; background: none; border-color: transparent; color: var(--accent); padding-inline: 4px; }
 .toast-act { margin-left: 12px; padding: 4px 10px; }
 dialog textarea { width: 100%; resize: vertical; }

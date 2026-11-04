@@ -61,8 +61,11 @@ func (m *Model) reviewKey(key string) tea.Cmd {
 	case ui.ReviewComment:
 		l, _ := r.Selected()
 		m.reviewLine = l
-		title := fmt.Sprintf("Comment · %s:%d", l.File, l.Line)
-		if l.Side == "old" {
+		title := fmt.Sprintf("Comment · %s:%s", l.File, l.Lines())
+		switch {
+		case l.Side == "old" && l.StartLine > 0:
+			title += " (removed lines)"
+		case l.Side == "old":
 			title += " (removed line)"
 		}
 		initial := ""
@@ -106,7 +109,7 @@ func (m *Model) commentDone(text string) tea.Cmd {
 	case text == "":
 		return nil
 	}
-	cs = append(cs, api.Comment{File: l.File, Side: l.Side, Line: l.Line, Code: l.Code, Body: text})
+	cs = append(cs, api.Comment{File: l.File, Side: l.Side, StartLine: l.StartLine, Line: l.Line, Code: l.Code, Body: text})
 	return m.saveComments(cs, "")
 }
 

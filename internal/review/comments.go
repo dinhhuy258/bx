@@ -25,7 +25,8 @@ var (
 
 // Apply checks the comment list a client sends (PUT) against the stored one and returns what
 // to store. A new comment (no id) gets one and can't be sent yet. A sent comment may only move
-// to another line (it follows the code); its text and its sent stamp stay. A comment left out
+// to other lines (it follows the code); its text and its sent stamp stay. A range that starts
+// on its last line is stored as one line. A comment left out
 // is deleted. Outdated is the server's to say and is dropped.
 func Apply(old, next []api.Comment) ([]api.Comment, error) {
 	if len(next) > MaxComments {
@@ -46,6 +47,12 @@ func Apply(old, next []api.Comment) ([]api.Comment, error) {
 		if c.File == "" || (c.Side != "new" && c.Side != "old") || c.Line < 1 || c.Body == "" {
 			return nil, fmt.Errorf("a comment needs a file, a side (new or old), a line and a text (%s:%d)", c.File, c.Line)
 		}
+		if c.StartLine == c.Line {
+			c.StartLine = 0
+		}
+		if c.StartLine < 0 || c.StartLine > c.Line {
+			return nil, fmt.Errorf("a comment's lines run backwards (%s:%d-%d)", c.File, c.StartLine, c.Line)
+		}
 		switch o, ok := byID[c.ID]; {
 		case c.ID == "":
 			if c.SentTo != 0 || c.SentAt != 0 {
@@ -57,7 +64,7 @@ func Apply(old, next []api.Comment) ([]api.Comment, error) {
 		case seen[c.ID]:
 			return nil, fmt.Errorf("comment %s is listed twice", c.ID)
 		case o.SentAt != 0:
-			o.Line, o.Outdated = c.Line, false
+			o.StartLine, o.Line, o.Outdated = c.StartLine, c.Line, false
 			if c != o {
 				return nil, ErrSentChanged
 			}

@@ -122,11 +122,20 @@ func (p *Prompt) Ask(kind PromptKind, target, title string, body ...string) {
 	*p = Prompt{Kind: kind, Target: target, Label: title, Body: body}
 }
 
-// OpenComment starts the comment form on a diff line: title names the line, the body quotes
-// its code. The field is one line, so a comment written on the phone is joined with spaces.
+// CommentQuote is how many lines of code the comment form quotes.
+const CommentQuote = 4
+
+// OpenComment starts the comment form on diff lines: title names them, the body quotes their
+// code. The field is one line, so a comment written on the phone is joined with spaces.
 func (p *Prompt) OpenComment(title, code, initial string) {
 	p.Open(PromptComment, "", "Comment (empty deletes it)", strings.ReplaceAll(initial, "\n", " "))
-	p.Title, p.Body = title, []string{"> " + strings.TrimSpace(ReviewText(code))}
+	p.Title, p.Body = title, nil
+	for _, l := range QuoteCode(code, CommentQuote) {
+		p.Body = append(p.Body, "> "+ReviewText(l))
+	}
+	if len(p.Body) == 0 {
+		p.Body = []string{">"}
+	}
 }
 
 // Active reports whether a prompt is open.

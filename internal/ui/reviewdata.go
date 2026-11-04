@@ -1,5 +1,10 @@
 package ui
 
+import (
+	"fmt"
+	"strings"
+)
+
 // ReviewData is GET /api/projects/{name}/stories/{story}/review: the story's diff since its base
 // with the review comments placed on it. Total counts every changed file; Files may stop
 // earlier (Note says so).
@@ -45,18 +50,81 @@ type DiffRow struct {
 	Text string `json:"text"`
 }
 
-// Comment is a review comment on one line. Side new is a line of the worktree, old a removed
-// line. Code is the line's text when the comment was made. SentTo and SentAt are set once the
+// Comment is a review comment on one line, or on the lines StartLine to Line of one hunk when
+// StartLine is set. Side new is a line of the worktree, old a removed line; a range on the new
+// side holds its kept and added lines, one on the old side only removed lines. Code is the
+// lines' text when the comment was made, one per line. SentTo and SentAt are set once the
 // comment was pasted into a session; it is then read-only. Outdated says the line is gone
 // from the current diff (set by the server on read, ignored on write).
 type Comment struct {
-	ID       string `json:"id"`
-	File     string `json:"file"`
-	Side     string `json:"side"`
-	Line     int    `json:"line"`
-	Code     string `json:"code"`
-	Body     string `json:"body"`
-	SentTo   int    `json:"sent_to,omitempty"`
-	SentAt   int64  `json:"sent_at,omitempty"`
-	Outdated bool   `json:"outdated,omitempty"`
+	ID        string `json:"id"`
+	File      string `json:"file"`
+	Side      string `json:"side"`
+	StartLine int    `json:"start_line,omitempty"` // a range's first line; 0 for one line
+	Line      int    `json:"line"`
+	Code      string `json:"code"`
+	Body      string `json:"body"`
+	SentTo    int    `json:"sent_to,omitempty"`
+	SentAt    int64  `json:"sent_at,omitempty"`
+	Outdated  bool   `json:"outdated,omitempty"`
+}
+
+// First is the comment's first line: StartLine for a range, else Line.
+func (c Comment) First() int {
+	if c.StartLine > 0 {
+		return c.StartLine
+	}
+	return c.Line
+}
+
+// Covers says whether the comment is on line of side.
+func (c Comment) Covers(side string, line int) bool {
+	return c.Side == side && line >= c.First() && line <= c.Line
+}
+
+// Lines names the comment's lines for people: "line 89" or "lines 89–92".
+func (c Comment) Lines() string {
+	if c.First() < c.Line {
+		return fmt.Sprintf("lines %d–%d", c.First(), c.Line)
+	}
+	return fmt.Sprintf("line %d", c.Line)
+}
+
+// Quote is the comment's code for a quote: see QuoteCode.
+func (c Comment) Quote(max int) []string { return QuoteCode(c.Code, max) }
+
+// QuoteCode is code's first max lines without the indent they all share or trailing spaces,
+// then a line saying how many more there are. Blank code quotes nothing. Callers still drop
+// control characters.
+func QuoteCode(code string, max int) []string {
+	if strings.TrimSpace(code) == "" {
+		return nil
+	}
+	lines := strings.Split(code, "\n")
+	more := 0
+	if len(lines) > max {
+		lines, more = lines[:max], len(lines)-max
+	}
+	indent, set := "", false
+	for i, l := range lines {
+		l = strings.TrimRight(l, " \t\r")
+		lines[i] = l
+		if l == "" {
+			continue
+		}
+		lead := l[:len(l)-len(strings.TrimLeft(l, " \t"))]
+		if !set {
+			indent, set = lead, true
+		}
+		for !strings.HasPrefix(lead, indent) {
+			indent = indent[:len(indent)-1]
+		}
+	}
+	for i := range lines {
+		lines[i] = strings.TrimPrefix(lines[i], indent)
+	}
+	if more > 0 {
+		lines = append(lines, fmt.Sprintf("… %d more lines", more))
+	}
+	return lines
 }

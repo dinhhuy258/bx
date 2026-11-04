@@ -129,6 +129,119 @@ func TestReviewScreens(t *testing.T) {
 	}
 }
 
+func twoHunks() ReviewData {
+	d := sampleReview()
+	d.Files[0].Hunks = append(d.Files[0].Hunks, Hunk{Header: "@@ -120,2 +121,3 @@ func (g *Git) run(",
+		Rows: []DiffRow{{Kind: "ctx", Old: 120, New: 121, Text: "\tcmd := exec.Command(\"git\")"}, {Kind: "add", New: 122, Text: "\tcmd.Dir = dir"}}})
+	return d
+}
+
+func TestReviewSelectsARange(t *testing.T) {
+	r := NewReview("login-timeout")
+	r.SetData(twoHunks())
+	r.Key("v", false) // on 86
+	for range 4 {
+		r.Key("j", false)
+	}
+	l, ok := r.Selected()
+	want := ReviewLine{File: "internal/git/git.go", Side: "new", StartLine: 86, Line: 89,
+		Code: "\tif base == \"\" {\n\t\treturn nil\n\tmb, err := g.mergeBase(dir, base)\n\tif err != nil { return err }"}
+	if !ok || l != want {
+		t.Fatalf("range without the removed row:\n%+v\nwant\n%+v", l, want)
+	}
+	if r.Bar(false) != "SELECT 86–89 · 4 lines · j/k move end · o other end · c comment · esc cancel" {
+		t.Fatalf("bar: %s", r.Bar(false))
+	}
+	r.Key("j", false) // the next row is in the next hunk
+	if l, _ := r.Selected(); l.Line != 89 || !strings.HasSuffix(r.Bar(false), " · a range stays inside one hunk") {
+		t.Fatalf("hunk edge: %+v · %s", l, r.Bar(false))
+	}
+	if r.Key("S", false) != ReviewKeep || r.Key("J", false) != ReviewKeep {
+		t.Fatal("only the selection keys work while selecting")
+	}
+	if r.Key("c", false) != ReviewComment {
+		t.Fatal("c comments on the range")
+	}
+	r.Key("o", false) // move the start now
+	r.Key("j", false)
+	r.Key("j", false) // 88 old to 89: the removed row drops out
+	if l, _ := r.Selected(); l.StartLine != 88 || l.Line != 89 || l.Side != "new" {
+		t.Fatalf("moved start: %+v", l)
+	}
+	r.Key("j", false)
+	r.Key("j", false) // the start reaches the end: one line
+	if l, _ := r.Selected(); l.StartLine != 0 || l.Line != 89 || l.Edit != nil {
+		t.Fatalf("one line: %+v", l)
+	}
+	r.Key("Esc", false)
+	if r.selecting || r.Key("Esc", false) != ReviewBack {
+		t.Fatal("Esc ends the selection, then leaves")
+	}
+
+	o := NewReview("s")
+	o.SetData(sampleReview())
+	o.Key("j", false)
+	o.Key("j", false) // 88 old
+	o.Key("v", false)
+	if l, _ := o.Selected(); l.Side != "old" || l.Line != 88 || l.StartLine != 0 {
+		t.Fatalf("a removed line: %+v", l)
+	}
+	o.Key("j", false) // 88 old and 88 new: 88 new alone, with its comment
+	if l, _ := o.Selected(); l.Side != "new" || l.Line != 88 || l.StartLine != 0 || l.Edit == nil || l.Edit.ID != "a" {
+		t.Fatalf("one line with its comment: %+v", l)
+	}
+}
+
+func TestReviewRangeComments(t *testing.T) {
+	r := NewReview("login-timeout")
+	d := twoHunks()
+	d.Comments = []Comment{
+		{ID: "r", File: "internal/git/git.go", Side: "new", StartLine: 86, Line: 88, Code: "a\nb\nc", Body: "Pull these into a helper"},
+		{ID: "o", File: "internal/git/git.go", Side: "new", StartLine: 30, Line: 32, Body: "Old range", Outdated: true},
+	}
+	r.SetData(d)
+	r.Key("j", false) // from the pinned comment to 86
+	r.Key("j", false)
+	r.Key("j", false)
+	r.Key("j", false) // 88 new: the range's last line
+	if l, _ := r.Selected(); l.Edit == nil || l.Edit.ID != "r" || l.StartLine != 86 || l.Code != "a\nb\nc" {
+		t.Fatalf("the range's last line edits it: %+v", l)
+	}
+	golden(t, "review-range-120", ansi.Strip(r.Render(120, 16, true, false)+"\n"+r.Bar(false)), 120)
+
+	s := NewReview("login-timeout")
+	s.SetData(twoHunks())
+	s.Key("v", false)
+	s.Key("j", false)
+	s.Key("j", false)
+	golden(t, "review-select-120", ansi.Strip(s.Render(120, 16, true, false)+"\n"+s.Bar(false)), 120)
+
+	var p Prompt
+	p.OpenComment("Comment · x.go:1–6", "\tone\n\t\ttwo\n\tthree\n\tfour\n\tfive\n\tsix", "")
+	if strings.Join(p.Body, "|") != "> one|>     two|> three|> four|> … 2 more lines" {
+		t.Fatalf("quote: %q", p.Body)
+	}
+}
+
+func TestQuoteCode(t *testing.T) {
+	for _, c := range []struct {
+		code string
+		max  int
+		want []string
+	}{
+		{"", 4, nil},
+		{"  \t ", 4, nil},
+		{"\tx := 1  ", 4, []string{"x := 1"}},
+		{"\tif a {\n\n\t\tb()\n\t}", 4, []string{"if a {", "", "\tb()", "}"}},
+		{"    a\n  b\n      c", 4, []string{"  a", "b", "    c"}},
+		{"a\nb\nc", 2, []string{"a", "b", "… 1 more lines"}},
+	} {
+		if got := QuoteCode(c.code, c.max); strings.Join(got, "|") != strings.Join(c.want, "|") || len(got) != len(c.want) {
+			t.Errorf("QuoteCode(%q, %d) = %q, want %q", c.code, c.max, got, c.want)
+		}
+	}
+}
+
 func TestReviewTextDropsControls(t *testing.T) {
 	if got := ReviewText("a\tb\x1b[31mc\r"); got != "a    b[31mc" || strings.ContainsRune(got, 0x1b) {
 		t.Fatalf("%q", got)

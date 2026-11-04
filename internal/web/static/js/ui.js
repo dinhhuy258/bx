@@ -94,7 +94,8 @@ export function poll(fn, ms = 2000) {
 // Field: {name, label, type?: 'text'|'select'|'checks', value?, placeholder?, options?, list?, hint?}
 // Select options are strings or {value, label}. hint(values) returns a help line shown under the
 // field, redrawn as the form changes.
-// opts: {danger?: a red OK button, text?: a help line under the title}
+// opts: {danger?: a red OK button, text?: a help line under the title, extra?: the label of a
+// third button on the left; it resolves to the values with $extra: true}
 export function ask(title, fields, ok = 'OK', opts = {}) {
   return new Promise((resolve) => {
     const inputs = [], hints = [];
@@ -134,11 +135,12 @@ export function ask(title, fields, ok = 'OK', opts = {}) {
     // which must be OK.
     const dlg = h('dialog', {}, h('form', { method: 'dialog', oninput: redraw, onchange: redraw }, h('h2', {}, title),
       opts.text ? h('p', { class: 'help' }, opts.text) : null, body,
-      h('menu', {}, h('button', { type: 'button', onclick: () => dlg.close('cancel') }, 'Cancel'),
+      h('menu', {}, opts.extra ? h('button', { type: 'button', class: 'ghost', onclick: () => dlg.close('extra') }, opts.extra) : null,
+        h('button', { type: 'button', onclick: () => dlg.close('cancel') }, 'Cancel'),
         h('button', { value: 'ok', class: opts.danger ? 'danger' : 'primary' }, ok))));
     redraw();
     dlg.addEventListener('close', () => {
-      const v = dlg.returnValue === 'ok' ? read() : null;
+      const v = dlg.returnValue === 'ok' ? read() : dlg.returnValue === 'extra' ? { ...read(), $extra: true } : null;
       dlg.remove();
       resolve(v);
     });

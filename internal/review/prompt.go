@@ -9,8 +9,11 @@ import (
 	"github.com/dinhhuy258/bx/internal/api"
 )
 
-// Prompt is the text pasted into Claude: the comments by file and line, each with its line of
-// code. Control characters (ESC above all) are dropped so the text can't end the bracketed
+// MaxQuote is how many lines of a range's code the prompt quotes.
+const MaxQuote = 12
+
+// Prompt is the text pasted into Claude: the comments by file and line, each with its lines of
+// code (a range's first MaxQuote, without the indent they share). Control characters (ESC above all) are dropped so the text can't end the bracketed
 // paste or drive the terminal. It has no trailing newline: nothing is submitted.
 func Prompt(story, base string, cs []api.Comment) string {
 	if base == "" {
@@ -18,18 +21,23 @@ func Prompt(story, base string, cs []api.Comment) string {
 	}
 	sorted := slices.Clone(cs)
 	slices.SortStableFunc(sorted, func(a, b api.Comment) int {
-		return cmp.Or(strings.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line))
+		return cmp.Or(strings.Compare(a.File, b.File), cmp.Compare(a.First(), b.First()), cmp.Compare(a.Line, b.Line))
 	})
 	var b strings.Builder
 	fmt.Fprintf(&b, "Review comments on your changes in %s (diff vs %s):\n", oneLine(story), oneLine(base))
 	for i, c := range sorted {
 		where := fmt.Sprintf("%s:%d", oneLine(c.File), c.Line)
-		if c.Side == "old" {
+		switch {
+		case c.First() < c.Line && c.Side == "old":
+			where = fmt.Sprintf("%s:%d-%d (lines you removed)", oneLine(c.File), c.First(), c.Line)
+		case c.First() < c.Line:
+			where = fmt.Sprintf("%s:%d-%d", oneLine(c.File), c.First(), c.Line)
+		case c.Side == "old":
 			where += " (a line you removed)"
 		}
 		fmt.Fprintf(&b, "\n%d. %s\n", i+1, where)
-		if code := strings.TrimSpace(oneLine(c.Code)); code != "" {
-			fmt.Fprintf(&b, "   > %s\n", code)
+		for _, l := range c.Quote(MaxQuote) {
+			fmt.Fprintf(&b, "   > %s\n", oneLine(l))
 		}
 		for _, l := range strings.Split(clean(c.Body), "\n") {
 			fmt.Fprintf(&b, "   %s\n", l)

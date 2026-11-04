@@ -412,6 +412,10 @@ class El extends Node {
   remove() {}
   set textContent(v) { this.children = []; this._t = v; }
   get textContent() { return this._t; }
+  get classList() {
+    const e = this;
+    return { toggle(c, on) { const s = new Set((e.className || '').split(' ').filter(Boolean)); if (on) s.add(c); else s.delete(c); e.className = [...s].join(' '); } };
+  }
 }
 const made = [];
 globalThis.Node = Node;
@@ -422,11 +426,19 @@ const fail = (m) => { console.error(m); process.exit(1); };
 const text = (e) => typeof e === 'string' ? e : (e.textContent ?? '') + (e.children || []).map(text).join('');
 
 const { api } = await import(process.argv[2] + '/api.js');
-const { showReview, unsentOf, sideOf, lineOf } = await import(process.argv[2] + '/review.js');
+const { showReview, unsentOf, sideOf, lineOf, quoteOf, rangeOf, linesOf } = await import(process.argv[2] + '/review.js');
 const { ask } = await import(process.argv[2] + '/ui.js');
 
 if (sideOf({ kind: 'del', old: 4 }) !== 'old' || lineOf({ kind: 'del', old: 4 }) !== 4 || lineOf({ kind: 'add', new: 7 }) !== 7) fail('sideOf/lineOf');
 if (unsentOf([{ id: 'a' }, { id: 'b', sent_at: 5 }]).length !== 1) fail('unsentOf');
+if (quoteOf('\tif a {\n\n\t\tb()\n\t}\nx', 4).join('|') !== 'if a {||\tb()|}|… 1 more lines' || quoteOf('  ', 4).length) fail('quoteOf');
+const rg = rangeOf([{ kind: 'ctx', new: 4, text: 'a' }, { kind: 'del', old: 5, text: 'gone' }, { kind: 'add', new: 5, text: 'b' }]);
+if (rg.side !== 'new' || rg.start_line !== 4 || rg.line !== 5 || rg.code !== 'a\nb') fail('rangeOf mixed: ' + JSON.stringify(rg));
+const rd = rangeOf([{ kind: 'del', old: 5, text: 'x' }, { kind: 'del', old: 6, text: 'y' }]);
+if (rd.side !== 'old' || rd.start_line !== 5 || rd.line !== 6) fail('rangeOf removed: ' + JSON.stringify(rd));
+const r1 = rangeOf([{ kind: 'del', old: 5, text: 'x' }, { kind: 'add', new: 5, text: 'y' }]);
+if (r1.start_line !== 0 || r1.line !== 5 || r1.side !== 'new') fail('rangeOf one line: ' + JSON.stringify(r1));
+if (linesOf({ line: 3 }) !== 'line 3' || linesOf({ start_line: 1, line: 3 }) !== 'lines 1–3') fail('linesOf');
 
 api.review = async () => ({ base: 'main', total: 1, version: 2, files: [{ path: 'a.go', status: 'modified', add: 1, del: 0,
   hunks: [{ header: '@@ -1 +1,2 @@', rows: [{ kind: 'ctx', old: 1, new: 1, text: 'x' }, { kind: 'add', old: 0, new: 2, text: 'y' }] }] }],
@@ -438,6 +450,36 @@ const send = made.find((e) => e.tag === 'button' && e.className === 'primary');
 if (!send || text(send) !== 'Send 1' || send.disabled) fail('send button: ' + (send && text(send)));
 const bubbles = made.filter((e) => typeof e.className === 'string' && e.className.startsWith('rv-bubble'));
 if (bubbles.length !== 2 || !bubbles.some((b) => b.className === 'rv-bubble sent' && text(b).includes('✓ sent → [3]'))) fail('bubbles: ' + bubbles.map(text).join(' | '));
+
+// Select more lines: tap line 1, type, pick a range to line 2 (the other file's rows ignore
+// taps), comment on it with the draft.
+const saved = [];
+api.saveReview = async (n, s, body) => { saved.push(body); return api.review(); };
+const rowEl = (n) => made.find((e) => e.className && e.className.startsWith('rv-row') && text(e).startsWith(n));
+const dialog = () => made.filter((e) => e.tag === 'dialog').pop();
+rowEl('1').fire('click');
+const d1 = dialog();
+const more = made.find((e) => e.tag === 'button' && e.className === 'ghost');
+if (!more || text(more) !== 'Select more lines') fail('no Select more lines');
+made.find((e) => e.tag === 'textarea').value = 'pull out';
+d1.returnValue = 'extra';
+d1.close();
+await new Promise((r) => setTimeout(r, 0));
+if (!rowEl('1').className.includes('rv-sel') || rowEl('2').className.includes('rv-sel')) fail('select starts on line 1: ' + rowEl('1').className);
+rowEl('2').fire('click');
+const dockEl = made.find((e) => e.className === 'rv-dock');
+if (dockEl.hidden || !text(dockEl).includes('Lines 1–2') || !rowEl('2').className.includes('rv-sel')) fail('dock: ' + text(dockEl));
+made.find((e) => e.tag === 'button' && text(e) === 'Comment').fire('click');
+await new Promise((r) => setTimeout(r, 0));
+const d2 = dialog();
+const ta2 = made.filter((e) => e.tag === 'textarea').pop();
+if (ta2.value !== 'pull out' || !text(d2).includes('Comment · a.go:1–2') || made.some((e) => e.className === 'ghost' && made.indexOf(e) > made.indexOf(d2))) fail('range form: ' + text(d2));
+d2.returnValue = 'ok';
+d2.close();
+await new Promise((r) => setTimeout(r, 0));
+const c = saved.length && saved[0].comments.pop();
+if (!c || c.start_line !== 1 || c.line !== 2 || c.side !== 'new' || c.code !== 'x\ny' || c.body !== 'pull out') fail('saved: ' + JSON.stringify(c));
+if (!dockEl.hidden) fail('the dock stays after saving');
 
 made.length = 0;
 ask('Comment', [{ name: 'body', label: 'Comment', type: 'textarea', value: 'hi' }], 'Save');

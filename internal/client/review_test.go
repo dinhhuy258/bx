@@ -85,3 +85,25 @@ func TestStoryRowShowsReviewKey(t *testing.T) {
 		t.Fatalf("bar %q", ansi.Strip(h.m.bar()))
 	}
 }
+
+func TestReviewRangeComment(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.be.review = reviewFixture()
+	h.press("k", "G", "v", "j")
+	if !strings.Contains(ansi.Strip(h.m.bar()), "SELECT 1–2 · 2 lines") {
+		t.Fatalf("bar %q", ansi.Strip(h.m.bar()))
+	}
+	h.press("c")
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "Comment · a.go:1–2") || !strings.Contains(v, "> x") || !strings.Contains(v, "> y") {
+		t.Fatalf("range form:\n%s", v)
+	}
+	h.typeText("pull out")
+	h.press("Enter")
+	if len(h.be.saveRev) != 1 {
+		t.Fatalf("saved %+v", h.be.saveRev)
+	}
+	if c := h.be.saveRev[0].Comments[0]; c.StartLine != 1 || c.Line != 2 || c.Code != "x\ny" || c.Body != "pull out" {
+		t.Fatalf("saved %+v", c)
+	}
+}

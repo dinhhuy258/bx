@@ -56,6 +56,29 @@ func TestApply(t *testing.T) {
 	bad("too many", many, ErrTooMany)
 }
 
+func TestApplyRanges(t *testing.T) {
+	sent := api.Comment{ID: "s", File: "a.go", Side: "new", StartLine: 3, Line: 5, Code: "x\ny\nz", Body: "b", SentTo: 1, SentAt: 9}
+	got, err := Apply([]api.Comment{sent}, []api.Comment{
+		{ID: "s", File: "a.go", Side: "new", StartLine: 7, Line: 9, Code: "x\ny\nz", Body: "b", SentTo: 1, SentAt: 9},
+		{File: "a.go", Side: "new", StartLine: 4, Line: 4, Body: "one line"},
+		{File: "a.go", Side: "old", StartLine: 1, Line: 2, Body: "removed lines"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].StartLine != 7 || got[0].Line != 9 || got[1].StartLine != 0 || got[2].StartLine != 1 {
+		t.Fatalf("a sent range follows the code; a one-line range is one line: %+v", got)
+	}
+	for _, c := range []api.Comment{
+		{File: "a.go", Side: "new", StartLine: 5, Line: 4, Body: "x"},
+		{File: "a.go", Side: "new", StartLine: -1, Line: 4, Body: "x"},
+	} {
+		if _, err := Apply(nil, []api.Comment{c}); err == nil {
+			t.Errorf("%d-%d: want an error", c.StartLine, c.Line)
+		}
+	}
+}
+
 func TestSentHelpers(t *testing.T) {
 	cs := []api.Comment{{ID: "a", Body: "1"}, {ID: "b", Body: "2", SentTo: 1, SentAt: 5}, {ID: "c", Body: "3"}}
 	if u := Unsent(cs); len(u) != 2 || u[0].ID != "a" || u[1].ID != "c" {
