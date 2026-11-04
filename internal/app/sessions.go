@@ -104,6 +104,7 @@ func (a *App) start(p *state.Project, story, title string) (int, error) {
 // Every session also gets the MCP servers of its project and of ~/.bx/mcp.json (see mcp.go),
 // and the Claude settings of the settings screen as they are now, so a resumed session takes
 // today's attribution while it keeps its own model, effort and permission mode.
+// A "none" commit trailer or PR line is also said in the system prompt (see settings.ClaudePrompt).
 func (a *App) options(p *state.Project, num int, s *state.Session) claude.Options {
 	o := claude.Options{Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
 	var hooks, perms, status map[string]any
@@ -125,7 +126,11 @@ func (a *App) options(p *state.Project, num int, s *state.Session) claude.Option
 		perms = artifactPermissions(dir)
 	}
 	o.MCPConfig, o.StrictMCPConfig = a.sessionMCP(p, num)
-	o.Settings = settingsJSON(settings.ClaudeSettings(a.Settings.Values()), hooks, perms, status)
+	values := a.Settings.Values()
+	if extra := settings.ClaudePrompt(values); extra != "" {
+		o.AppendSystemPrompt = strings.TrimSpace(o.AppendSystemPrompt + " " + extra)
+	}
+	o.Settings = settingsJSON(settings.ClaudeSettings(values), hooks, perms, status)
 	return o
 }
 

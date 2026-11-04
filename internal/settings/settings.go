@@ -176,6 +176,20 @@ func ClaudeValue(f Field, values map[string]string) (any, bool) {
 	}
 }
 
+// ClaudePrompt is the system prompt text that backs up a "none" Commit trailer or PR line, ""
+// when neither is none. An empty attribution only drops Claude's own instruction to add one;
+// Claude still copies the Co-Authored-By trailer it sees in the repository's earlier commits.
+func ClaudePrompt(values map[string]string) string {
+	var s []string
+	if values["claude.commit"] == "none" {
+		s = append(s, "Do not add a Co-Authored-By trailer or any other Claude attribution to git commit messages, even when earlier commits have one.")
+	}
+	if values["claude.pr"] == "none" {
+		s = append(s, `Do not add a "Generated with Claude Code" line, a Co-Authored-By trailer or any other Claude attribution to pull request titles, descriptions or comments, even when commit messages or earlier pull requests have one.`)
+	}
+	return strings.Join(s, " ")
+}
+
 // TUIOnlyKey reports whether key is a TUIOnly field.
 func TUIOnlyKey(key string) bool {
 	f, ok := field(key)

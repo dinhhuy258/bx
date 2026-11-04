@@ -287,6 +287,20 @@ func TestClaudeSettings(t *testing.T) {
 	}
 }
 
+func TestClaudePrompt(t *testing.T) {
+	if got := ClaudePrompt(map[string]string{"claude.commit": "custom", "claude.commit_text": "x"}); got != "" {
+		t.Errorf("no none: %q", got)
+	}
+	commit := ClaudePrompt(map[string]string{"claude.commit": "none"})
+	if !strings.Contains(commit, "git commit") || strings.Contains(commit, "pull request") {
+		t.Errorf("commit none: %q", commit)
+	}
+	both := ClaudePrompt(map[string]string{"claude.commit": "none", "claude.pr": "none"})
+	if !strings.HasPrefix(both, commit+" ") || !strings.Contains(both, "pull request") {
+		t.Errorf("both none: %q", both)
+	}
+}
+
 func TestVisibleHidesClaudeSettings(t *testing.T) {
 	values := map[string]string{"claude.model": "opus", "claude.commit": "custom", "claude.commit_text": "x", "claude.pr": "none"}
 	secs, got := Visible(false, values)

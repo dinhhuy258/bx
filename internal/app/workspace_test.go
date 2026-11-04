@@ -303,8 +303,12 @@ func TestSessionGetsClaudeSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	const want = `"attribution":{"commit":"","pr":"Made with bx"}`
-	if got := a.options(p, 1, &state.Session{}).Settings; got != "{"+want+"}" {
-		t.Fatalf("alone: %q", got)
+	o := a.options(p, 1, &state.Session{})
+	if o.Settings != "{"+want+"}" {
+		t.Fatalf("alone: %q", o.Settings)
+	}
+	if o.AppendSystemPrompt != settings.ClaudePrompt(a.Settings.Values()) || o.AppendSystemPrompt == "" {
+		t.Fatalf("a none commit trailer is not in the system prompt: %q", o.AppendSystemPrompt)
 	}
 	a.Self = "/usr/local/bin/bx"
 	if got := a.options(p, 1, &state.Session{}).Settings; !strings.Contains(got, want) || !strings.Contains(got, `"statusLine"`) {
