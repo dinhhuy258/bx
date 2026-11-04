@@ -16,7 +16,7 @@ ExecStart=%h/go/bin/bx serve
 Restart=on-failure
 RestartSec=3
 KillMode=process
-Environment=PATH=%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:%h/go/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=default.target
