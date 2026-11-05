@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -313,11 +316,359 @@ func (s *Settings) SettingsAppsBar(bool) string {
 	return "⏎ edit · ⌫ remove · e edit the text · esc back"
 }
 
-type runForm struct{}
+// runForm is the run being edited on an apps page.
+type runForm struct {
+	run, orig runcfg.Run
+	index     int // in the page's runs; -1 = new
+	where     int // whereHost, whereImage, whereBuild
+	fld       int // in visible()
+	errs      []runcfg.FieldError
+}
 
-func (s *Settings) openRunForm(runcfg.Run, int)             {}
-func (s *Settings) runFormKey(string) SettingsResult        { s.apps.form = nil; return SettingsKeep }
-func (s *Settings) runFormLines(int, int, palette) []string { return nil }
-func (s *Settings) runFormBar() string                      { return "" }
-func (s *Settings) SetRunFormErrors([]runcfg.FieldError)    {}
-func (s *Settings) CloseRunForm()                           { s.apps.form = nil }
+const (
+	whereHost = iota
+	whereImage
+	whereBuild
+)
+
+var whereNames = []string{"host", "image", "build"}
+
+// The fields of the run form.
+const (
+	rfName = iota
+	rfWhere
+	rfImage
+	rfBuild
+	rfCmd
+	rfDir
+	rfEnv
+	rfSetup
+	rfSetupImage
+	rfCreates
+	rfStop
+	rfOpen
+	rfPort
+	rfCache
+	rfFields
+)
+
+var rfLabels = [rfFields]string{"Name", "Runs on", "Image", "Dockerfile", "Command", "Folder", "Env", "Setup", "Setup image", "Creates", "Stop", "Opens", "Ports", "Cache"}
+
+// rfKeys are the run config keys of the fields, to match field errors.
+var rfKeys = [rfFields]string{"name", "", "image", "build", "cmd", "dir", "env", "setup", "setup", "creates", "stop", "open", "port", "cache"}
+
+func (s *Settings) openRunForm(r runcfg.Run, index int) {
+	f := &runForm{run: r, orig: r, index: index}
+	switch {
+	case r.Build != "":
+		f.where = whereBuild
+	case r.Image != "":
+		f.where = whereImage
+	}
+	s.apps.form = f
+}
+
+// CloseRunForm goes back to the page.
+func (s *Settings) CloseRunForm() { s.apps.form = nil }
+
+// SetRunFormErrors shows why a save was refused, under the form.
+func (s *Settings) SetRunFormErrors(errs []runcfg.FieldError) {
+	if s.apps.form != nil {
+		s.apps.form.errs = errs
+	}
+}
+
+// visible are the form's fields for where the run runs.
+func (f *runForm) visible() []int {
+	out := []int{rfName, rfWhere}
+	switch f.where {
+	case whereImage:
+		out = append(out, rfImage)
+	case whereBuild:
+		out = append(out, rfBuild)
+	}
+	out = append(out, rfCmd, rfDir, rfEnv, rfSetup)
+	if f.where == whereHost {
+		out = append(out, rfSetupImage) // a host run may set up in a container
+	}
+	out = append(out, rfCreates, rfStop, rfOpen, rfPort)
+	if f.where != whereHost {
+		out = append(out, rfCache)
+	}
+	return out
+}
+
+func (f *runForm) field() int { v := f.visible(); return v[min(f.fld, len(v)-1)] }
+
+func (f *runForm) value(k int) string {
+	r := f.run
+	switch k {
+	case rfName:
+		return r.Name
+	case rfWhere:
+		return whereNames[f.where]
+	case rfImage:
+		return r.Image
+	case rfBuild:
+		if r.Build == "" {
+			return ""
+		}
+		return fmt.Sprintf("%d lines", strings.Count(strings.TrimRight(r.Build, "\n"), "\n")+1)
+	case rfCmd:
+		return r.Cmd
+	case rfDir:
+		return r.Dir
+	case rfEnv:
+		return envText(r.Env)
+	case rfSetup:
+		return r.Setup.Cmd
+	case rfSetupImage:
+		return r.Setup.Image
+	case rfCreates:
+		return r.Creates
+	case rfStop:
+		return r.Stop
+	case rfOpen:
+		return r.Open
+	case rfPort:
+		return portList(r.Port)
+	case rfCache:
+		return strings.Join(r.Cache, ", ")
+	}
+	return ""
+}
+
+// envText is "A=1 B=2", sorted.
+func envText(env map[string]string) string {
+	keys := slices.Sorted(maps.Keys(env))
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = k + "=" + env[k]
+	}
+	return strings.Join(parts, " ")
+}
+
+// AppsFormText is the text field under the cursor of the run form: its key, label and value
+// ("" for an empty list); ok is false on a choice or the Dockerfile.
+func (s *Settings) AppsFormText() (key int, label, value string, ok bool) {
+	f := s.apps.form
+	if f == nil {
+		return 0, "", "", false
+	}
+	k := f.field()
+	if k == rfWhere || k == rfBuild || k == rfDir && len(s.apps.cfg.Repos) > 0 {
+		return 0, "", "", false
+	}
+	v := f.value(k)
+	if v == "—" {
+		v = ""
+	}
+	return k, rfLabels[k], v, true
+}
+
+// SetAppsFormText sets text field key of the run form. A port or env list that does not read
+// returns false and changes nothing.
+func (s *Settings) SetAppsFormText(key int, v string) bool {
+	f := s.apps.form
+	if f == nil {
+		return false
+	}
+	r := &f.run
+	switch key {
+	case rfName:
+		r.Name = v
+	case rfImage:
+		r.Image = v
+	case rfCmd:
+		r.Cmd = v
+	case rfDir:
+		r.Dir = v
+	case rfEnv:
+		env := map[string]string{}
+		for _, kv := range strings.Fields(v) {
+			k, val, ok := strings.Cut(kv, "=")
+			if !ok || k == "" {
+				return false
+			}
+			env[k] = val
+		}
+		r.Env = env
+		if len(env) == 0 {
+			r.Env = nil
+		}
+	case rfSetup:
+		r.Setup.Cmd = v
+	case rfSetupImage:
+		r.Setup.Image = v
+	case rfCreates:
+		r.Creates = v
+	case rfStop:
+		r.Stop = v
+	case rfOpen:
+		r.Open = v
+	case rfPort:
+		ps, ok := ParsePorts(v)
+		if !ok {
+			return false
+		}
+		r.Port = runcfg.Ports(ps)
+	case rfCache:
+		r.Cache = nil
+		for _, c := range strings.Split(v, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				r.Cache = append(r.Cache, c)
+			}
+		}
+	}
+	return true
+}
+
+// AppsBuild is the run form's Dockerfile; SetAppsBuild replaces it.
+func (s *Settings) AppsBuild() string {
+	if s.apps.form == nil {
+		return ""
+	}
+	return s.apps.form.run.Build
+}
+
+func (s *Settings) SetAppsBuild(text string) {
+	if s.apps.form != nil {
+		s.apps.form.run.Build = text
+	}
+}
+
+func (f *runForm) changed() bool {
+	return f.index < 0 || !reflect.DeepEqual(f.run, f.orig)
+}
+
+// finish is the run as the form leaves it: the fields of other places cleared.
+func (f *runForm) finish() runcfg.Run {
+	r := f.run
+	switch f.where {
+	case whereHost:
+		r.Image, r.Build, r.Cache = "", "", nil
+	case whereImage:
+		r.Build, r.Setup.Image = "", ""
+	case whereBuild:
+		r.Image, r.Setup.Image = "", ""
+	}
+	return r
+}
+
+// runFormKey: j/k move, h/l step a choice, Enter edits, C-s saves into the page's config,
+// Esc goes back (SettingsAppsDiscard first when there are edits).
+func (s *Settings) runFormKey(key string) SettingsResult {
+	f := s.apps.form
+	v := f.visible()
+	switch key {
+	case "C-c":
+		return SettingsClose
+	case "Esc":
+		if f.changed() {
+			return SettingsAppsDiscard
+		}
+		s.apps.form = nil
+	case "j", "Down", "C-j":
+		f.fld = min(f.fld+1, len(v)-1)
+	case "k", "Up", "C-k":
+		f.fld = max(f.fld-1, 0)
+	case "h", "Left", "l", "Right":
+		d := 1
+		if key == "h" || key == "Left" {
+			d = -1
+		}
+		switch f.field() {
+		case rfWhere:
+			f.where = (f.where + d + len(whereNames)) % len(whereNames)
+		case rfDir:
+			if repos := s.apps.cfg.Repos; len(repos) > 0 {
+				opts := append([]string{""}, repos...)
+				i := max(slices.Index(opts, f.run.Dir), 0)
+				f.run.Dir = opts[(i+d+len(opts))%len(opts)]
+			}
+		}
+	case "Enter":
+		switch k := f.field(); {
+		case k == rfBuild:
+			return SettingsAppsBuild
+		case k == rfWhere:
+		default:
+			if _, _, _, ok := s.AppsFormText(); ok {
+				return SettingsAppsText
+			}
+		}
+	case "C-s":
+		runs := slices.Clone(s.apps.cfg.Runs)
+		if f.index < 0 {
+			runs = append(runs, f.finish())
+		} else {
+			runs[f.index] = f.finish()
+		}
+		s.apps.cfg.Runs = runs
+		if f.index < 0 {
+			f.index = len(runs) - 1 // a refused save keeps editing this one
+		}
+		return SettingsAppsSave
+	}
+	return SettingsKeep
+}
+
+// runFormLines draws the form, the command it runs, and the refused fields.
+func (s *Settings) runFormLines(w, h int, pal palette) []string {
+	f := s.apps.form
+	title := f.run.Name
+	if title == "" {
+		title = "new run"
+	}
+	lines := []string{" " + pal.group.Render("Apps › "+s.apps.page+" › "+title), ""}
+	for i, k := range f.visible() {
+		val := f.value(k)
+		switch {
+		case k == rfWhere || k == rfDir && len(s.apps.cfg.Repos) > 0:
+			if val == "" {
+				val = "."
+			}
+			val = "◂ " + val + " ▸"
+		case val == "":
+			val = pal.dim.Render("—")
+		}
+		label := fmt.Sprintf("%-12s", rfLabels[k])
+		mark := "  "
+		if i == f.fld {
+			mark, label = pal.arrow.Render("▸ "), pal.bold.Render(label)
+		}
+		lines = append(lines, truncate(" "+mark+label+val, w))
+	}
+	lines = append(lines, " "+pal.dim.Render(strings.Repeat("─", min(w-2, 40))))
+	lines = append(lines, truncate(" "+pal.dim.Render("$ "+preview(f.finish())), w))
+	for _, e := range f.errs {
+		label := e.Field
+		if i := slices.Index(rfKeys[:], e.Field); i >= 0 {
+			label = rfLabels[i]
+		}
+		lines = append(lines, " "+pal.red.Render("✗ "+label+": "+e.Message))
+	}
+	return lines[:min(len(lines), h)]
+}
+
+// preview is the command line a run types, for the form: env, then the command, in the dir.
+func preview(r runcfg.Run) string {
+	cmd := r.Cmd
+	if env := envText(r.Env); env != "" {
+		cmd = env + " " + cmd
+	}
+	if r.Dir != "" && r.Dir != "." {
+		cmd = "cd " + r.Dir + " && " + cmd
+	}
+	switch {
+	case r.Build != "":
+		return "docker run (built image) " + cmd
+	case r.Image != "":
+		return "docker run " + r.Image + " " + cmd
+	}
+	return cmd
+}
+
+func (s *Settings) runFormBar() string {
+	return "⏎ edit · ◂ ▸ choose · ^s save · esc back"
+}

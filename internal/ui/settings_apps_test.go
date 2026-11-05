@@ -73,3 +73,53 @@ func TestAppsBrokenFile(t *testing.T) {
 		t.Errorf("enter on a broken file edits the text: %v", r)
 	}
 }
+
+func TestRunForm(t *testing.T) {
+	s := appsSettings(t)
+	s.Key("Enter")
+	s.SetAppsPage("home-network", AppsConfig{})
+	if r := s.Key("Enter"); r != SettingsAppsForm { // + add run
+		t.Fatalf("add: %v", r)
+	}
+	if r := s.Key("Enter"); r != SettingsAppsText {
+		t.Fatalf("enter on Name: %v", r)
+	}
+	f, label, _, _ := s.AppsFormText()
+	if label != "Name" {
+		t.Errorf("label %q", label)
+	}
+	s.SetAppsFormText(f, "web")
+	s.Key("j") // Runs on
+	s.Key("l") // image
+	out := strings.Join(s.appsLines(80, 40, false, newPalette(true)), "\n")
+	if !strings.Contains(out, "◂ image ▸") || !strings.Contains(out, "Image") || strings.Contains(out, "Dockerfile") {
+		t.Fatalf("image rows:\n%s", out)
+	}
+	s.Key("l") // build
+	out = strings.Join(s.appsLines(80, 40, false, newPalette(true)), "\n")
+	if !strings.Contains(out, "Dockerfile") || !strings.Contains(out, "Cache") {
+		t.Fatalf("build rows:\n%s", out)
+	}
+	s.Key("j") // Dockerfile
+	if r := s.Key("Enter"); r != SettingsAppsBuild {
+		t.Errorf("enter on Dockerfile: %v", r)
+	}
+	s.Key("h")
+	s.Key("k")
+	s.Key("h") // back to host
+	if r := s.Key("C-s"); r != SettingsAppsSave {
+		t.Fatalf("save: %v", r)
+	}
+	got := s.AppsSave()
+	if len(got.Runs) != 1 || got.Runs[0].Name != "web" || got.Runs[0].Image != "" || got.Runs[0].Build != "" {
+		t.Errorf("saved %+v", got.Runs)
+	}
+	s.SetRunFormErrors([]runcfg.FieldError{{Run: 0, Field: "cmd", Message: "required"}})
+	out = strings.Join(s.appsLines(80, 40, false, newPalette(true)), "\n")
+	if !strings.Contains(out, "Command: required") {
+		t.Errorf("errors:\n%s", out)
+	}
+	if r := s.Key("Esc"); r != SettingsAppsDiscard {
+		t.Errorf("esc with edits: %v", r)
+	}
+}

@@ -236,7 +236,7 @@ func (m *Model) appsResult(r ui.SettingsResult) tea.Cmd {
 		m.openPrompt(ui.PromptAppsPorts, which, title, portText(ps))
 	case ui.SettingsAppsSave:
 		return m.saveApps()
-	case ui.SettingsAppsText, ui.SettingsAppsBuild, ui.SettingsAppsForm:
+	case ui.SettingsAppsText, ui.SettingsAppsBuild, ui.SettingsAppsForm, ui.SettingsAppsDiscard:
 		return m.runFormResult(r) // Task 19
 	}
 	return nil
@@ -253,4 +253,46 @@ func portText(ps []int) string {
 // errBadPorts is the flash of a port list that does not read.
 var errBadPorts = errors.New("ports are numbers from 1 to 65535, space separated")
 
-func (m *Model) runFormResult(ui.SettingsResult) tea.Cmd { return nil }
+type appsBuildMsg struct {
+	path, orig string
+	err        error
+}
+
+// runFormResult handles the run form's requests: a text field, the Dockerfile, discard.
+func (m *Model) runFormResult(r ui.SettingsResult) tea.Cmd {
+	s := m.settings
+	switch r {
+	case ui.SettingsAppsText:
+		if k, label, v, ok := s.AppsFormText(); ok {
+			m.openPrompt(ui.PromptRunText, strconv.Itoa(k), label, v)
+		}
+	case ui.SettingsAppsBuild:
+		text := s.AppsBuild()
+		if text == "" {
+			text = "FROM debian:bookworm-slim\n"
+		}
+		path, err := writeTemp("Dockerfile-*", text)
+		if err != nil {
+			m.setFlash("apps: " + err.Error())
+			return nil
+		}
+		orig := s.AppsBuild()
+		return m.edit(path, 0, func(err error) tea.Msg { return appsBuildMsg{path, orig, err} })
+	case ui.SettingsAppsDiscard:
+		m.ask(ui.PromptDiscardRun, "", "Drop the changes to this run?")
+	}
+	return nil
+}
+
+func (m *Model) gotAppsBuild(msg appsBuildMsg) {
+	data, rerr := os.ReadFile(msg.path)
+	_ = os.Remove(msg.path)
+	switch {
+	case msg.err != nil:
+		m.setFlash("editor: " + msg.err.Error())
+	case rerr != nil:
+		m.setFlash("apps: " + rerr.Error())
+	case m.settings != nil:
+		m.settings.SetAppsBuild(string(data))
+	}
+}

@@ -39,3 +39,22 @@ func TestSettingsAppsEditTextAndRemove(t *testing.T) {
 		t.Fatalf("saves %+v", h.be.runSaves)
 	}
 }
+
+func TestRunFormSaves(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.be.runCfgs = map[string]api.RunConfig{"home-network": {}}
+	drain(h.m, h.m.openAppsSettings("home-network"))
+	h.press("Enter")                         // + add run
+	h.press("Enter", "w", "e", "b", "Enter") // Name
+	h.press("j", "j", "Enter")               // Command
+	for _, r := range "npm run dev" {
+		h.press(string(r))
+	}
+	h.press("Enter", "C-s")
+	if n := len(h.be.runSaves); n != 1 || h.be.runSaves[0].Runs[0].Cmd != "npm run dev" {
+		t.Fatalf("saves %+v", h.be.runSaves)
+	}
+	if !strings.Contains(h.m.flash, "run config saved") {
+		t.Errorf("flash %q", h.m.flash)
+	}
+}

@@ -45,6 +45,8 @@ const (
 	PromptRunReplace            // y/n: stop the story that runs and run this one (Target is the story)
 	PromptAppsPorts             // a port list of the apps page (Target is "hide" or "show")
 	PromptRemoveRun             // y/n: remove a run and save (Target is its index)
+	PromptRunText               // a text field of the run form (Target is its field number)
+	PromptDiscardRun            // y/n: drop the edits of the run form
 	PromptExplain               // a question about diff lines; Types are the conversations
 )
 
@@ -160,7 +162,7 @@ func (p *Prompt) YesNo() bool {
 		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
 		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume,
 		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin, PromptClearSent,
-		PromptSyncBusy, PromptRunReplace, PromptRemoveRun:
+		PromptSyncBusy, PromptRunReplace, PromptRemoveRun, PromptDiscardRun:
 		return true
 	}
 	return false

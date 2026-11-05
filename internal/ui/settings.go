@@ -42,6 +42,7 @@ const (
 	SettingsAppsSave                              // the run form saved (C-s): save AppsSave
 	SettingsAppsText                              // Enter on a text field of the run form: edit AppsFormText in a prompt
 	SettingsAppsBuild                             // Enter on the Dockerfile field: edit it in $EDITOR
+	SettingsAppsDiscard                           // Esc in the run form with edits: ask first
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and

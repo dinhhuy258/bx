@@ -512,6 +512,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.gotAppsEdited(msg)
 	case appsTextSavedMsg:
 		return m, m.gotAppsTextSaved(msg)
+	case appsBuildMsg:
+		m.gotAppsBuild(msg)
+		return m, nil
 	case appMsg:
 		return m, m.gotApp(msg)
 	case appConfigMsg:
@@ -1569,7 +1572,7 @@ func (m *Model) gotSettings(msg settingsMsg) {
 // settingsKey handles a key on the settings screen. Esc with unsaved changes asks first.
 func (m *Model) settingsKey(key string) tea.Cmd {
 	switch r := m.settings.Key(key); r {
-	case ui.SettingsAppsOpen, ui.SettingsAppsEditText, ui.SettingsAppsRemove, ui.SettingsAppsPorts, ui.SettingsAppsSave, ui.SettingsAppsText, ui.SettingsAppsBuild, ui.SettingsAppsForm:
+	case ui.SettingsAppsOpen, ui.SettingsAppsEditText, ui.SettingsAppsRemove, ui.SettingsAppsPorts, ui.SettingsAppsSave, ui.SettingsAppsText, ui.SettingsAppsBuild, ui.SettingsAppsForm, ui.SettingsAppsDiscard:
 		return m.appsResult(r)
 	case ui.SettingsClose:
 		if n := len(m.settings.Changes()); n > 0 {
@@ -1763,6 +1766,18 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		m.settings, m.mcpDrafts = nil, map[string]mcpDraft{}
 	case ui.PromptRemoveMCP:
 		return m.saveMCP(target, "", "")
+	case ui.PromptRunText:
+		if m.settings == nil {
+			return nil
+		}
+		k, _ := strconv.Atoi(target)
+		if !m.settings.SetAppsFormText(k, text) {
+			m.setFlash("not saved: ports are numbers, env is KEY=value pairs")
+		}
+	case ui.PromptDiscardRun:
+		if m.settings != nil {
+			m.settings.CloseRunForm()
+		}
 	case ui.PromptRemoveRun:
 		if m.settings == nil {
 			return nil
