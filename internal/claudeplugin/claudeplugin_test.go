@@ -19,7 +19,7 @@ func TestWriteInstallsAndRefreshesThePlugin(t *testing.T) {
 	}
 	skill := filepath.Join(dir, "skills", "artifact", "SKILL.md")
 	b, err := os.ReadFile(skill)
-	if err != nil || !strings.Contains(string(b), "name: artifact") || !strings.Contains(string(b), "artifact-design") {
+	if err != nil || !strings.Contains(string(b), "name: artifact") || !strings.Contains(string(b), "not a claude.ai page") {
 		t.Fatalf("skill %q %v", b, err)
 	}
 	// an unchanged file is left alone; a stale one is replaced

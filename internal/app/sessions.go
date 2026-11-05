@@ -136,7 +136,8 @@ func (a *App) options(p *state.Project, num int, s *state.Session) claude.Option
 
 // launch runs args in a new tmux session for session num, in its story's folder, and keeps
 // the tmux server up after its last session ends, so bx serve can tell that Claude exited.
-// With PluginDir set it first makes the session's artifacts folder and sets $BX_ARTIFACTS.
+// With PluginDir set it first makes the session's artifacts folder and sets $BX_ARTIFACTS, and
+// $BX_DOCS from doc_pages (through tmux, since the globs must not meet a shell).
 func (a *App) launch(p *state.Project, num int, args []string) error {
 	dir := a.Dir(p, p.Sessions[num].Story)
 	env, err := a.accountEnv(context.Background(), p.Name, dir)
@@ -149,6 +150,9 @@ func (a *App) launch(p *state.Project, num int, args []string) error {
 			return fmt.Errorf("artifacts folder: %w", err)
 		}
 		args = append([]string{"env", "BX_ARTIFACTS=" + art}, args...)
+		if docs := docGlobs(dir, a.Cfg.Serve.DocPages); docs != "" {
+			env = append(env, "BX_DOCS="+docs)
+		}
 	}
 	if _, err := a.Tmux.NewSession(TmuxName(p.Name, num), dir, shellJoin(args), env...); err != nil {
 		return err

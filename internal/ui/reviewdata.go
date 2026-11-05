@@ -38,6 +38,25 @@ type DiffFile struct {
 	Del    int    `json:"del"`
 	Folded string `json:"folded,omitempty"`
 	Hunks  []Hunk `json:"hunks,omitempty"`
+	// Hash names the file's diff, so a mark can tell it changed; "" for a gone file, which
+	// can't be marked. Viewed is "" (not viewed), FileViewed, or FileChanged (viewed, but the
+	// diff changed since).
+	Hash   string `json:"hash,omitempty"`
+	Viewed string `json:"viewed,omitempty"`
+}
+
+// The viewed states of a file.
+const (
+	FileViewed  = "viewed"
+	FileChanged = "changed"
+)
+
+// ReviewViewed is PUT …/review/viewed: mark Path viewed at the Hash it was shown with, or
+// unmark it.
+type ReviewViewed struct {
+	Path   string `json:"path"`
+	Hash   string `json:"hash,omitempty"`
+	Viewed bool   `json:"viewed"`
 }
 
 // Hunk is one @@ block.

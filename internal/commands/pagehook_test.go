@@ -21,7 +21,8 @@ func TestIsPage(t *testing.T) {
 		dir + "/Report.HTML":       true,
 		dir + "/./report.html":     true,
 		dir + "/.draft.html":       false,
-		dir + "/report.md":         false,
+		dir + "/report.md":         true,
+		dir + "/.report.md":        false,
 		dir + "/sub/report.html":   false,
 		dir + "/../2/report.html":  false,
 		"/home/me/repo/index.html": false,
@@ -123,7 +124,7 @@ func TestPageHookSeesPagesBashWrote(t *testing.T) {
 	bash("toolu_1", func() {
 		write("b.html", "new", t0.Add(2*time.Minute))
 		write("old.html", "changed", t0.Add(time.Minute))
-		write("notes.md", "not a page", t0.Add(3*time.Minute))
+		write("notes.txt", "not a page", t0.Add(3*time.Minute))
 		write(".draft.html", "hidden", t0.Add(3*time.Minute))
 	})
 	want := []api.PageHook{{SessionID: "u1", Path: filepath.Join(dir, "old.html")}, {SessionID: "u1", Path: filepath.Join(dir, "b.html"), New: true}}
@@ -142,5 +143,63 @@ func TestPageHookSeesPagesBashWrote(t *testing.T) {
 	run(`{"session_id":"u1","tool_name":"Bash","tool_use_id":"../x","tool_input":{"command":"x"}}`, "--before")
 	if snapshotPath("../x") != "" || snapshotPath("") != "" || snapshotPath("toolu_1") == "" {
 		t.Fatal("a tool_use_id must name a file in the snapshot folder")
+	}
+}
+
+func TestIsDoc(t *testing.T) {
+	globs := []string{"/repo/docs/*.md", "/repo/docs/*/*.md"}
+	for file, want := range map[string]bool{
+		"/repo/docs/plan.md":    true,
+		"/repo/docs/plans/a.MD": true,
+		"/repo/docs/./plan.md":  true,
+		"/repo/docs/a/b/c.md":   false,
+		"/repo/docs/.plan.md":   false,
+		"/repo/docs/plan.html":  false,
+		"/repo/README.md":       false,
+		"docs/plan.md":          false,
+		"":                      false,
+	} {
+		if got := isDoc(globs, file); got != want {
+			t.Errorf("isDoc(%q) = %v", file, got)
+		}
+	}
+	if isDoc(nil, "/repo/docs/plan.md") {
+		t.Error("no globs: no docs")
+	}
+}
+
+func TestPageHookMirrorsDocs(t *testing.T) {
+	dir, repo := t.TempDir(), t.TempDir()
+	got, _, run := pageHookServer(t, dir)
+	t.Setenv("BX_DOCS", filepath.Join(repo, "docs/*.md"))
+	if err := os.MkdirAll(filepath.Join(repo, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := filepath.Join(repo, "docs", "plan.md")
+	_ = os.WriteFile(doc, []byte("# v1"), 0o644)
+	run(`{"session_id":"u1","tool_name":"Write","tool_input":{"file_path":"` + doc + `"},"tool_response":{"type":"create"}}`)
+	_ = os.WriteFile(doc, []byte("# v2"), 0o644)
+	run(`{"session_id":"u1","tool_name":"Edit","tool_input":{"file_path":"` + doc + `"}}`)
+	_ = os.WriteFile(filepath.Join(repo, "README.md"), []byte("x"), 0o644)
+	run(`{"session_id":"u1","tool_name":"Write","tool_input":{"file_path":"` + filepath.Join(repo, "README.md") + `"}}`)
+	page := filepath.Join(dir, "plan.md")
+	want := []api.PageHook{{SessionID: "u1", Path: page, New: true}, {SessionID: "u1", Path: page}}
+	if !reflect.DeepEqual(*got, want) {
+		t.Fatalf("got %+v, want %+v", *got, want)
+	}
+	if b, _ := os.ReadFile(page); string(b) != "# v2" {
+		t.Fatalf("copy = %q", b)
+	}
+
+	*got = nil
+	in := `{"session_id":"u1","tool_name":"Bash","tool_use_id":"toolu_9","tool_input":{"command":"x"}}`
+	run(in, "--before")
+	_ = os.WriteFile(filepath.Join(repo, "docs", "b.md"), []byte("# b"), 0o644)
+	run(in)
+	if want := []api.PageHook{{SessionID: "u1", Path: filepath.Join(dir, "b.md"), New: true}}; !reflect.DeepEqual(*got, want) {
+		t.Fatalf("bash: got %+v, want %+v", *got, want)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".*")); len(left) != 0 {
+		t.Fatalf("temp files left: %v", left)
 	}
 }

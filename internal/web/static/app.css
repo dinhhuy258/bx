@@ -225,6 +225,14 @@ dialog.copy[open] { display: flex; flex-direction: column; }
 /* review screen */
 .rv-tools { display: flex; gap: 8px; }
 .rv-note { color: var(--wait); }
+.rv-filter-bar { padding-bottom: 0; }
+.rv-filter { width: 100%; box-sizing: border-box; }
+.rv-head { display: flex; align-items: center; }
+.rv-head .rv-file { flex: 1; min-width: 0; }
+.rv-head.viewed .rv-path { color: var(--dim); }
+.rv-viewed { flex: none; margin-right: 10px; padding: 4px 10px; font-size: 12px; border-radius: 12px; }
+.rv-viewed.on { color: var(--run); border-color: var(--run); }
+.rv-changed { padding: 6px 12px; color: var(--wait); }
 .rv-file { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: 0; background: none; text-align: left; padding: 10px 12px; }
 .rv-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
 .rv-st { font: 600 12px ui-monospace, Menlo, monospace; color: var(--dim); }

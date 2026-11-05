@@ -1,5 +1,5 @@
 review · login-timeout vs develop · 2 files · +3 −1 · 1 to send
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────┌─────────────────────────────────────────────────────────────────────────────────
 >M internal/git/git.go       +2 −1 ●1 │@@ -86,4 +86,5 @@ func (g *Git) diff(dir, base string) error {
  A cmd/bx/main.go               +1 −0 │  86   86      if base == "" {
                                       │  87   87          return nil
@@ -12,4 +12,4 @@ review · login-timeout vs develop · 2 files · +3 −1 · 1 to send
                                       │
                                       │
                                       │
-j/k line · J/K file · c comment · v select · e explain · x delete · n/N next · S send 1 · R refresh · esc back
+j/k line · ^d/^u page · c comment · v select · e explain · n/N next · S send 1 · ? keys · esc list

@@ -13,7 +13,14 @@ import (
 	"github.com/dinhhuy258/bx/internal/api"
 )
 
-// listArtifacts lists the .html pages at the top of a session's artifacts folder, newest
+// IsPageName reports whether a file at the top of a session's artifacts folder is a page: an
+// .html or .md file (the file server renders Markdown) whose name does not start with a dot.
+func IsPageName(name string) bool {
+	ext := filepath.Ext(name)
+	return !strings.HasPrefix(name, ".") && (strings.EqualFold(ext, ".html") || strings.EqualFold(ext, ".md"))
+}
+
+// listArtifacts lists the pages (.html and .md) at the top of a session's artifacts folder, newest
 // first, with their file server links. No folder yet is an empty list.
 func (s *Server) listArtifacts(w http.ResponseWriter, r *http.Request) {
 	p, num, ok := s.session(w, r)
@@ -29,7 +36,7 @@ func (s *Server) listArtifacts(w http.ResponseWriter, r *http.Request) {
 	files := []api.Artifact{}
 	for _, e := range entries {
 		name := e.Name()
-		if !e.Type().IsRegular() || strings.HasPrefix(name, ".") || !strings.EqualFold(filepath.Ext(name), ".html") {
+		if !e.Type().IsRegular() || !IsPageName(name) {
 			continue
 		}
 		fi, err := e.Info()

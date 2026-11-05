@@ -11,6 +11,14 @@ export const unsentOf = (comments) => comments.filter((c) => !c.sent_at);
 export const firstOf = (c) => c.start_line || c.line;
 export const linesOf = (c) => (firstOf(c) < c.line ? `lines ${firstOf(c)}–${c.line}` : `line ${c.line}`);
 
+// matchFilter says whether path holds every word of filter, ignoring case; a word that starts
+// with ! must not be in it. Like the TUI's / filter.
+export function matchFilter(path, filter) {
+  const p = path.toLowerCase();
+  return filter.toLowerCase().split(/\s+/).filter(Boolean).every((w) =>
+    (w.startsWith('!') ? w.length === 1 || !p.includes(w.slice(1)) : p.includes(w)));
+}
+
 // whereOf names t's lines for a form title: "a.go:4–7 (removed lines)".
 function whereOf(t) {
   const range = t.start_line && t.start_line < t.line;
@@ -81,9 +89,14 @@ export function showReview(root, name, story) {
     h('button', { onclick: () => { sel = null; render(); } }, 'Cancel'),
     h('button', { class: 'vio', onclick: () => explainAsk(rangeTarget().target) }, '✦ Explain'),
     h('button', { class: 'primary', onclick: () => commentRange() }, 'Comment'));
+  // the filter stays outside body, so a redraw doesn't take its focus; typing only hides cards
+  const filter = h('input', { class: 'rv-filter', type: 'search', placeholder: 'Filter files (!word leaves out)',
+    'aria-label': 'Filter files', oninput: () => showFiles() });
   root.append(topBar(h('a', { href: `#/p/${enc(name)}`, class: 'ib', 'aria-label': 'Back' }, icon('back')),
-    h('span', { class: 'ttl-name' }, story), meta, send), err, body, dock);
+    h('span', { class: 'ttl-name' }, story), meta, send), err, h('div', { class: 'page rv-filter-bar' }, filter), body, dock);
   const closed = new Set(); // files folded by a tap on their header
+  const opened = new Set(); // viewed files unfolded by a tap
+  let hideViewed = false, fileEls = [];
   let data = null, stopped = false;
   let poll = null; // the timer of the next reload while an explanation runs
   // the running seconds of the cards tick on their own, without a redraw
@@ -118,14 +131,19 @@ export function showReview(root, name, story) {
     send.textContent = unsent ? `Send ${unsent}` : 'Send';
     send.disabled = !unsent;
     rowEls = [];
+    fileEls = [];
+    const viewed = data.files.filter((f) => f.viewed === 'viewed').length;
     // replaceChildren neither skips null nor flattens arrays (it would print "null" and
     // "[object HTMLElement],…"), so drop the empty slots and spread the file cards.
     body.replaceChildren(...[
       data.note ? h('div', { class: 'warn rv-note' }, data.note) : null,
       h('div', { class: 'rv-tools' }, h('button', { onclick: load }, 'Refresh'),
-        sent ? h('button', { onclick: () => clearSent(sent) }, `Clear ${sent} sent`) : null),
+        sent ? h('button', { onclick: () => clearSent(sent) }, `Clear ${sent} sent`) : null,
+        viewed ? h('button', { onclick: () => { hideViewed = !hideViewed; render(); } },
+          hideViewed ? `Show ${viewed} viewed` : `Hide ${viewed} viewed`) : null),
       data.files.length ? null : h('p', { class: 'help' }, `No changes since ${data.base || 'HEAD'}.`),
       ...data.files.map(file)].filter(Boolean));
+    showFiles();
     paint();
     schedulePoll();
   }
@@ -189,18 +207,48 @@ export function showReview(root, name, story) {
     compose(target, existing, null, sel.draft);
   }
 
+  // showFiles hides the file cards the filter or Hide viewed leave out.
+  function showFiles() {
+    for (const { f, el } of fileEls) el.hidden = !matchFilter(f.path, filter.value) || (hideViewed && f.viewed === 'viewed');
+  }
+
+  // markViewed marks a file viewed at the diff it was shown with, or unmarks it.
+  async function markViewed(f) {
+    const viewed = f.viewed !== 'viewed';
+    try {
+      data = await api.markViewed(name, story, { path: f.path, hash: f.hash, viewed });
+      opened.delete(f.path);
+      render();
+    } catch (e) { toast(e.message); }
+  }
+
   function file(f) {
     const mine = data.comments.filter((c) => c.file === f.path);
-    const open = !closed.has(f.path);
-    const head = h('button', { class: 'rv-file', onclick: () => { if (open) closed.add(f.path); else closed.delete(f.path); render(); } },
-      h('span', { class: `rv-st rv-${f.status}` }, f.status[0].toUpperCase()),
-      h('span', { class: 'rv-path' }, f.old ? `${f.old} → ${f.path}` : f.path),
-      h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${f.add}`), ' ', h('span', { class: 'del' }, `−${f.del}`)),
-      mine.length ? h('span', { class: 'badge' }, String(mine.length)) : null);
-    if (!open) return h('section', { class: 'card rv' }, head);
+    const isViewed = f.viewed === 'viewed';
+    const open = isViewed ? opened.has(f.path) : !closed.has(f.path);
+    const fold = () => {
+      const set = isViewed ? opened : closed;
+      if (set.has(f.path)) set.delete(f.path); else set.add(f.path);
+      render();
+    };
+    const head = h('div', { class: isViewed ? 'rv-head viewed' : 'rv-head' },
+      h('button', { class: 'rv-file', onclick: fold },
+        h('span', { class: `rv-st rv-${f.status}` }, f.status[0].toUpperCase()),
+        h('span', { class: 'rv-path' }, f.old ? `${f.old} → ${f.path}` : f.path),
+        h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${f.add}`), ' ', h('span', { class: 'del' }, `−${f.del}`)),
+        mine.length ? h('span', { class: 'badge' }, String(mine.length)) : null),
+      f.hash ? h('button', { class: isViewed ? 'rv-viewed on' : 'rv-viewed', 'aria-pressed': isViewed ? 'true' : 'false',
+        onclick: () => markViewed(f) }, isViewed ? '✓ Viewed' : 'Viewed') : null);
+    const card = (...c) => {
+      const el = h('section', { class: 'card rv' }, ...c);
+      fileEls.push({ f, el });
+      return el;
+    };
+    if (!open) return card(head);
     const pinned = f.folded ? mine : mine.filter((c) => c.outdated);
     const exs = explains().filter((e) => e.file === f.path);
-    return h('section', { class: 'card rv' }, head,
+    return card(head,
+      f.viewed === 'changed' ? h('div', { class: 'help rv-changed' }, '◐ Changed since you viewed it') : null,
       pinned.map((c) => bubble(c, true)),
       (f.folded ? exs : exs.filter((e) => e.outdated)).map(explainCard),
       f.folded ? h('div', { class: 'help rv-folded' }, f.folded)

@@ -65,6 +65,7 @@ type Backend interface {
 	PR(ctx context.Context, project, story string) (api.PRData, error)
 	RefreshPR(ctx context.Context, project, story string) (api.PRData, error)
 	SendPR(ctx context.Context, project, story string, r api.PRSend) (api.Result, error)
+	MarkViewed(ctx context.Context, project, story string, v api.ReviewViewed) (api.Review, error)
 	Explain(ctx context.Context, project, story string, req api.ExplainRequest) (api.Review, error)
 	DeleteExplain(ctx context.Context, project, story, id string) (api.Review, error)
 }

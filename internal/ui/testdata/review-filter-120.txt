@@ -1,0 +1,11 @@
+review · pr-review vs master · 2 of 4 files · +43 −0 · 1/4 viewed
+──────────────────────────────────────┐─────────────────────────────────────────────────────────────────────────────────
+/ query▏                              │@@ -0,0 +1 @@
+>A internal/prwatch/query.go    +1 −0 │        1 +package x
+ A internal/prwatch/query_te… +1 −0 ◐ │
+                                      │
+                                      │
+                                      │
+                                      │
+                                      │
+type to filter · !word leaves out · ⏎ keep · esc clear · ↑/↓ file

@@ -1,7 +1,7 @@
 review · s1 vs main · 0 files · +0 −0
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────┐─────────────────────────────────────────────────────────────────────────────────
 
 No changes since main.
 
 
-j/k line · J/K file · c comment · v select · e explain · x delete · n/N next · R refresh · esc back
+j/k file · ^d/^u page · ⏎ open · space viewed · / filter · H hide viewed · ? keys · esc back

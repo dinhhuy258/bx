@@ -333,6 +333,7 @@ type (
 	Comment        = ui.Comment
 	Explain        = ui.Explain
 	ExplainRequest = ui.ExplainRequest
+	ReviewViewed   = ui.ReviewViewed
 )
 
 // The pull request types live in ui too, for the PR screen.
@@ -351,6 +352,8 @@ const (
 	ExplainDone     = ui.ExplainDone
 	ExplainFailed   = ui.ExplainFailed
 	ExplainCodeOnly = ui.ExplainCodeOnly
+	FileViewed      = ui.FileViewed
+	FileChanged     = ui.FileChanged
 )
 
 // ReviewSend is POST …/review/send: the session to paste into, or New for a new one.

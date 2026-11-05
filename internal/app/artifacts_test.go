@@ -31,6 +31,7 @@ func TestSessionGetsArtifacts(t *testing.T) {
 	}
 	for _, want := range []string{
 		"env BX_ARTIFACTS=" + dir + " claude --session-id fixed-uuid",
+		"-e BX_DOCS=" + filepath.Join(p.Path, "docs/*.md") + ":" + filepath.Join(p.Path, "docs/*/*.md"),
 		"--disallowed-tools Artifact,ArtifactComments,ArtifactData",
 		"--plugin-dir /opt/bx-plugin",
 		"--add-dir " + dir,
@@ -129,5 +130,22 @@ func TestWithHooksKeepsBoth(t *testing.T) {
 	}
 	if got := withHooks(nil, pageHooks("/bx", "http://h:1")); len(got["PostToolUse"].([]any)) != 1 {
 		t.Fatalf("%v", got)
+	}
+}
+
+func TestNoDocGlobsNoEnv(t *testing.T) {
+	a, got, p := artifactsApp(t)
+	a.Cfg.Serve.DocPages = nil
+	if _, err := a.NewChat(p, ""); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got(), "BX_DOCS") {
+		t.Fatalf("BX_DOCS with no globs:\n%s", got())
+	}
+}
+
+func TestDocGlobs(t *testing.T) {
+	if got := docGlobs("/w/s1", []string{"docs/*.md", " ", "/abs/*.md", "notes/*.md"}); got != "/w/s1/docs/*.md:/w/s1/notes/*.md" {
+		t.Fatalf("%q", got)
 	}
 }

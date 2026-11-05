@@ -34,6 +34,7 @@ func sampleReview() ReviewData {
 func TestReviewKeys(t *testing.T) {
 	r := NewReview("login-timeout")
 	r.SetData(sampleReview())
+	r.Key("Enter", false) // into the code
 	l, ok := r.Selected()
 	if !ok || l.File != "internal/git/git.go" || l.Line != 86 || l.Side != "new" {
 		t.Fatalf("start: %+v", l)
@@ -53,16 +54,21 @@ func TestReviewKeys(t *testing.T) {
 	if r.Key("S", false) != ReviewSend || r.Key("C", false) != ReviewKeep {
 		t.Fatal("S sends unsent comments; C needs sent ones")
 	}
-	r.Key("J", false)
+	if r.Key("J", false) != ReviewKeep || r.file != 0 {
+		t.Fatal("J and K are gone")
+	}
+	r.Key("Esc", false)
+	r.Key("j", false)
+	r.Key("Enter", false)
 	if l, _ := r.Selected(); l.File != "cmd/bx/main.go" || l.Line != 1 {
-		t.Fatalf("J: %+v", l)
+		t.Fatalf("Esc, j, Enter: %+v", l)
 	}
 	r.Key("N", false)
 	if l, _ := r.Selected(); l.Edit == nil {
 		t.Fatalf("N goes back to the comment: %+v", l)
 	}
-	if r.Key("Esc", false) != ReviewBack || r.Key("R", false) != ReviewRefresh {
-		t.Fatal("Esc and R")
+	if r.Key("Esc", false) != ReviewKeep || r.Key("Esc", false) != ReviewBack || r.Key("R", false) != ReviewRefresh {
+		t.Fatal("Esc goes to the list, then leaves; R")
 	}
 }
 
@@ -82,7 +88,7 @@ func TestReviewNarrowPanes(t *testing.T) {
 func TestReviewKeepsTheFileOnReload(t *testing.T) {
 	r := NewReview("s1")
 	r.SetData(sampleReview())
-	r.Key("J", false)
+	r.Key("j", false) // the list has the focus
 	d := sampleReview()
 	d.Files[0], d.Files[1] = d.Files[1], d.Files[0]
 	r.SetData(d)
@@ -94,6 +100,7 @@ func TestReviewKeepsTheFileOnReload(t *testing.T) {
 func TestReviewScreens(t *testing.T) {
 	r := NewReview("login-timeout")
 	r.SetData(sampleReview())
+	r.Key("Enter", false) // into the code
 	r.Key("j", false)
 	r.Key("j", false)
 	r.Key("j", false)
@@ -140,6 +147,7 @@ func twoHunks() ReviewData {
 func TestReviewSelectsARange(t *testing.T) {
 	r := NewReview("login-timeout")
 	r.SetData(twoHunks())
+	r.Key("Enter", false) // into the code
 	r.Key("v", false) // on 86
 	for range 4 {
 		r.Key("j", false)
@@ -175,12 +183,13 @@ func TestReviewSelectsARange(t *testing.T) {
 		t.Fatalf("one line: %+v", l)
 	}
 	r.Key("Esc", false)
-	if r.selecting || r.Key("Esc", false) != ReviewBack {
-		t.Fatal("Esc ends the selection, then leaves")
+	if r.selecting || r.Key("Esc", false) != ReviewKeep || r.pane != 0 || r.Key("Esc", false) != ReviewBack {
+		t.Fatal("Esc ends the selection, then goes to the list, then leaves")
 	}
 
 	o := NewReview("s")
 	o.SetData(sampleReview())
+	o.Key("Enter", false) // into the code
 	o.Key("j", false)
 	o.Key("j", false) // 88 old
 	o.Key("v", false)
@@ -201,6 +210,7 @@ func TestReviewRangeComments(t *testing.T) {
 		{ID: "o", File: "internal/git/git.go", Side: "new", StartLine: 30, Line: 32, Body: "Old range", Outdated: true},
 	}
 	r.SetData(d)
+	r.Key("Enter", false) // into the code
 	r.Key("j", false) // from the pinned comment to 86
 	r.Key("j", false)
 	r.Key("j", false)
@@ -212,6 +222,7 @@ func TestReviewRangeComments(t *testing.T) {
 
 	s := NewReview("login-timeout")
 	s.SetData(twoHunks())
+	s.Key("Enter", false) // into the code
 	s.Key("v", false)
 	s.Key("j", false)
 	s.Key("j", false)
@@ -274,6 +285,7 @@ func TestReviewExplainKeys(t *testing.T) {
 	r := NewReview("login-timeout")
 	r.Now = func() time.Time { return time.Unix(114, 0) }
 	r.SetData(explainReview())
+	r.Key("Enter", false) // into the code
 	if r.Key("e", false) != ReviewExplain { // on 86
 		t.Fatal("e on a row")
 	}
@@ -307,6 +319,7 @@ func TestReviewKeepsTheCursorWhenACardAppears(t *testing.T) {
 	r := NewReview("s")
 	d := twoHunks()
 	r.SetData(d)
+	r.Key("Enter", false) // into the code
 	r.Key("j", false)
 	r.Key("j", false)
 	r.Key("j", false)
@@ -332,5 +345,17 @@ func TestReviewFileListColours(t *testing.T) {
 		if !strings.Contains(strings.Join(lines, "\n"), want) {
 			t.Errorf("file list lacks %q:\n%q", want, lines)
 		}
+	}
+}
+
+func TestReviewViewedFileIsDimAsAWhole(t *testing.T) {
+	d := sampleReview()
+	d.Files[1].Viewed = FileViewed
+	r := NewReview("login-timeout")
+	r.SetData(d)
+	pal := newPalette(false)
+	line := r.fileLines(40, 5, pal)[1]
+	if strings.Contains(line, pal.green.Render("A")) || !strings.HasPrefix(line, pal.dim.Render(" A")[:len(pal.dim.Render(" A"))-len("\x1b[m")]) {
+		t.Fatalf("viewed row has colours of its own: %q", line)
 	}
 }

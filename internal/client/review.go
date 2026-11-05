@@ -108,6 +108,10 @@ func (m *Model) reviewKey(key string) tea.Cmd {
 	case ui.ReviewDelete:
 		l, _ := r.Selected()
 		return m.saveComments(without(r.Data().Comments, l.Edit.ID), "")
+	case ui.ReviewToggleViewed:
+		if v, ok := r.ToggleViewed(); ok {
+			return m.markViewed(v)
+		}
 	case ui.ReviewSend:
 		m.openSendPicker()
 	case ui.ReviewClearSent:
@@ -201,6 +205,21 @@ func (m *Model) deleteExplain(id string) tea.Cmd {
 	return func() tea.Msg {
 		r, err := be.DeleteExplain(ctx, project, story, id)
 		return reviewMsg{story: story, r: r, err: err, explain: true}
+	}
+}
+
+// markViewed saves a viewed mark the screen already shows. When the save fails, the review is
+// read again so the screen doesn't keep a mark the server doesn't have.
+func (m *Model) markViewed(v api.ReviewViewed) tea.Cmd {
+	be, ctx, project, story := m.be, m.ctx, m.project, m.review.Story
+	return func() tea.Msg {
+		r, err := be.MarkViewed(ctx, project, story, v)
+		if err != nil {
+			if again, err2 := be.Review(ctx, project, story); err2 == nil {
+				return reviewMsg{story: story, r: again, done: "error: " + err.Error()}
+			}
+		}
+		return reviewMsg{story: story, r: r, err: err}
 	}
 }
 

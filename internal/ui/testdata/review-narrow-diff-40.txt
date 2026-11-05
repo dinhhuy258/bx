@@ -10,4 +10,4 @@ review · login-timeout vs develop · 2 f…
 
 
 
-c comment · x del · S send 1 · esc files
+c comment · x del · S send 1 · esc list

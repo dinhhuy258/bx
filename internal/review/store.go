@@ -11,10 +11,12 @@ import (
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
-// File is a story's comment file. Version goes up on every save.
+// File is a story's comment file. Version goes up on every save of the comments; a viewed
+// mark doesn't change it, so marking a file never refuses another device's comments.
 type File struct {
-	Version  int           `json:"version"`
-	Comments []api.Comment `json:"comments"`
+	Version  int             `json:"version"`
+	Comments []api.Comment   `json:"comments"`
+	Viewed   map[string]Mark `json:"viewed,omitempty"` // by path
 }
 
 // Load reads a comment file. A missing file is an empty review at version 0. A corrupt one

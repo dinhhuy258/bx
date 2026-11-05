@@ -1,0 +1,11 @@
+review · pr-review vs master · 4 files · +43 −0 · 1/4 viewed
+──────────────────────────────────────┐─────────────────────────────────────────────────────────────────────────────────
+>M internal/api/api.go       +40 −0 ✓ │  ✓ viewed · internal/api/api.go · +40 −0 · space to unmark
+ A internal/prwatch/query.go    +1 −0 │
+ A internal/prwatch/query_te… +1 −0 ◐ │
+ A internal/serve/server.go     +1 −0 │
+                                      │
+                                      │
+                                      │
+                                      │
+j/k file · ^d/^u page · ⏎ open · space viewed · / filter · H hide viewed · ? keys · esc back

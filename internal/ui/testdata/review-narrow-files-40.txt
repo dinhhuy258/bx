@@ -8,4 +8,4 @@ review · login-timeout vs develop · 2 f…
 
 
 
-⏎ open · j/k file · S send 1 · esc back
+⏎ open · ? keys · S send 1 · esc back
