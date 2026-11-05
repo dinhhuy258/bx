@@ -199,3 +199,40 @@ func TestDefaultEditWorkspaceKey(t *testing.T) {
 		t.Fatalf("edit_workspace = %v", k)
 	}
 }
+
+func TestAppPaths(t *testing.T) {
+	c := &Config{Root: "/r"}
+	for got, want := range map[string]string{
+		c.AppsDir():                      "/r/apps",
+		c.AppFile("unem"):                "/r/apps/unem.toml",
+		c.SetupMark("unem", "s1", "web"): "/r/apps-setup/unem/s1/web",
+		c.SetupMarks("unem", "s1"):       "/r/apps-setup/unem/s1",
+		c.AppCache("unem"):               "/r/cache/unem",
+	} {
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestAppHostAndKey(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[serve]\napp_host = \"box\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Serve.AppHost != "box" {
+		t.Errorf("AppHost = %q", c.Serve.AppHost)
+	}
+	if c.Keys.First(c.Keys.List, "app") != "M-b" {
+		t.Errorf("app = %v", c.Keys.List["app"])
+	}
+	for _, a := range []string{"run_story", "stop_story", "open_app"} {
+		if _, ok := c.Keys.List[a]; ok {
+			t.Errorf("%s has a default bind", a)
+		}
+	}
+}
