@@ -2,9 +2,9 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
    Git               │ For new sessions. A resumed one keeps its model, effort and permission mode.
-   MCP               │
-   Notifications     │    Model                 ◂ default           ▸
-                     │    Effort                ◂ default           ▸
+   Runs              │
+   MCP               │    Model                 ◂ default           ▸
+   Notifications     │    Effort                ◂ default           ▸
                      │    Permission mode       ◂ acceptEdits       ▸
                      │    Commit trailer        ◂ default           ▸
                      │    Commit text           not set

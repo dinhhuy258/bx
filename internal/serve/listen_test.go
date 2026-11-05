@@ -42,3 +42,21 @@ func TestResolveListen(t *testing.T) {
 		t.Errorf("auto without tailscale: %v", err)
 	}
 }
+
+func TestRunHost(t *testing.T) {
+	status := []byte(`{"Self":{"DNSName":"dev.tail1234.ts.net.","TailscaleIPs":["100.70.1.2"]}}`)
+	for _, c := range []struct {
+		override string
+		json     []byte
+		ip, want string
+	}{
+		{"", status, "100.70.1.2", "dev"},
+		{"box.lan", status, "100.70.1.2", "box.lan"},
+		{"", []byte(`{"Self":{"DNSName":""}}`), "100.70.1.2", "100.70.1.2"},
+		{"", nil, "100.70.1.2", "100.70.1.2"},
+	} {
+		if got := RunHost(c.override, c.json, c.ip); got != c.want {
+			t.Errorf("RunHost(%q, %s) = %q, want %q", c.override, c.json, got, c.want)
+		}
+	}
+}

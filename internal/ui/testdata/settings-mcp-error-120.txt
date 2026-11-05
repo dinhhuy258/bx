@@ -2,9 +2,9 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Claude            │ MCP
    Git               │ For new and resumed sessions. Running ones keep what they started with.
- › MCP               │
-   Notifications     │    Mode  ◂ merge  ▸
-                     │
+   Runs              │
+ › MCP               │    Mode  ◂ merge  ▸
+   Notifications     │
                      │    Global      3 servers    github · postgres · sentry
                      │
                      │  project servers · 3 of 34 projects have their own

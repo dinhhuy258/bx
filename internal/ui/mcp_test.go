@@ -20,6 +20,7 @@ func mcpSettings() *Settings {
 	})
 	s.SetMCPTotal(34)
 	s.Key("Tab") // git
+	s.Key("Tab") // runs
 	s.Key("Tab") // mcp
 	return s
 }
@@ -27,7 +28,7 @@ func mcpSettings() *Settings {
 func TestSettingsMCPRowsAndKeys(t *testing.T) {
 	s := mcpSettings()
 	if !s.MCPShown() {
-		t.Fatal("Tab Tab opens MCP")
+		t.Fatal("Tab Tab Tab opens MCP")
 	}
 	if _, ok := s.MCPChoice(); ok {
 		t.Fatal("the cursor starts on the Mode field")
@@ -98,6 +99,7 @@ func TestSettingsMCPWindowsManyProjects(t *testing.T) {
 	}
 	s.SetMCP(MCP{Projects: ps})
 	s.SetMCPTotal(40)
+	s.Key("Tab")
 	s.Key("Tab")
 	s.Key("Tab")
 	for range 16 {

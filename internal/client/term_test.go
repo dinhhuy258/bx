@@ -61,7 +61,7 @@ func TestTermEncodesModifiedCursorKeysLikeXterm(t *testing.T) {
 		{tea.KeyPressMsg{Code: tea.KeyEnd, Mod: tea.ModShift}, "\x1b[1;2F"},
 		{tea.KeyPressMsg{Code: tea.KeyDelete, Mod: tea.ModAlt}, "\x1b[3;3~"},
 		{tea.KeyPressMsg{Code: tea.KeyPgUp, Mod: tea.ModCtrl}, "\x1b[5;5~"},
-		{tea.KeyPressMsg{Code: tea.KeyLeft}, "\x1b[D"},                     // plain keys stay the emulator's
+		{tea.KeyPressMsg{Code: tea.KeyLeft}, "\x1b[D"},                    // plain keys stay the emulator's
 		{tea.KeyPressMsg{Code: 'b', Mod: tea.ModAlt, Text: "b"}, "\x1bb"}, // Alt letters too
 	}
 	for _, c := range cases {

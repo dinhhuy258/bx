@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/dinhhuy258/bx/internal/claude"
+	"github.com/dinhhuy258/bx/internal/runcfg"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
@@ -88,6 +89,11 @@ type Action struct {
 	Base        string   `json:"base,omitempty"`   // base: the base override; "" removes it
 	Link        []string `json:"link,omitempty"`   // links: repo projects to link into a workspace
 	Unlink      []string `json:"unlink,omitempty"` // links: links to remove from a workspace
+	// runs/run, runs/stop, runs/setup: the runs (nil = all; setup takes one), Replace stops the
+	// story that runs first (after a 409 with RunStory), Setup runs the setups again.
+	Runs    []string `json:"runs,omitempty"`
+	Replace bool     `json:"replace,omitempty"`
+	Setup   bool     `json:"setup,omitempty"`
 }
 
 // NewProject is the body of POST /api/projects.
@@ -124,6 +130,9 @@ type Result struct {
 	Branch string `json:"branch,omitempty"`
 	// Line is the line of a refused MCP document (PUT /api/mcp/doc), 0 when unknown.
 	Line int `json:"line,omitempty"`
+	// runs/run refused (409) because another story runs: that story and its runs.
+	RunStory string   `json:"run_story,omitempty"`
+	RunNames []string `json:"run_names,omitempty"`
 }
 
 // StoryInfo is GET /api/projects/{name}/storyinfo, for the new story prompt: the base a new
@@ -371,4 +380,29 @@ type PRSend struct {
 	Threads []string `json:"threads,omitempty"`
 	Session int      `json:"session,omitempty"`
 	New     bool     `json:"new,omitempty"`
+}
+
+// RunConfig is GET and PUT /api/projects/{name}/runconfig: the project's runs and port lists
+// for Settings › Runs. GET adds Repos (a workspace's repositories, for the dir choice; nil in
+// a repo project), HasComments (a form save would drop the file's comments) and Error (the
+// file does not parse: edit it as text). A refused PUT is a 400 with Errors.
+type RunConfig struct {
+	Runs        []runcfg.Run        `json:"runs"`
+	Hide        []int               `json:"hide,omitempty"`
+	Show        []int               `json:"show,omitempty"`
+	Repos       []string            `json:"repos,omitempty"`
+	HasComments bool                `json:"has_comments,omitempty"`
+	Error       string              `json:"error,omitempty"`
+	Errors      []runcfg.FieldError `json:"errors,omitempty"`
+}
+
+// RunConfigText is GET and PUT /api/projects/{name}/runconfig?text=1: the file as it is.
+type RunConfigText struct {
+	Text string `json:"text"`
+}
+
+// RunConfigs is a row of GET /api/runconfigs: a project and its run names.
+type RunConfigs struct {
+	Project string   `json:"project"`
+	Runs    []string `json:"runs"`
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/dinhhuy258/bx/internal/api"
+	"github.com/dinhhuy258/bx/internal/runcfg"
 	"github.com/dinhhuy258/bx/internal/serve/servetest"
 	"github.com/dinhhuy258/bx/internal/tmux"
 )
@@ -250,5 +251,42 @@ func TestPRCalls(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") || res.Num != 3 {
 		t.Fatalf("%s\n%+v", strings.Join(got, "\n"), res)
+	}
+}
+
+func TestAPIRunConfig(t *testing.T) {
+	_, _, ts := servetest.New(t)
+	c := NewAPI(ts.URL)
+	ctx := context.Background()
+	rc, err := c.RunConfig(ctx, "home-network")
+	if err != nil || len(rc.Runs) != 0 {
+		t.Fatalf("%+v %v", rc, err)
+	}
+	bad, err := c.SaveRunConfig(ctx, "home-network", api.RunConfig{Runs: []runcfg.Run{{Name: "web"}}})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != 400 || len(bad.Errors) != 1 {
+		t.Fatalf("refused save: %+v %v", bad, err)
+	}
+	if _, err := c.SaveRunConfig(ctx, "home-network", api.RunConfig{Runs: []runcfg.Run{{Name: "web", Cmd: "npm run dev"}}}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := c.RunConfigs(ctx)
+	if err != nil || len(list) != 1 || len(list[0].Runs) != 1 {
+		t.Fatalf("%+v %v", list, err)
+	}
+	txt, err := c.RunConfigText(ctx, "home-network")
+	if err != nil || !strings.Contains(txt, `cmd = "npm run dev"`) {
+		t.Fatalf("%q %v", txt, err)
+	}
+	res, err := c.SaveRunConfigText(ctx, "home-network", "[[run]]\nname =\n")
+	if err == nil || res.Line != 2 {
+		t.Fatalf("syntax: %+v %v", res, err)
+	}
+	if err := c.DeleteRunConfig(ctx, "home-network"); err != nil {
+		t.Fatal(err)
+	}
+	// no run config: run is refused with the server's text
+	if _, err := c.RunAction(ctx, "home-network", "run", api.Action{Story: "s1"}); err == nil || !strings.Contains(err.Error(), "no runs") {
+		t.Fatalf("run with no config: %v", err)
 	}
 }

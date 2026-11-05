@@ -30,6 +30,7 @@ const (
 	createTimeout = 10 * time.Minute
 	syncTimeout   = 2 * time.Minute
 	uploadTimeout = 2 * time.Minute
+	runTimeout    = 90 * time.Second // a stop waits for C-c, the stop command and docker stop
 	sendTimeout   = 60 * time.Second // a send may resume Claude and wait up to 30 s for it
 )
 
@@ -310,6 +311,16 @@ type StatusError struct {
 func (e *StatusError) Error() string { return e.Text }
 
 func (c *API) call(ctx context.Context, timeout time.Duration, method, path string, body, out any) error {
+	return c.do(ctx, timeout, method, path, body, out, false)
+}
+
+// callRaw is call that decodes an error body into out as well, for replies whose refusal is
+// not an api.Result (a refused run config carries its field errors).
+func (c *API) callRaw(ctx context.Context, timeout time.Duration, method, path string, body, out any) error {
+	return c.do(ctx, timeout, method, path, body, out, true)
+}
+
+func (c *API) do(ctx context.Context, timeout time.Duration, method, path string, body, out any, raw bool) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var rd io.Reader
@@ -333,15 +344,66 @@ func (c *API) call(ctx context.Context, timeout time.Duration, method, path stri
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
+		b, _ := io.ReadAll(resp.Body)
 		var res api.Result
-		_ = json.NewDecoder(resp.Body).Decode(&res)
+		_ = json.Unmarshal(b, &res)
 		if res.Error == "" {
 			res.Error = resp.Status
 		}
 		if r, ok := out.(*api.Result); ok {
 			*r = res
 		}
+		if raw {
+			_ = json.Unmarshal(b, out)
+		}
 		return &StatusError{Code: resp.StatusCode, Text: res.Error}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// RunAction is POST /api/projects/{name}/runs/{run|stop|setup}. A 409 fills Result.RunStory
+// and RunNames: another story runs.
+func (c *API) RunAction(ctx context.Context, project, action string, a api.Action) (api.Result, error) {
+	var res api.Result
+	err := c.call(ctx, runTimeout, http.MethodPost, "/api/projects/"+url.PathEscape(project)+"/runs/"+action, a, &res)
+	return res, err
+}
+
+// RunConfigs is GET /api/runconfigs: every project and its run names.
+func (c *API) RunConfigs(ctx context.Context) ([]api.RunConfigs, error) {
+	var out []api.RunConfigs
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/runconfigs", nil, &out)
+}
+
+// RunConfig is GET /api/projects/{name}/runconfig.
+func (c *API) RunConfig(ctx context.Context, project string) (api.RunConfig, error) {
+	var out api.RunConfig
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/runconfig", nil, &out)
+}
+
+// SaveRunConfig is PUT /api/projects/{name}/runconfig. A refusal fills the RunConfig's Errors.
+func (c *API) SaveRunConfig(ctx context.Context, project string, rc api.RunConfig) (api.RunConfig, error) {
+	var out api.RunConfig
+	err := c.callRaw(ctx, pollTimeout, http.MethodPut, "/api/projects/"+url.PathEscape(project)+"/runconfig", rc, &out)
+	return out, err
+}
+
+// RunConfigText is GET /api/projects/{name}/runconfig?text=1: the file as it is.
+func (c *API) RunConfigText(ctx context.Context, project string) (string, error) {
+	var out api.RunConfigText
+	err := c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/runconfig?text=1", nil, &out)
+	return out.Text, err
+}
+
+// SaveRunConfigText is PUT ...?text=1. A refusal fills Result: the error and its Line.
+func (c *API) SaveRunConfigText(ctx context.Context, project, text string) (api.Result, error) {
+	var res api.Result
+	err := c.call(ctx, pollTimeout, http.MethodPut, "/api/projects/"+url.PathEscape(project)+"/runconfig?text=1", api.RunConfigText{Text: text}, &res)
+	return res, err
+}
+
+// DeleteRunConfig is DELETE /api/projects/{name}/runconfig.
+func (c *API) DeleteRunConfig(ctx context.Context, project string) error {
+	var res api.Result
+	return c.call(ctx, pollTimeout, http.MethodDelete, "/api/projects/"+url.PathEscape(project)+"/runconfig", nil, &res)
 }

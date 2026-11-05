@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -76,6 +78,15 @@ func runServe(args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(out, format+"\n", v...)
 	}
 	s := serve.New(a, cfg, claude.CLI{}, log)
+	host, _, _ := net.SplitHostPort(addr) // the Tailscale IP (or loopback when listen says so)
+	status, err := exec.Command("tailscale", "status", "--json").Output()
+	if err != nil {
+		status = nil // no MagicDNS name: links use the address
+	}
+	s.RunHost = serve.RunHost(cfg.Serve.RunHost, status, host)
+	if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() {
+		s.Forwards = serve.NewForwards(host) // on loopback there is nothing to forward to
+	}
 	s.ResumeAll(context.Background()) // after a reboot: start every session that should be running
 	s.KeepTmuxServer()                // a tmux server already running outlives its last session
 	srv := &http.Server{Addr: addr, Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
@@ -90,8 +101,9 @@ func runServe(args []string, out, errOut io.Writer) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	go s.Watch(ctx, serve.WatchEvery) // a session whose Claude exits becomes done
-	go s.WatchPRs(ctx)                // the PRs of story branches: badges, notifications
+	go s.Watch(ctx, serve.WatchEvery)      // a session whose Claude exits becomes done
+	go s.WatchPRs(ctx)                     // the PRs of story branches: badges, notifications
+	go s.WatchPorts(ctx, serve.PortsEvery) // the ports of story runs, and their forwards
 	go func() {
 		<-ctx.Done()
 		log("bx serve: shutting down (Claude sessions keep running in tmux)")
@@ -104,6 +116,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 	log("bx serve: listening on http://%s (Tailscale only, no login) · tmux -S %s", addr, cfg.TmuxSocket())
+	log("bx serve: run links on http://%s:<port>", s.RunHost)
 	if filesAddr != "" {
 		log("bx serve: artifacts on http://%s (read-only, %s)", filesAddr, cfg.ArtifactsDir())
 	}

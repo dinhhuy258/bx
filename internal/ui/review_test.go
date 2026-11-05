@@ -148,7 +148,7 @@ func TestReviewSelectsARange(t *testing.T) {
 	r := NewReview("login-timeout")
 	r.SetData(twoHunks())
 	r.Key("Enter", false) // into the code
-	r.Key("v", false) // on 86
+	r.Key("v", false)     // on 86
 	for range 4 {
 		r.Key("j", false)
 	}
@@ -211,7 +211,7 @@ func TestReviewRangeComments(t *testing.T) {
 	}
 	r.SetData(d)
 	r.Key("Enter", false) // into the code
-	r.Key("j", false) // from the pinned comment to 86
+	r.Key("j", false)     // from the pinned comment to 86
 	r.Key("j", false)
 	r.Key("j", false)
 	r.Key("j", false) // 88 new: the range's last line
@@ -285,7 +285,7 @@ func TestReviewExplainKeys(t *testing.T) {
 	r := NewReview("login-timeout")
 	r.Now = func() time.Time { return time.Unix(114, 0) }
 	r.SetData(explainReview())
-	r.Key("Enter", false) // into the code
+	r.Key("Enter", false)                   // into the code
 	if r.Key("e", false) != ReviewExplain { // on 86
 		t.Fatal("e on a row")
 	}

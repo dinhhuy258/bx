@@ -26,10 +26,13 @@ type Config struct {
 // DocPages are the Markdown and HTML docs, relative to a session's folder, that the page hook copies
 // into the session's artifacts folder when Claude writes them, so they get a link: exact
 // files ("README.md") or filepath.Match globs ("docs/*.md", ".archify/*/*.html"; no "**"). [] copies none.
+// RunHost is the host in the links of a story's runs ("http://<RunHost>:3000"); "" takes
+// the MagicDNS name of this machine, else its Tailscale address.
 type Serve struct {
 	Listen      string   `toml:"listen"`
 	FilesListen string   `toml:"files_listen"`
 	DocPages    []string `toml:"doc_pages"`
+	RunHost     string   `toml:"run_host"`
 }
 
 // Client holds `bx` client settings: the server URL and the keys that work from both panes.
@@ -86,7 +89,7 @@ func Default(root string) *Config {
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
 				"settings": {"M-p"}, "stop_session": {"M-s"}, "delete_session": {"M-d"}, "close_shell": {"M-d"}, "cleanup": {"M-c"}, "artifacts": {"M-v"},
-				"review": {"M-g"}, "sync": {"M-u"}, "pr": {"M-m"},
+				"review": {"M-g"}, "sync": {"M-u"}, "pr": {"M-m"}, "run": {"M-b"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto", DocPages: []string{"docs/*.md", "docs/*/*.md"}},
@@ -122,6 +125,7 @@ type rawConfig struct {
 		Listen      *string   `toml:"listen"`
 		FilesListen *string   `toml:"files_listen"`
 		DocPages    *[]string `toml:"doc_pages"`
+		RunHost     *string   `toml:"run_host"`
 	} `toml:"serve"`
 	Client struct {
 		Server     *string `toml:"server"`
@@ -138,6 +142,9 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 	if r.Serve.FilesListen != nil {
 		c.Serve.FilesListen = *r.Serve.FilesListen
+	}
+	if r.Serve.RunHost != nil {
+		c.Serve.RunHost = *r.Serve.RunHost
 	}
 	if r.Serve.DocPages != nil {
 		c.Serve.DocPages = *r.Serve.DocPages
@@ -238,3 +245,25 @@ func (c *Config) EnsureDirs() error {
 	}
 	return nil
 }
+
+// RunsDir is <root>/runs: <project>.toml is the project's run config (Settings › Runs).
+func (c *Config) RunsDir() string { return filepath.Join(c.Root, "runs") }
+
+// RunFile is the run config of a project.
+func (c *Config) RunFile(project string) string {
+	return filepath.Join(c.RunsDir(), project+".toml")
+}
+
+// SetupMarks is <root>/runs-setup/<project>/<story>: one empty file per run whose setup ran.
+func (c *Config) SetupMarks(project, story string) string {
+	return filepath.Join(c.Root, "runs-setup", project, story)
+}
+
+// SetupMark is the file that says run's setup ran in the story.
+func (c *Config) SetupMark(project, story, run string) string {
+	return filepath.Join(c.SetupMarks(project, story), run)
+}
+
+// RunCache is <root>/cache/<project>: home/ is $HOME of the project's containers, and the
+// run's cache paths are kept under it.
+func (c *Config) RunCache(project string) string { return filepath.Join(c.Root, "cache", project) }

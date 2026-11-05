@@ -42,6 +42,11 @@ const (
 	PromptComment               // a review comment on a diff line, empty = delete it
 	PromptClearSent             // y/n: drop the sent comments of a review (Target is the story)
 	PromptSyncBusy              // y/n: sync a story Claude works in (Target is the story, "" = chats)
+	PromptRunReplace            // y/n: stop the story that runs and run this one (Target is the story)
+	PromptRunsPorts             // a port list of the runs page (Target is "hide" or "show")
+	PromptRemoveRun             // y/n: remove a run and save (Target is its index)
+	PromptRunText               // a text field of the run form (Target is its field number)
+	PromptDiscardRun            // y/n: drop the edits of the run form
 	PromptExplain               // a question about diff lines; Types are the conversations
 )
 
@@ -52,6 +57,7 @@ const (
 	PromptKeep   PromptResult = iota // still typing
 	PromptSubmit                     // Enter, or y on a yes/no prompt: read Input and Target
 	PromptCancel                     // Esc, or anything but y on a yes/no prompt
+	PromptEdit                       // C-g in a text field: edit Input in $EDITOR, then SetInput
 )
 
 // Prompt is a question or a one-field form, drawn as a dialog over the screen (new story,
@@ -63,6 +69,7 @@ type Prompt struct {
 	Body   []string
 	Title  string // a form's title when it is not the kind's (a comment names its line)
 	Input  string
+	Back   int // the cursor: runes of Input after it, 0 = at the end
 
 	// the new story form: its branch types, the chosen one, the field with the cursor (0 the
 	// name, 1 the type), the base it starts from and a note under the preview
@@ -157,7 +164,7 @@ func (p *Prompt) YesNo() bool {
 		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
 		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume,
 		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin, PromptClearSent,
-		PromptSyncBusy:
+		PromptSyncBusy, PromptRunReplace, PromptRemoveRun, PromptDiscardRun:
 		return true
 	}
 	return false
@@ -197,6 +204,10 @@ func (p *Prompt) Key(key, text string) PromptResult {
 	case key == "Enter":
 		p.Kind = PromptNone
 		return PromptSubmit
+	case key == "C-g":
+		if p.editing() {
+			return PromptEdit
+		}
 	case len(p.Types) > 0 && (key == "Tab" || key == "S-Tab" || key == "Up" || key == "Down"):
 		p.Focus = 1 - p.Focus
 	case len(p.Types) > 0 && p.Focus == 1 && (key == "Left" || key == "Right"):
@@ -206,21 +217,31 @@ func (p *Prompt) Key(key, text string) PromptResult {
 		}
 		p.Type = (p.Type + d) % len(p.Types)
 		p.Note = ""
-	case key == "BSpace":
-		p.Note = ""
-		if r := []rune(p.Input); len(r) > 0 {
-			p.Input = string(r[:len(r)-1])
+	case p.editing():
+		if in, back, ok := editLine(p.Input, p.Back, key, text); ok {
+			if in != p.Input {
+				p.Note = ""
+			}
+			p.Input, p.Back = in, back
 		}
-	case text != "":
-		p.Input, p.Note = p.Input+text, ""
-	case key == "Space":
-		p.Input, p.Note = p.Input+" ", ""
 	}
 	return PromptKeep
 }
 
-// Paste adds pasted text to the input, on one line.
-func (p *Prompt) Paste(text string) { p.Input += oneLine(text) }
+// editing reports whether keys edit the text field: a form whose focus is on its text.
+func (p *Prompt) editing() bool { return !p.YesNo() && (len(p.Types) == 0 || p.Focus == 0) }
+
+// Paste inserts pasted text at the cursor, on one line.
+func (p *Prompt) Paste(text string) {
+	p.Input, p.Back, _ = editLine(p.Input, p.Back, "", oneLine(text))
+}
+
+// SetInput replaces the input with what $EDITOR left: its lines joined by spaces, the cursor
+// at the end.
+func (p *Prompt) SetInput(text string) {
+	text = strings.TrimRight(strings.ReplaceAll(text, "\r", ""), " \t\n")
+	p.Input, p.Back, p.Note = strings.ReplaceAll(text, "\n", " "), 0, ""
+}
 
 // oneLine drops the line breaks of pasted text, so a copied path with a trailing newline fits.
 func oneLine(s string) string { return strings.NewReplacer("\r", "", "\n", "").Replace(s) }
@@ -234,13 +255,17 @@ func (p *Prompt) Line() string {
 		}
 		return "y " + p.verb() + " · n cancel · ⏎ " + enter + " · esc cancel"
 	}
+	edit := ""
+	if p.editing() {
+		edit = " · ^g editor"
+	}
 	if p.Kind == PromptExplain {
-		return "⏎ " + p.verb() + " · tab next field · ←→ conversation · esc cancel"
+		return "⏎ " + p.verb() + " · tab next field · ←→ conversation" + edit + " · esc cancel"
 	}
 	if len(p.Types) > 0 {
-		return "⏎ " + p.verb() + " · tab next field · ←→ change type · esc cancel"
+		return "⏎ " + p.verb() + " · tab next field · ←→ change type" + edit + " · esc cancel"
 	}
-	return "⏎ " + p.verb() + " · esc cancel"
+	return "⏎ " + p.verb() + edit + " · esc cancel"
 }
 
 // titles name the dialog of a form; a question's title is its Label.
@@ -256,7 +281,7 @@ func (p *Prompt) Dialog() Dialog {
 	if p.Kind == PromptExplain {
 		return Dialog{
 			Title: p.Title, Tone: ToneForm, Body: p.Body, Focus: p.Focus,
-			Fields:  []Field{{Label: p.Label, Value: p.Input}, {Label: "Conversation", Choices: p.Types, Choice: p.Type}},
+			Fields:  []Field{{Label: p.Label, Value: p.Input, Back: p.Back}, {Label: "Conversation", Choices: p.Types, Choice: p.Type}},
 			Hint:    "tab next  ←→ conversation",
 			Buttons: []Button{{Key: "esc", Label: "Cancel"}, {Key: "⏎", Label: "Explain", Default: true}},
 		}
@@ -268,7 +293,7 @@ func (p *Prompt) Dialog() Dialog {
 		}
 		return Dialog{
 			Title: titles[p.Kind], Tone: ToneForm, Focus: p.Focus, After: after, Note: p.Note,
-			Fields:  []Field{{Label: p.Label, Value: p.Input}, {Label: "Type", Choices: p.Types, Choice: p.Type}},
+			Fields:  []Field{{Label: p.Label, Value: p.Input, Back: p.Back}, {Label: "Type", Choices: p.Types, Choice: p.Type}},
 			Hint:    "tab next  ←→ type",
 			Buttons: []Button{{Key: "esc", Label: "Cancel"}, {Key: "⏎", Label: verb, Default: true}},
 		}
@@ -280,7 +305,7 @@ func (p *Prompt) Dialog() Dialog {
 		}
 		return Dialog{
 			Title: title, Tone: ToneForm, Body: p.Body,
-			Fields:  []Field{{Label: p.Label, Value: p.Input}},
+			Fields:  []Field{{Label: p.Label, Value: p.Input, Back: p.Back}},
 			Buttons: []Button{{Key: "esc", Label: "Cancel"}, {Key: "⏎", Label: verb, Default: true}},
 		}
 	}

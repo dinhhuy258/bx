@@ -22,6 +22,11 @@ func TestKeyName(t *testing.T) {
 		{tea.KeyPressMsg{Code: 'h', Mod: tea.ModCtrl}, "C-h"},
 		{tea.KeyPressMsg{Code: tea.KeyPgUp}, "PgUp"},
 		{tea.KeyPressMsg{Code: tea.KeyPgDown}, "PgDn"},
+		{tea.KeyPressMsg{Code: tea.KeyDelete}, "Delete"},
+		{tea.KeyPressMsg{Code: tea.KeyHome}, "Home"},
+		{tea.KeyPressMsg{Code: tea.KeyEnd}, "End"},
+		{tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt}, "M-Left"},
+		{tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModAlt}, "M-BSpace"},
 		{tea.KeyPressMsg{Code: 'u', Mod: tea.ModAlt}, "M-u"},
 		{tea.KeyPressMsg{Code: 'd', Mod: tea.ModAlt | tea.ModCtrl}, "M-C-d"},
 	}

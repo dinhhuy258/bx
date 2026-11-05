@@ -4,8 +4,10 @@
 package serve
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 )
 
 // DefaultPort is the port `listen = "auto"` uses.
@@ -41,4 +43,20 @@ func resolveListen(cfg string, addrs func() ([]net.Addr, error)) (string, error)
 		return "", fmt.Errorf("serve.listen %q: %q is not a Tailscale address (100.64.0.0/10) or localhost; bx serve has no login and refuses other interfaces", cfg, host)
 	}
 	return cfg, nil
+}
+
+// RunHost is the host in the links of a story's runs: override (serve.run_host) when set,
+// else this machine's MagicDNS short name from `tailscale status --json` ("dev" from
+// "dev.tail1234.ts.net."), else ip, the Tailscale address.
+func RunHost(override string, status []byte, ip string) string {
+	if override != "" {
+		return override
+	}
+	var st struct{ Self struct{ DNSName string } }
+	if json.Unmarshal(status, &st) == nil {
+		if name, _, _ := strings.Cut(st.Self.DNSName, "."); name != "" {
+			return name
+		}
+	}
+	return ip
 }

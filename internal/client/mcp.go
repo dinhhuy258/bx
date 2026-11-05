@@ -115,18 +115,8 @@ func (m *Model) gotMCPDoc(msg mcpDocMsg) tea.Cmd {
 // openMCPEditor writes text to a temp file only this user can read (os.CreateTemp makes it
 // 0600) and hands the terminal to the editor.
 func (m *Model) openMCPEditor(scope, text, orig string, line int) tea.Cmd {
-	f, err := os.CreateTemp("", "bx-mcp-*.json")
+	path, err := writeTemp("bx-mcp-*.json", text)
 	if err != nil {
-		m.setFlash("mcp: " + err.Error())
-		return nil
-	}
-	path := f.Name()
-	_, err = f.WriteString(text)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	if err != nil {
-		_ = os.Remove(path)
 		m.setFlash("mcp: " + err.Error())
 		return nil
 	}

@@ -119,15 +119,17 @@ func (t *Tmux) List() ([]Session, bool, error) {
 	return ss, true, nil
 }
 
-// ShellFormat is the list-sessions format of Shells.
-const ShellFormat = "#{session_id}\t#{session_name}\t#{@bx_project}\t#{@bx_story}\t#{@bx_shell}\t#{@bx_title}\t#{pane_current_command}"
+// ShellFormat is the list-sessions format Shells reads. @bx_run is last so a line written by
+// an older bx (7 fields) still reads.
+const ShellFormat = "#{session_id}\t#{session_name}\t#{@bx_project}\t#{@bx_story}\t#{@bx_shell}\t#{@bx_title}\t#{pane_current_command}\t#{@bx_run}"
 
 // Shell is one shell session: a session with the @bx_shell option. Project, Story, K and Title
 // are its @bx_project, @bx_story, @bx_shell and @bx_title options; Command is what its pane runs.
+// Run is the run of a run shell, from @bx_run; "" for a plain shell.
 type Shell struct {
 	ID, Name, Project, Story string
 	K                        int
-	Title, Command           string
+	Title, Command, Run      string
 }
 
 // NewShell creates a detached session named name running cmd ("" = the default shell) in dir
@@ -171,7 +173,7 @@ func (t *Tmux) Shells() ([]Shell, error) {
 	}
 	var sh []Shell
 	for _, line := range strings.Split(out, "\n") {
-		f := strings.SplitN(line, "\t", 7)
+		f := strings.SplitN(line, "\t", 8)
 		if len(f) < 7 {
 			continue
 		}
@@ -179,9 +181,46 @@ func (t *Tmux) Shells() ([]Shell, error) {
 		if err != nil || k < 1 {
 			continue
 		}
-		sh = append(sh, Shell{ID: f[0], Name: f[1], Project: f[2], Story: f[3], K: k, Title: f[5], Command: f[6]})
+		s := Shell{ID: f[0], Name: f[1], Project: f[2], Story: f[3], K: k, Title: f[5], Command: f[6]}
+		if len(f) == 8 {
+			s.Run = f[7]
+		}
+		sh = append(sh, s)
 	}
 	return sh, nil
+}
+
+// SendKeys sends tmux key names to a session's pane, "C-c" to stop what it runs.
+func (t *Tmux) SendKeys(sid string, keys ...string) error {
+	_, err := t.x.Run(append([]string{"send-keys", "-t", sid}, keys...)...)
+	return err
+}
+
+// Pane is a pane's process and its session.
+type Pane struct {
+	PID     int
+	Session string
+}
+
+// Panes lists every pane of the server; none when no server runs.
+func (t *Tmux) Panes() ([]Pane, error) {
+	out, err := t.run("list-panes", "-a", "-F", "#{pane_pid}\t#{session_id}")
+	if err != nil {
+		if IsNoServer(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var ps []Pane
+	for _, line := range strings.Split(out, "\n") {
+		pid, sid, ok := strings.Cut(line, "\t")
+		n, err := strconv.Atoi(pid)
+		if !ok || err != nil {
+			continue
+		}
+		ps = append(ps, Pane{PID: n, Session: sid})
+	}
+	return ps, nil
 }
 
 // IsNoServer reports whether err from a tmux command means no server is running on the socket.

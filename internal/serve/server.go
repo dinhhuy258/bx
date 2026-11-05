@@ -16,6 +16,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/ports"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/tmux"
@@ -52,6 +53,14 @@ type Server struct {
 	prBadges map[string]map[string]ui.PRBadge // by project, story: the last look, for Live.PR
 	prNext   map[string]time.Time             // "project/story": when the poller looks again
 	prKick   chan string                      // "project/story" to look at now (sync, refresh)
+
+	// runs (see runs.go)
+	Proc     ports.Proc // /proc; nil reads the machine's
+	Forwards *Forwards  // nil forwards nothing (bx serve on loopback)
+	RunHost  string     // the host in run links
+	runMu    sync.Mutex // one run or stop at a time
+	portsMu  sync.Mutex
+	portsBy  map[string]map[string][]ui.Port // by project, story: the last scan
 
 	prepared func() // tests: called by newStory between PrepareStory and taking write; nil in production
 }
@@ -173,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
 	s.reviewRoutes(mux)
 	s.prRoutes(mux)
+	s.runRoutes(mux)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
 	return sameOrigin(mux)
 }
@@ -584,7 +594,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		s.Log("tmux shells: %v", err)
 	} else {
 		for _, sh := range all {
-			shells = append(shells, api.Shell{Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command})
+			shells = append(shells, api.Shell{Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command, Run: sh.Run})
 		}
 	}
 	dirs := map[string]string{"": s.App.Dir(p, "")}
@@ -895,6 +905,12 @@ func (s *Server) collect(p *state.Project) ui.Live {
 	l.Unread = s.unreadSnapshot()
 	l.Review = s.reviewCounts(p)
 	l.PR = s.prBadgesOf(p.Name)
+	s.portsMu.Lock()
+	l.Ports = s.portsBy[p.Name]
+	s.portsMu.Unlock()
+	if story, err := s.App.RunningStory(p); err == nil {
+		l.Running = story
+	}
 	return l
 }
 

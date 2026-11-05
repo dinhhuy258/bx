@@ -282,3 +282,26 @@ func TestPasteStopsWhenLoadFails(t *testing.T) {
 		t.Fatalf("err = %v, calls = %v", err, f.Calls)
 	}
 }
+
+func TestShellsRunSendKeysPanes(t *testing.T) {
+	f := &Fake{Replies: map[string]string{
+		"list-sessions -F " + ShellFormat: "$7\tbxsh-p-s1-1\tp\ts1\t1\t\tnode\tweb\n" +
+			"$8\tbxsh-p-s1-2\tp\ts1\t2\t\tzsh\n", // a line from before @bx_run: 7 fields
+		"list-panes -a -F #{pane_pid}\t#{session_id}": "123\t$7\n456\t$8\nbad\n",
+	}}
+	tm := New(f)
+	sh, err := tm.Shells()
+	if err != nil || len(sh) != 2 || sh[0].Run != "web" || sh[1].Run != "" || sh[1].Command != "zsh" {
+		t.Fatalf("%+v %v", sh, err)
+	}
+	if err := tm.SendKeys("$7", "C-c"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(f.Calls[len(f.Calls)-1], " "); got != "send-keys -t $7 C-c" {
+		t.Errorf("send-keys: %q", got)
+	}
+	panes, err := tm.Panes()
+	if err != nil || len(panes) != 2 || panes[0] != (Pane{PID: 123, Session: "$7"}) {
+		t.Errorf("panes: %+v %v", panes, err)
+	}
+}
