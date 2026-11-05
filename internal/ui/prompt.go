@@ -42,6 +42,7 @@ const (
 	PromptComment               // a review comment on a diff line, empty = delete it
 	PromptClearSent             // y/n: drop the sent comments of a review (Target is the story)
 	PromptSyncBusy              // y/n: sync a story Claude works in (Target is the story, "" = chats)
+	PromptRunReplace            // y/n: stop the story that runs and run this one (Target is the story)
 	PromptExplain               // a question about diff lines; Types are the conversations
 )
 
@@ -157,7 +158,7 @@ func (p *Prompt) YesNo() bool {
 		PromptStop, PromptDelete, PromptDeleteForce, PromptRemoveOverride,
 		PromptNewShell, PromptCloseShell, PromptRemoveMCP, PromptNewSession, PromptCloseProject, PromptResume,
 		PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride, PromptDiscardAccount, PromptLogin, PromptClearSent,
-		PromptSyncBusy:
+		PromptSyncBusy, PromptRunReplace:
 		return true
 	}
 	return false

@@ -203,6 +203,8 @@ const (
 	pickPRSend                   // the session that gets Fix CI or the picked review threads of a PR
 	pickNewWorkspace             // repo projects to link into a new workspace
 	pickEditWorkspace            // links of the current workspace
+	pickApp                      // the app menu of a story
+	pickAppRun                   // the run of Run one… or Setup again…
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -249,6 +251,14 @@ type Model struct {
 	wsName       string                   // the name of the workspace being made
 	wsLinks      []string                 // the link names of the workspace being edited
 	wsItems      map[string]string        // its checklist rows ("web (missing)") by link name
+
+	// the app menu (apps.go)
+	appStory    string                    // the story the menu acts on
+	appItems    map[string]func() tea.Cmd // the menu's labels and what each does
+	appRunFor   string                    // "run" or "setup": what pickAppRun's choice does
+	appRuns     []string                  // the runs of a pending PromptRunReplace
+	appUp       string                    // a story just started; the first port it shows flashes "is up"
+	appRunNames []string                  // the run names read when the menu opened
 
 	draft      *storyDraft        // the new story being picked; see story.go
 	busy       string             // the key bar while a story is fetched or created
@@ -485,6 +495,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.gotPRs(msg)
 	case storyMsg:
 		return m, m.gotStory(msg)
+	case appMsg:
+		return m, m.gotApp(msg)
+	case appConfigMsg:
+		return m, m.gotAppConfig(msg)
 	case storySyncMsg:
 		return m, m.gotStorySync(msg)
 	case overrideBranchesMsg:
@@ -681,6 +695,9 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 	}
 	um.SetShells(msg.snap.Shells, msg.snap.Dirs)
 	um.SetLive(msg.snap.Live)
+	if um == m.m {
+		defer m.checkAppUp()
+	}
 	var states map[int]string
 	if msg.snap.SessionStates != nil {
 		states = make(map[int]string, len(msg.snap.SessionStates))
@@ -918,7 +935,7 @@ func (m *Model) claudeAction(key string) (tea.Model, tea.Cmd) {
 	}
 	if s := m.m.P.Sessions[m.target.Num]; s != nil {
 		switch action {
-		case "sync", "add_repo", "review", "pr":
+		case "sync", "add_repo", "review", "pr", "app", "run_story", "stop_story", "open_app":
 			m.m.SelectStory(s.Story)
 		}
 	}
@@ -1021,6 +1038,17 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 		if sess != nil {
 			return m, m.loadArtifacts(num)
 		}
+	case "app":
+		return m, m.openAppMenu(row.Story)
+	case "run_story":
+		return m, m.appAction(row.Story, "run", nil, false, false)
+	case "stop_story":
+		return m, m.appAction(row.Story, "stop", nil, false, false)
+	case "open_app":
+		if ps := m.m.Live.Ports[row.Story]; len(ps) > 0 && ps[0].URL != "" {
+			return m, m.browse(ps[0].URL)
+		}
+		m.setFlash(groupName(row.Story) + " has no app links")
 	case "sync":
 		if row.Kind == ui.RowStory {
 			return m, m.syncStory(row.Story, false)
@@ -1451,6 +1479,15 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 		case pickCleanup:
 			m.pickCleanup(checked)
 			return nil
+		case pickApp:
+			if run := m.appItems[choice]; run != nil {
+				return run()
+			}
+		case pickAppRun:
+			if m.appRunFor == "setup" {
+				return m.appAction(m.appStory, "setup", []string{choice}, false, false)
+			}
+			return m.appAction(m.appStory, "run", []string{choice}, false, false)
 		case pickArtifact:
 			u := m.artifactURLs[choice]
 			if u == "" {
@@ -1656,6 +1693,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		}
 	case ui.PromptSyncBusy:
 		return m.syncStory(target, true)
+	case ui.PromptRunReplace:
+		return m.appAction(target, "run", m.appRuns, true, false)
 	case ui.PromptStop:
 		num, _ := strconv.Atoi(target)
 		return m.stop(num)

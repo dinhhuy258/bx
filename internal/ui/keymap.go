@@ -44,6 +44,12 @@ var keymapGroups = []keymapGroup{
 		{"review", "review the diff, comment, send to Claude"},
 		{"pr", "pull request · checks, comments, fix with Claude"},
 	}},
+	{"APP", "the story's apps (Settings › Apps)", []keymapItem{
+		{"app", "app menu · run, stop, open links, edit runs"},
+		{"run_story", "run the story's apps"},
+		{"stop_story", "stop the story's apps"},
+		{"open_app", "open the first app link"},
+	}},
 	{"PROJECT", "the one on screen", []keymapItem{
 		{"new_story", "new story · a branch and worktree"},
 		{"edit_workspace", "edit workspace · link or unlink repositories"},

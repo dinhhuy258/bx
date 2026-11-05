@@ -107,7 +107,7 @@ func TestKeyBar(t *testing.T) {
 		t.Error("the bar names the session, then its keys, then the global ones:", kb)
 	}
 	m.SelectStory("guest-vlan-fix")
-	if kb = KeyBar(m, cfg, BarContext{}); !strings.HasPrefix(kb, "story guest-vlan-fix › ⏎ collapse  M-u sync  M-d close  M-g review  │") || strings.Contains(kb, "M-d delete") {
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.HasPrefix(kb, "story guest-vlan-fix › ⏎ collapse  M-u sync  M-b app  M-d close  M-g review  │") || strings.Contains(kb, "M-d delete") {
 		t.Error(kb)
 	}
 	m.SelectStory("zigbee-map-docs")
