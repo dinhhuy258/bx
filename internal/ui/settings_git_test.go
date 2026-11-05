@@ -23,7 +23,7 @@ func TestSettingsGitSectionIsTheClients(t *testing.T) {
 	for _, sec := range s.sections {
 		ids = append(ids, sec.ID+" "+sec.Title)
 	}
-	if got := strings.Join(ids, ", "); got != "claude Claude, git Git, apps Apps, mcp MCP, notifications Notifications" {
+	if got := strings.Join(ids, ", "); got != "claude Claude, git Git, runs Runs, mcp MCP, notifications Notifications" {
 		t.Fatalf("sections = %s", got)
 	}
 	for _, sec := range settings.Sections {

@@ -1,4 +1,4 @@
-// Package ports finds the TCP ports the apps of bx stories listen on: the listening sockets
+// Package ports finds the TCP ports the runs of bx stories listen on: the listening sockets
 // in /proc, the process that holds each one, and the story and bx shell or session that
 // process belongs to. It reads Linux's /proc; elsewhere Read finds nothing.
 package ports

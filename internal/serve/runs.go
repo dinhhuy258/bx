@@ -103,7 +103,7 @@ func (s *Server) scanPorts() {
 			if r, ok := cfg.Find(f.Run); ok {
 				open = r.Open
 			}
-			pt := ui.Port{Port: f.Port, URL: fmt.Sprintf("http://%s:%d%s", s.AppHost, f.Port, open),
+			pt := ui.Port{Port: f.Port, URL: fmt.Sprintf("http://%s:%d%s", s.RunHost, f.Port, open),
 				Shell: f.Shell, Session: f.Session, Run: f.Run}
 			if f.Loopback && s.Forwards != nil {
 				pt.Forwarded = true
@@ -132,17 +132,17 @@ func (s *Server) scanPorts() {
 	s.portsMu.Unlock()
 }
 
-func (s *Server) appRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/projects/{name}/app/{action}", s.appAction)
+func (s *Server) runRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/projects/{name}/runs/{action}", s.runAction)
 	mux.HandleFunc("GET /api/runconfigs", s.runConfigs)
 	mux.HandleFunc("GET /api/projects/{name}/runconfig", s.getRunConfig)
 	mux.HandleFunc("PUT /api/projects/{name}/runconfig", s.putRunConfig)
 	mux.HandleFunc("DELETE /api/projects/{name}/runconfig", s.deleteRunConfig)
 }
 
-// appAction runs, stops or sets up a story's apps. It does not take the write lock: a stop
-// waits for the apps to end (up to half a minute) and must not hold every other change.
-func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
+// runAction runs, stops or sets up a story's runs. It does not take the write lock: a stop
+// waits for the runs to end (up to half a minute) and must not hold every other change.
+func (s *Server) runAction(w http.ResponseWriter, r *http.Request) {
 	act := r.PathValue("action")
 	if act != "run" && act != "stop" && act != "setup" {
 		http.NotFound(w, r)
@@ -158,12 +158,12 @@ func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
 		httpError(w, statusOf(err), err)
 		return
 	}
-	s.appMu.Lock()
-	defer s.appMu.Unlock()
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
 	ctx := r.Context()
 	switch act {
 	case "run":
-		err = s.App.RunStory(ctx, p, a.Story, app.RunOpts{Names: a.Runs, Replace: a.Replace, Setup: a.Setup, Host: s.AppHost})
+		err = s.App.RunStory(ctx, p, a.Story, app.RunOpts{Names: a.Runs, Replace: a.Replace, Setup: a.Setup, Host: s.RunHost})
 	case "stop":
 		err = s.App.StopStory(ctx, p, a.Story, a.Runs)
 	case "setup":
@@ -171,7 +171,7 @@ func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
 			httpError(w, 400, errors.New("setup takes one run"))
 			return
 		}
-		err = s.App.SetupAgain(ctx, p, a.Story, a.Runs[0], s.AppHost)
+		err = s.App.SetupAgain(ctx, p, a.Story, a.Runs[0], s.RunHost)
 	}
 	var conflict *app.RunConflictError
 	switch {
@@ -182,7 +182,7 @@ func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		httpError(w, statusOf(err), err)
 	default:
-		s.Log("app %s: %s/%s %v", act, p.Name, a.Story, a.Runs)
+		s.Log("run %s: %s/%s %v", act, p.Name, a.Story, a.Runs)
 		writeJSON(w, api.Result{Story: a.Story})
 	}
 }
@@ -211,7 +211,7 @@ func (s *Server) getRunConfig(w http.ResponseWriter, r *http.Request) {
 		httpError(w, statusOf(err), err)
 		return
 	}
-	data, err := os.ReadFile(s.Cfg.AppFile(p.Name))
+	data, err := os.ReadFile(s.Cfg.RunFile(p.Name))
 	if err != nil && !os.IsNotExist(err) {
 		httpError(w, 500, err)
 		return

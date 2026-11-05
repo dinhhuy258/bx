@@ -12,10 +12,10 @@ func runExecEnv(t *testing.T, cfg string) (root, story string, ran *[]string, ex
 	t.Helper()
 	root = t.TempDir()
 	t.Setenv("BX_ROOT", root)
-	t.Setenv("BX_APP_HOST", "dev")
+	t.Setenv("BX_RUN_HOST", "dev")
 	t.Setenv("SHELL", "/bin/zsh")
-	os.MkdirAll(filepath.Join(root, "apps"), 0o755)
-	os.WriteFile(filepath.Join(root, "apps", "web.toml"), []byte(cfg), 0o644)
+	os.MkdirAll(filepath.Join(root, "runs"), 0o755)
+	os.WriteFile(filepath.Join(root, "runs", "web.toml"), []byte(cfg), 0o644)
 	story = filepath.Join(root, "worktrees", "web", "s1")
 	os.MkdirAll(filepath.Join(story, "fe"), 0o755)
 	var r, e []string
@@ -44,7 +44,7 @@ func TestRunExecSetupOnce(t *testing.T) {
 	if !strings.Contains(out.String(), "\x1b[2m$ npm ci\x1b[0m") {
 		t.Errorf("no dimmed command: %q", out.String())
 	}
-	if _, err := os.Stat(filepath.Join(root, "apps-setup", "web", "s1", "web")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "runs-setup", "web", "s1", "web")); err != nil {
 		t.Errorf("no mark: %v", err)
 	}
 	*ran = nil

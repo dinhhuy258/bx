@@ -31,8 +31,8 @@ func newRunApp(t *testing.T) (*App, *tmux.Fake, *state.Project) {
 			t.Fatal(err)
 		}
 	}
-	os.MkdirAll(a.Cfg.AppsDir(), 0o755)
-	os.WriteFile(a.Cfg.AppFile(p.Name), []byte(runCfg), 0o644)
+	os.MkdirAll(a.Cfg.RunsDir(), 0o755)
+	os.WriteFile(a.Cfg.RunFile(p.Name), []byte(runCfg), 0o644)
 	a.Self = "/usr/local/bin/bx"
 	oldWait, oldPoll, oldCmd := stopWait, stopPoll, stopCmdWait
 	stopWait, stopPoll, stopCmdWait = 20*time.Millisecond, time.Millisecond, 20*time.Millisecond
@@ -43,7 +43,7 @@ func newRunApp(t *testing.T) (*App, *tmux.Fake, *state.Project) {
 func TestRunStoryOpensARunShell(t *testing.T) {
 	a, f, p := newRunApp(t)
 	wt := a.Cfg.WorktreeDir(p.Name, "s1")
-	f.Replies["new-session -d -s bxsh-home-network-s1-1 -c "+wt+" -e PAGER=cat -e GIT_PAGER=cat -e BX_APP_HOST=dev -P -F #{session_id}"] = "$9\n"
+	f.Replies["new-session -d -s bxsh-home-network-s1-1 -c "+wt+" -e PAGER=cat -e GIT_PAGER=cat -e BX_RUN_HOST=dev -P -F #{session_id}"] = "$9\n"
 	f.Calls, f.Inputs = nil, nil
 	if err := a.RunStory(context.Background(), p, "s1", RunOpts{Names: []string{"web"}, Host: "dev"}); err != nil {
 		t.Fatal(err)

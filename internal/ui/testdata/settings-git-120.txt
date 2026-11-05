@@ -2,7 +2,7 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Claude            │ Git
  › Git               │ Base branches and GitHub accounts. For new and resumed sessions, and bx's own fetch and clone.
-   Apps              │
+   Runs              │
    MCP               │  Base branches ─────────────────────────────────────────────────────────────────────────────────
    Notifications     │  New stories start from the repo's default branch, except:
                      │

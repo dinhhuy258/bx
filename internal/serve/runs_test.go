@@ -27,8 +27,8 @@ func TestScanPorts(t *testing.T) {
 	s, f, _ := newServer(t)
 	p, _ := s.App.LoadProject("home-network")
 	wt := s.Cfg.WorktreeDir("home-network", "s1")
-	os.MkdirAll(s.Cfg.AppsDir(), 0o755)
-	os.WriteFile(s.Cfg.AppFile("home-network"), []byte("[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\nopen = \"/login\"\n"), 0o644)
+	os.MkdirAll(s.Cfg.RunsDir(), 0o755)
+	os.WriteFile(s.Cfg.RunFile("home-network"), []byte("[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\nopen = \"/login\"\n"), 0o644)
 	f.Replies[listShells] = "$7\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tnode\tweb\n"
 	f.Replies[listPanes] = "10\t$7\n20\t$5\n"
 	s.Proc = ports.Fake{
@@ -44,7 +44,7 @@ func TestScanPorts(t *testing.T) {
 			"/proc/43/cwd": wt, "/proc/43/fd/3": "socket:[222]",
 		},
 	}
-	s.AppHost = "dev"
+	s.RunHost = "dev"
 	s.Forwards = NewForwards("127.0.0.1")
 	s.Forwards.listen = func(string, string) (net.Listener, error) { return net.Listen("tcp", "127.0.0.1:0") }
 	t.Cleanup(s.Forwards.Close)
@@ -66,15 +66,15 @@ func TestScanPorts(t *testing.T) {
 	}
 }
 
-func TestAppRoutes(t *testing.T) {
+func TestRunRoutes(t *testing.T) {
 	s, f, ts := newServer(t)
-	os.MkdirAll(s.Cfg.AppsDir(), 0o755)
-	os.WriteFile(s.Cfg.AppFile("home-network"), []byte("[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\n"), 0o644)
-	s.App.Self, s.AppHost = "/bin/bx", "dev"
+	os.MkdirAll(s.Cfg.RunsDir(), 0o755)
+	os.WriteFile(s.Cfg.RunFile("home-network"), []byte("[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\n"), 0o644)
+	s.App.Self, s.RunHost = "/bin/bx", "dev"
 	wt := s.Cfg.WorktreeDir("home-network", "s1")
-	f.Replies["new-session -d -s bxsh-home-network-s1-1 -c "+wt+" -e PAGER=cat -e GIT_PAGER=cat -e BX_APP_HOST=dev -P -F #{session_id}"] = "$9\n"
+	f.Replies["new-session -d -s bxsh-home-network-s1-1 -c "+wt+" -e PAGER=cat -e GIT_PAGER=cat -e BX_RUN_HOST=dev -P -F #{session_id}"] = "$9\n"
 
-	res, code := post(t, ts, "/api/projects/home-network/app/run", api.Action{Story: "s1"})
+	res, code := post(t, ts, "/api/projects/home-network/runs/run", api.Action{Story: "s1"})
 	if code != 200 || res.Error != "" {
 		t.Fatalf("run: %d %+v", code, res)
 	}
@@ -85,11 +85,11 @@ func TestAppRoutes(t *testing.T) {
 	// another story runs: 409 with what runs
 	f.Replies[listShells] = "$9\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tnode\tweb\n"
 	s.App.NewStory(context.Background(), mustLoad(t, s), app.StoryOpts{Name: "s2"})
-	res, code = post(t, ts, "/api/projects/home-network/app/run", api.Action{Story: "s2"})
+	res, code = post(t, ts, "/api/projects/home-network/runs/run", api.Action{Story: "s2"})
 	if code != 409 || res.RunStory != "s1" || !slices.Equal(res.RunNames, []string{"web"}) {
 		t.Errorf("conflict: %d %+v", code, res)
 	}
-	if _, code = post(t, ts, "/api/projects/home-network/app/bogus", api.Action{Story: "s1"}); code != 404 {
+	if _, code = post(t, ts, "/api/projects/home-network/runs/bogus", api.Action{Story: "s1"}); code != 404 {
 		t.Errorf("bogus action: %d", code)
 	}
 }

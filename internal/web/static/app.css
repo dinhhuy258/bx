@@ -304,5 +304,5 @@ input.check:checked::after { content: '✓'; color: #fff; font-size: 14px; line-
 .btns { display: flex; gap: 10px; }
 .btns button { flex: 1; padding: 11px 12px; font-weight: 600; }
 .btns button[hidden] { display: none; }
-.app-btn { margin-left: 6px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
-.app-link .app-go { color: var(--dim, inherit); padding: 0 6px; }
+.run-btn { margin-left: 6px; padding: 4px 12px; font-size: 13px; font-weight: 600; }
+.run-link .run-go { color: var(--dim, inherit); padding: 0 6px; }

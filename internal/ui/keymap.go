@@ -44,11 +44,11 @@ var keymapGroups = []keymapGroup{
 		{"review", "review the diff, comment, send to Claude"},
 		{"pr", "pull request · checks, comments, fix with Claude"},
 	}},
-	{"APP", "the story's apps (Settings › Apps)", []keymapItem{
-		{"app", "app menu · run, stop, open links, edit runs"},
-		{"run_story", "run the story's apps"},
-		{"stop_story", "stop the story's apps"},
-		{"open_app", "open the first app link"},
+	{"RUN", "the story's runs (Settings › Runs)", []keymapItem{
+		{"run", "run menu · run, stop, open links, edit runs"},
+		{"run_story", "run the story's runs"},
+		{"stop_story", "stop the story's runs"},
+		{"open_run", "open the first run link"},
 	}},
 	{"PROJECT", "the one on screen", []keymapItem{
 		{"new_story", "new story · a branch and worktree"},

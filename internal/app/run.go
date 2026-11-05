@@ -43,7 +43,7 @@ type RunOpts struct {
 
 // RunConfig reads the project's run config; none is an empty one.
 func (a *App) RunConfig(p *state.Project) (runcfg.File, error) {
-	data, err := os.ReadFile(a.Cfg.AppFile(p.Name))
+	data, err := os.ReadFile(a.Cfg.RunFile(p.Name))
 	if errors.Is(err, os.ErrNotExist) {
 		return runcfg.File{}, nil
 	}
@@ -55,19 +55,19 @@ func (a *App) RunConfig(p *state.Project) (runcfg.File, error) {
 
 // SaveRunConfig writes the run config, replacing the file in one rename.
 func (a *App) SaveRunConfig(p *state.Project, data []byte) error {
-	if err := os.MkdirAll(a.Cfg.AppsDir(), 0o755); err != nil {
+	if err := os.MkdirAll(a.Cfg.RunsDir(), 0o755); err != nil {
 		return err
 	}
-	tmp := a.Cfg.AppFile(p.Name) + ".tmp"
+	tmp := a.Cfg.RunFile(p.Name) + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, a.Cfg.AppFile(p.Name))
+	return os.Rename(tmp, a.Cfg.RunFile(p.Name))
 }
 
 // DeleteRunConfig removes the run config; none is not an error.
 func (a *App) DeleteRunConfig(p *state.Project) error {
-	if err := os.Remove(a.Cfg.AppFile(p.Name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(a.Cfg.RunFile(p.Name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
@@ -103,7 +103,7 @@ func (a *App) RunStory(ctx context.Context, p *state.Project, story string, o Ru
 		return err
 	}
 	if len(f.Runs) == 0 {
-		return errors.New("no runs: add one in Settings › Apps")
+		return errors.New("no runs: add one in Settings › Runs")
 	}
 	names := o.Names
 	if len(names) == 0 {
@@ -138,7 +138,7 @@ func (a *App) RunStory(ctx context.Context, p *state.Project, story string, o Ru
 		return err
 	}
 	if o.Host != "" {
-		env = append(env, "BX_APP_HOST="+o.Host)
+		env = append(env, "BX_RUN_HOST="+o.Host)
 	}
 	for _, n := range names {
 		i := slices.IndexFunc(all, func(sh Shell) bool { return sh.Story == story && sh.Run == n })

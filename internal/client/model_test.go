@@ -29,10 +29,10 @@ import (
 
 // fakeBackend serves fixed projects and snapshots and records every action.
 type fakeBackend struct {
-	// apps
-	appActs      []string                 // "<project> <action> <story> [runs] [replace] [setup]"
-	appRes       api.Result               // the reply of every app action
-	appErr       error                    // its error (a *StatusError with Code 409 for a conflict)
+	// runs
+	runActs      []string                 // "<project> <action> <story> [runs] [replace] [setup]"
+	runRes       api.Result               // the reply of every run action
+	runErr       error                    // its error (a *StatusError with Code 409 for a conflict)
 	runCfgs      map[string]api.RunConfig // by project
 	runSaves     []api.RunConfig
 	runSaveErr   []runcfg.FieldError // a structured save is refused with these
@@ -2666,7 +2666,7 @@ func TestQuitKeyIsConfigurable(t *testing.T) {
 	}
 }
 
-func (f *fakeBackend) AppAction(_ context.Context, project, action string, a api.Action) (api.Result, error) {
+func (f *fakeBackend) RunAction(_ context.Context, project, action string, a api.Action) (api.Result, error) {
 	parts := []string{project, action, a.Story}
 	if len(a.Runs) > 0 {
 		parts = append(parts, "["+strings.Join(a.Runs, ",")+"]")
@@ -2677,8 +2677,8 @@ func (f *fakeBackend) AppAction(_ context.Context, project, action string, a api
 	if a.Setup {
 		parts = append(parts, "setup")
 	}
-	f.appActs = append(f.appActs, strings.Join(parts, " "))
-	return f.appRes, f.appErr
+	f.runActs = append(f.runActs, strings.Join(parts, " "))
+	return f.runRes, f.runErr
 }
 
 func (f *fakeBackend) RunConfigs(context.Context) ([]api.RunConfigs, error) {

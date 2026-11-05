@@ -2,7 +2,7 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
    Git               │ For new sessions. A resumed one keeps its model, effort and permission mode.
-   Apps              │
+   Runs              │
    MCP               │  › Model                 ◂ opus              ▸ •
    Notifications     │    Effort                ◂ default           ▸
                      │    Permission mode       ◂ acceptEdits       ▸

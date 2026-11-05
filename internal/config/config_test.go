@@ -200,14 +200,14 @@ func TestDefaultEditWorkspaceKey(t *testing.T) {
 	}
 }
 
-func TestAppPaths(t *testing.T) {
+func TestRunPaths(t *testing.T) {
 	c := &Config{Root: "/r"}
 	for got, want := range map[string]string{
-		c.AppsDir():                      "/r/apps",
-		c.AppFile("unem"):                "/r/apps/unem.toml",
-		c.SetupMark("unem", "s1", "web"): "/r/apps-setup/unem/s1/web",
-		c.SetupMarks("unem", "s1"):       "/r/apps-setup/unem/s1",
-		c.AppCache("unem"):               "/r/cache/unem",
+		c.RunsDir():                      "/r/runs",
+		c.RunFile("unem"):                "/r/runs/unem.toml",
+		c.SetupMark("unem", "s1", "web"): "/r/runs-setup/unem/s1/web",
+		c.SetupMarks("unem", "s1"):       "/r/runs-setup/unem/s1",
+		c.RunCache("unem"):               "/r/cache/unem",
 	} {
 		if got != want {
 			t.Errorf("got %q, want %q", got, want)
@@ -215,22 +215,22 @@ func TestAppPaths(t *testing.T) {
 	}
 }
 
-func TestAppHostAndKey(t *testing.T) {
+func TestRunHostAndKey(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[serve]\napp_host = \"box\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[serve]\nrun_host = \"box\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, err := Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Serve.AppHost != "box" {
-		t.Errorf("AppHost = %q", c.Serve.AppHost)
+	if c.Serve.RunHost != "box" {
+		t.Errorf("RunHost = %q", c.Serve.RunHost)
 	}
-	if c.Keys.First(c.Keys.List, "app") != "M-b" {
-		t.Errorf("app = %v", c.Keys.List["app"])
+	if c.Keys.First(c.Keys.List, "run") != "M-b" {
+		t.Errorf("run = %v", c.Keys.List["run"])
 	}
-	for _, a := range []string{"run_story", "stop_story", "open_app"} {
+	for _, a := range []string{"run_story", "stop_story", "open_run"} {
 		if _, ok := c.Keys.List[a]; ok {
 			t.Errorf("%s has a default bind", a)
 		}

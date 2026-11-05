@@ -136,7 +136,7 @@ func rowPart(m *Model, cfg *config.Config, ctx BarContext) (string, []string) {
 	if n := m.Live.Review[r.Story]; n > 0 {
 		review = fmt.Sprintf("review ·%d", n)
 	}
-	parts := []string{fold, lk("sync", "sync"), lk("app", "app"), lk("close_story", "close"), lk("review", review)}
+	parts := []string{fold, lk("sync", "sync"), lk("run", "run"), lk("close_story", "close"), lk("review", review)}
 	if m.Live.PR[r.Story].Count > 0 {
 		parts = append(parts, lk("pr", "pr"))
 	}

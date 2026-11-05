@@ -20,7 +20,7 @@ func mcpSettings() *Settings {
 	})
 	s.SetMCPTotal(34)
 	s.Key("Tab") // git
-	s.Key("Tab") // apps
+	s.Key("Tab") // runs
 	s.Key("Tab") // mcp
 	return s
 }

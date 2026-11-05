@@ -40,7 +40,7 @@ type Live struct {
 	Unread     map[string]bool         `json:"unread"`           // by session uuid: finished a turn nobody has opened since (serve/unread.go)
 	Review     map[string]int          `json:"review,omitempty"` // by story: unsent review comments
 	PR         map[string]PRBadge      `json:"pr,omitempty"`     // by story: its pull requests, from the PR poller
-	// Ports are the ports of each story's apps ("" = the chats), from bx serve's scan; Running
+	// Ports are the ports of each story's runs ("" = the chats), from bx serve's scan; Running
 	// is the story whose runs are open (one per project), "" when none.
 	Ports   map[string][]Port `json:"ports,omitempty"`
 	Running string            `json:"running,omitempty"`
@@ -667,9 +667,9 @@ func (m *Model) RunPorts(story string, k int) []Port {
 	return out
 }
 
-// AppSummary is a folded story's apps: "▶ :3000 :5173", "▶ :3000 +2" past two ports, "▶"
+// RunSummary is a folded story's runs: "▶ :3000 :5173", "▶ :3000 +2" past two ports, "▶"
 // while they start, "" when the story runs nothing.
-func (m *Model) AppSummary(story string) string {
+func (m *Model) RunSummary(story string) string {
 	if m.Live.Running != story || story == "" {
 		return ""
 	}

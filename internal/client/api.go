@@ -30,7 +30,7 @@ const (
 	createTimeout = 10 * time.Minute
 	syncTimeout   = 2 * time.Minute
 	uploadTimeout = 2 * time.Minute
-	appTimeout    = 90 * time.Second // a stop waits for C-c, the stop command and docker stop
+	runTimeout    = 90 * time.Second // a stop waits for C-c, the stop command and docker stop
 	sendTimeout   = 60 * time.Second // a send may resume Claude and wait up to 30 s for it
 )
 
@@ -361,11 +361,11 @@ func (c *API) do(ctx context.Context, timeout time.Duration, method, path string
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-// AppAction is POST /api/projects/{name}/app/{run|stop|setup}. A 409 fills Result.RunStory
+// RunAction is POST /api/projects/{name}/runs/{run|stop|setup}. A 409 fills Result.RunStory
 // and RunNames: another story runs.
-func (c *API) AppAction(ctx context.Context, project, action string, a api.Action) (api.Result, error) {
+func (c *API) RunAction(ctx context.Context, project, action string, a api.Action) (api.Result, error) {
 	var res api.Result
-	err := c.call(ctx, appTimeout, http.MethodPost, "/api/projects/"+url.PathEscape(project)+"/app/"+action, a, &res)
+	err := c.call(ctx, runTimeout, http.MethodPost, "/api/projects/"+url.PathEscape(project)+"/runs/"+action, a, &res)
 	return res, err
 }
 

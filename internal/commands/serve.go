@@ -83,7 +83,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 	if err != nil {
 		status = nil // no MagicDNS name: links use the address
 	}
-	s.AppHost = serve.AppHost(cfg.Serve.AppHost, status, host)
+	s.RunHost = serve.RunHost(cfg.Serve.RunHost, status, host)
 	if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() {
 		s.Forwards = serve.NewForwards(host) // on loopback there is nothing to forward to
 	}
@@ -103,7 +103,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 	defer stop()
 	go s.Watch(ctx, serve.WatchEvery)      // a session whose Claude exits becomes done
 	go s.WatchPRs(ctx)                     // the PRs of story branches: badges, notifications
-	go s.WatchPorts(ctx, serve.PortsEvery) // the ports of story apps, and their forwards
+	go s.WatchPorts(ctx, serve.PortsEvery) // the ports of story runs, and their forwards
 	go func() {
 		<-ctx.Done()
 		log("bx serve: shutting down (Claude sessions keep running in tmux)")
@@ -116,7 +116,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 	log("bx serve: listening on http://%s (Tailscale only, no login) · tmux -S %s", addr, cfg.TmuxSocket())
-	log("bx serve: app links on http://%s:<port>", s.AppHost)
+	log("bx serve: run links on http://%s:<port>", s.RunHost)
 	if filesAddr != "" {
 		log("bx serve: artifacts on http://%s (read-only, %s)", filesAddr, cfg.ArtifactsDir())
 	}

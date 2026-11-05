@@ -17,7 +17,7 @@ import (
 )
 
 func init() {
-	cli.Register(cli.Command{Name: "run-exec", Help: "internal: run one app of a story in its run shell", Run: runRunExec})
+	cli.Register(cli.Command{Name: "run-exec", Help: "internal: start one run of a story in its run shell", Run: runRunExec})
 }
 
 type stepT = runcfg.Step
@@ -74,7 +74,7 @@ func runExec(project, story, name string, stop, again bool, out io.Writer) error
 	if err != nil {
 		return err
 	}
-	data, err := os.ReadFile(cfg.AppFile(project))
+	data, err := os.ReadFile(cfg.RunFile(project))
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func runExec(project, story, name string, stop, again bool, out io.Writer) error
 	}
 	r, ok := f.Find(name)
 	if !ok {
-		return fmt.Errorf("no run %q in %s", name, cfg.AppFile(project))
+		return fmt.Errorf("no run %q in %s", name, cfg.RunFile(project))
 	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
@@ -92,8 +92,8 @@ func runExec(project, story, name string, stop, again bool, out io.Writer) error
 	}
 	o := runcfg.Opts{
 		Project: project, Story: story, Root: cfg.WorktreeDir(project, story),
-		Host: os.Getenv("BX_APP_HOST"), UID: os.Getuid(), GID: os.Getgid(),
-		Cache: cfg.AppCache(project), Shell: shell,
+		Host: os.Getenv("BX_RUN_HOST"), UID: os.Getuid(), GID: os.Getgid(),
+		Cache: cfg.RunCache(project), Shell: shell,
 	}
 	dir := filepath.Join(o.Root, r.Dir)
 	if stop {

@@ -286,7 +286,7 @@ func TestAPIRunConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	// no run config: run is refused with the server's text
-	if _, err := c.AppAction(ctx, "home-network", "run", api.Action{Story: "s1"}); err == nil || !strings.Contains(err.Error(), "no runs") {
+	if _, err := c.RunAction(ctx, "home-network", "run", api.Action{Story: "s1"}); err == nil || !strings.Contains(err.Error(), "no runs") {
 		t.Fatalf("run with no config: %v", err)
 	}
 }

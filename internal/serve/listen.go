@@ -45,10 +45,10 @@ func resolveListen(cfg string, addrs func() ([]net.Addr, error)) (string, error)
 	return cfg, nil
 }
 
-// AppHost is the host in the links of a story's apps: override (serve.app_host) when set,
+// RunHost is the host in the links of a story's runs: override (serve.run_host) when set,
 // else this machine's MagicDNS short name from `tailscale status --json` ("dev" from
 // "dev.tail1234.ts.net."), else ip, the Tailscale address.
-func AppHost(override string, status []byte, ip string) string {
+func RunHost(override string, status []byte, ip string) string {
 	if override != "" {
 		return override
 	}

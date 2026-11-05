@@ -218,8 +218,8 @@ func (m *Model) storyLine(r Row, width int, pal palette) string {
 	}
 	left := " " + pal.arrow.Render(arrow) + " " + pal.group.Render(name)
 	if !m.IsOpen(r.Story) {
-		if app := m.AppSummary(r.Story); app != "" {
-			left += "  " + pal.green.Render(app)
+		if sum := m.RunSummary(r.Story); sum != "" {
+			left += "  " + pal.green.Render(sum)
 		}
 	}
 	if r.Story != "" {

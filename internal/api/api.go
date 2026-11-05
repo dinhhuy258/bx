@@ -89,7 +89,7 @@ type Action struct {
 	Base        string   `json:"base,omitempty"`   // base: the base override; "" removes it
 	Link        []string `json:"link,omitempty"`   // links: repo projects to link into a workspace
 	Unlink      []string `json:"unlink,omitempty"` // links: links to remove from a workspace
-	// app/run, app/stop, app/setup: the runs (nil = all; setup takes one), Replace stops the
+	// runs/run, runs/stop, runs/setup: the runs (nil = all; setup takes one), Replace stops the
 	// story that runs first (after a 409 with RunStory), Setup runs the setups again.
 	Runs    []string `json:"runs,omitempty"`
 	Replace bool     `json:"replace,omitempty"`
@@ -130,7 +130,7 @@ type Result struct {
 	Branch string `json:"branch,omitempty"`
 	// Line is the line of a refused MCP document (PUT /api/mcp/doc), 0 when unknown.
 	Line int `json:"line,omitempty"`
-	// app/run refused (409) because another story runs: that story and its runs.
+	// runs/run refused (409) because another story runs: that story and its runs.
 	RunStory string   `json:"run_story,omitempty"`
 	RunNames []string `json:"run_names,omitempty"`
 }
@@ -383,7 +383,7 @@ type PRSend struct {
 }
 
 // RunConfig is GET and PUT /api/projects/{name}/runconfig: the project's runs and port lists
-// for Settings › Apps. GET adds Repos (a workspace's repositories, for the dir choice; nil in
+// for Settings › Runs. GET adds Repos (a workspace's repositories, for the dir choice; nil in
 // a repo project), HasComments (a form save would drop the file's comments) and Error (the
 // file does not parse: edit it as text). A refused PUT is a 400 with Errors.
 type RunConfig struct {

@@ -43,7 +43,7 @@ const (
 	PromptClearSent             // y/n: drop the sent comments of a review (Target is the story)
 	PromptSyncBusy              // y/n: sync a story Claude works in (Target is the story, "" = chats)
 	PromptRunReplace            // y/n: stop the story that runs and run this one (Target is the story)
-	PromptAppsPorts             // a port list of the apps page (Target is "hide" or "show")
+	PromptRunsPorts             // a port list of the runs page (Target is "hide" or "show")
 	PromptRemoveRun             // y/n: remove a run and save (Target is its index)
 	PromptRunText               // a text field of the run form (Target is its field number)
 	PromptDiscardRun            // y/n: drop the edits of the run form

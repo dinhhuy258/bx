@@ -2,7 +2,7 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Claude            │ MCP
    Git               │ For new and resumed sessions. Running ones keep what they started with.
-   Apps              │
+   Runs              │
  › MCP               │    Mode  ◂ merge  ▸
    Notifications     │
                      │    Global      3 servers    github · postgres · sentry

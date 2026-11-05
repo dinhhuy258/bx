@@ -11,12 +11,12 @@ import (
 	"github.com/dinhhuy258/bx/internal/runcfg"
 )
 
-func TestSettingsAppsEditTextAndRemove(t *testing.T) {
+func TestSettingsRunsEditTextAndRemove(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.runCfgs = map[string]api.RunConfig{"home-network": {Runs: []runcfg.Run{{Name: "web", Cmd: "npm run dev"}, {Name: "api", Cmd: "php artisan serve"}}}}
 	h.be.runTexts = map[string]string{"home-network": "# mine\n[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\n"}
-	drain(h.m, h.m.openAppsSettings("home-network"))
-	if v := view(h); !strings.Contains(v, "Apps › home-network") || !strings.Contains(v, "npm run dev") {
+	drain(h.m, h.m.openRunsSettings("home-network"))
+	if v := view(h); !strings.Contains(v, "Runs › home-network") || !strings.Contains(v, "npm run dev") {
 		t.Fatal(v)
 	}
 	// e: the text in $EDITOR; the edit is saved as text
@@ -43,7 +43,7 @@ func TestSettingsAppsEditTextAndRemove(t *testing.T) {
 func TestRunFormSaves(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.runCfgs = map[string]api.RunConfig{"home-network": {}}
-	drain(h.m, h.m.openAppsSettings("home-network"))
+	drain(h.m, h.m.openRunsSettings("home-network"))
 	h.press("Enter")                         // + add run
 	h.press("Enter", "w", "e", "b", "Enter") // Name
 	h.press("j", "j", "Enter")               // Command

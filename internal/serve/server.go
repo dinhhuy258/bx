@@ -54,11 +54,11 @@ type Server struct {
 	prNext   map[string]time.Time             // "project/story": when the poller looks again
 	prKick   chan string                      // "project/story" to look at now (sync, refresh)
 
-	// apps (see apps.go)
+	// runs (see runs.go)
 	Proc     ports.Proc // /proc; nil reads the machine's
 	Forwards *Forwards  // nil forwards nothing (bx serve on loopback)
-	AppHost  string     // the host in app links
-	appMu    sync.Mutex // one run or stop at a time
+	RunHost  string     // the host in run links
+	runMu    sync.Mutex // one run or stop at a time
 	portsMu  sync.Mutex
 	portsBy  map[string]map[string][]ui.Port // by project, story: the last scan
 
@@ -182,7 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
 	s.reviewRoutes(mux)
 	s.prRoutes(mux)
-	s.appRoutes(mux)
+	s.runRoutes(mux)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
 	return sameOrigin(mux)
 }

@@ -1,5 +1,5 @@
-// Package runcfg is a project's run config, ~/.bx/apps/<project>.toml: the apps a story
-// runs, how and where. Settings › Apps edits it; bx run-exec runs it.
+// Package runcfg is a project's run config, ~/.bx/runs/<project>.toml: the runs a story
+// runs, how and where. Settings › Runs edits it; bx run-exec runs it.
 package runcfg
 
 import (

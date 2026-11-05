@@ -68,7 +68,7 @@ type Backend interface {
 	MarkViewed(ctx context.Context, project, story string, v api.ReviewViewed) (api.Review, error)
 	Explain(ctx context.Context, project, story string, req api.ExplainRequest) (api.Review, error)
 	DeleteExplain(ctx context.Context, project, story, id string) (api.Review, error)
-	AppAction(ctx context.Context, project, action string, a api.Action) (api.Result, error)
+	RunAction(ctx context.Context, project, action string, a api.Action) (api.Result, error)
 	RunConfigs(ctx context.Context) ([]api.RunConfigs, error)
 	RunConfig(ctx context.Context, project string) (api.RunConfig, error)
 	SaveRunConfig(ctx context.Context, project string, rc api.RunConfig) (api.RunConfig, error)
@@ -203,8 +203,8 @@ const (
 	pickPRSend                   // the session that gets Fix CI or the picked review threads of a PR
 	pickNewWorkspace             // repo projects to link into a new workspace
 	pickEditWorkspace            // links of the current workspace
-	pickApp                      // the app menu of a story
-	pickAppRun                   // the run of Run one… or Setup again…
+	pickRun                      // the run menu of a story
+	pickOneRun                   // the run of Run one… or Setup again…
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -252,16 +252,16 @@ type Model struct {
 	wsLinks      []string                 // the link names of the workspace being edited
 	wsItems      map[string]string        // its checklist rows ("web (missing)") by link name
 
-	// the app menu (apps.go)
-	appStory    string                    // the story the menu acts on
-	appItems    map[string]func() tea.Cmd // the menu's labels and what each does
-	appRunFor   string                    // "run" or "setup": what pickAppRun's choice does
-	appRuns     []string                  // the runs of a pending PromptRunReplace
-	appUp       string                    // a story just started; the first port it shows flashes "is up"
-	appRunNames []string                  // the run names read when the menu opened
-	appsOpen    string                    // settings opened from M-b: the apps page to show
-	appsPending *appsPageMsg              // that page, arrived before the sections
-	appsDrafts  map[string]mcpDraft       // refused run config texts, by project
+	// the run menu (runs.go)
+	runStory    string                    // the story the menu acts on
+	runItems    map[string]func() tea.Cmd // the menu's labels and what each does
+	runPickFor  string                    // "run" or "setup": what pickOneRun's choice does
+	replaceRuns []string                  // the runs of a pending PromptRunReplace
+	runUp       string                    // a story just started; the first port it shows flashes "is up"
+	runNames    []string                  // the run names read when the menu opened
+	runsOpen    string                    // settings opened from M-b: the runs page to show
+	runsPending *runsPageMsg              // that page, arrived before the sections
+	runsDrafts  map[string]mcpDraft       // refused run config texts, by project
 
 	draft      *storyDraft        // the new story being picked; see story.go
 	busy       string             // the key bar while a story is fetched or created
@@ -320,7 +320,7 @@ type Model struct {
 // it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, appsDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, runsDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -498,27 +498,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.gotPRs(msg)
 	case storyMsg:
 		return m, m.gotStory(msg)
-	case appsProjectsMsg:
-		m.gotAppsProjects(msg)
+	case runsProjectsMsg:
+		m.gotRunsProjects(msg)
 		return m, nil
-	case appsPageMsg:
-		m.gotAppsPage(msg)
+	case runsPageMsg:
+		m.gotRunsPage(msg)
 		return m, nil
-	case appsSavedMsg:
-		return m, m.gotAppsSaved(msg)
-	case appsTextMsg:
-		return m, m.gotAppsText(msg)
-	case appsEditedMsg:
-		return m, m.gotAppsEdited(msg)
-	case appsTextSavedMsg:
-		return m, m.gotAppsTextSaved(msg)
-	case appsBuildMsg:
-		m.gotAppsBuild(msg)
+	case runsSavedMsg:
+		return m, m.gotRunsSaved(msg)
+	case runsTextMsg:
+		return m, m.gotRunsText(msg)
+	case runsEditedMsg:
+		return m, m.gotRunsEdited(msg)
+	case runsTextSavedMsg:
+		return m, m.gotRunsTextSaved(msg)
+	case runsBuildMsg:
+		m.gotRunsBuild(msg)
 		return m, nil
-	case appMsg:
-		return m, m.gotApp(msg)
-	case appConfigMsg:
-		return m, m.gotAppConfig(msg)
+	case runMsg:
+		return m, m.gotRun(msg)
+	case runConfigMsg:
+		return m, m.gotRunConfig(msg)
 	case storySyncMsg:
 		return m, m.gotStorySync(msg)
 	case overrideBranchesMsg:
@@ -716,7 +716,7 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 	um.SetShells(msg.snap.Shells, msg.snap.Dirs)
 	um.SetLive(msg.snap.Live)
 	if um == m.m {
-		defer m.checkAppUp()
+		defer m.checkRunUp()
 	}
 	var states map[int]string
 	if msg.snap.SessionStates != nil {
@@ -955,7 +955,7 @@ func (m *Model) claudeAction(key string) (tea.Model, tea.Cmd) {
 	}
 	if s := m.m.P.Sessions[m.target.Num]; s != nil {
 		switch action {
-		case "sync", "add_repo", "review", "pr", "app", "run_story", "stop_story", "open_app":
+		case "sync", "add_repo", "review", "pr", "run", "run_story", "stop_story", "open_run":
 			m.m.SelectStory(s.Story)
 		}
 	}
@@ -1058,17 +1058,17 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 		if sess != nil {
 			return m, m.loadArtifacts(num)
 		}
-	case "app":
-		return m, m.openAppMenu(row.Story)
+	case "run":
+		return m, m.openRunMenu(row.Story)
 	case "run_story":
-		return m, m.appAction(row.Story, "run", nil, false, false)
+		return m, m.runAction(row.Story, "run", nil, false, false)
 	case "stop_story":
-		return m, m.appAction(row.Story, "stop", nil, false, false)
-	case "open_app":
+		return m, m.runAction(row.Story, "stop", nil, false, false)
+	case "open_run":
 		if ps := m.m.Live.Ports[row.Story]; len(ps) > 0 && ps[0].URL != "" {
 			return m, m.browse(ps[0].URL)
 		}
-		m.setFlash(groupName(row.Story) + " has no app links")
+		m.setFlash(groupName(row.Story) + " has no run links")
 	case "sync":
 		if row.Kind == ui.RowStory {
 			return m, m.syncStory(row.Story, false)
@@ -1499,15 +1499,15 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 		case pickCleanup:
 			m.pickCleanup(checked)
 			return nil
-		case pickApp:
-			if run := m.appItems[choice]; run != nil {
+		case pickRun:
+			if run := m.runItems[choice]; run != nil {
 				return run()
 			}
-		case pickAppRun:
-			if m.appRunFor == "setup" {
-				return m.appAction(m.appStory, "setup", []string{choice}, false, false)
+		case pickOneRun:
+			if m.runPickFor == "setup" {
+				return m.runAction(m.runStory, "setup", []string{choice}, false, false)
 			}
-			return m.appAction(m.appStory, "run", []string{choice}, false, false)
+			return m.runAction(m.runStory, "run", []string{choice}, false, false)
 		case pickArtifact:
 			u := m.artifactURLs[choice]
 			if u == "" {
@@ -1534,7 +1534,7 @@ func (m *Model) openSettings() tea.Cmd {
 	m.settings, m.settingsNote, m.syncDone = ui.NewSettings(host), "loading settings…", false
 	m.settings.SetGitOverrides(m.gitOverrides())
 	m.settings.SetMCPTotal(len(m.projects))
-	return tea.Batch(m.loadSettings(), m.scanSync(), m.loadMCP(), m.loadAccounts(), m.loadAppsProjects())
+	return tea.Batch(m.loadSettings(), m.scanSync(), m.loadMCP(), m.loadAccounts(), m.loadRunsProjects())
 }
 
 func (m *Model) loadSettings() tea.Cmd {
@@ -1557,11 +1557,11 @@ func (m *Model) gotSettings(msg settingsMsg) {
 		return
 	}
 	m.settings.Load(msg.s.Sections, msg.s.Values)
-	if m.appsOpen != "" {
-		m.settings.ShowApps(m.appsOpen)
-		if p := m.appsPending; p != nil {
-			m.appsPending = nil
-			m.gotAppsPage(*p)
+	if m.runsOpen != "" {
+		m.settings.ShowRuns(m.runsOpen)
+		if p := m.runsPending; p != nil {
+			m.runsPending = nil
+			m.gotRunsPage(*p)
 		}
 	}
 	if msg.saved {
@@ -1572,8 +1572,8 @@ func (m *Model) gotSettings(msg settingsMsg) {
 // settingsKey handles a key on the settings screen. Esc with unsaved changes asks first.
 func (m *Model) settingsKey(key string) tea.Cmd {
 	switch r := m.settings.Key(key); r {
-	case ui.SettingsAppsOpen, ui.SettingsAppsEditText, ui.SettingsAppsRemove, ui.SettingsAppsPorts, ui.SettingsAppsSave, ui.SettingsAppsText, ui.SettingsAppsBuild, ui.SettingsAppsForm, ui.SettingsAppsDiscard:
-		return m.appsResult(r)
+	case ui.SettingsRunsOpen, ui.SettingsRunsEditText, ui.SettingsRunsRemove, ui.SettingsRunsPorts, ui.SettingsRunsSave, ui.SettingsRunsText, ui.SettingsRunsBuild, ui.SettingsRunsForm, ui.SettingsRunsDiscard:
+		return m.runsResult(r)
 	case ui.SettingsClose:
 		if n := len(m.settings.Changes()); n > 0 {
 			m.ask(ui.PromptDiscardSettings, "", fmt.Sprintf("Discard %s?", plural(n, "change", "changes")), "Your unsaved edits to the settings are lost.")
@@ -1723,7 +1723,7 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 	case ui.PromptSyncBusy:
 		return m.syncStory(target, true)
 	case ui.PromptRunReplace:
-		return m.appAction(target, "run", m.appRuns, true, false)
+		return m.runAction(target, "run", m.replaceRuns, true, false)
 	case ui.PromptStop:
 		num, _ := strconv.Atoi(target)
 		return m.stop(num)
@@ -1771,7 +1771,7 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			return nil
 		}
 		k, _ := strconv.Atoi(target)
-		if !m.settings.SetAppsFormText(k, text) {
+		if !m.settings.SetRunsFormText(k, text) {
 			m.setFlash("not saved: ports are numbers, env is KEY=value pairs")
 		}
 	case ui.PromptDiscardRun:
@@ -1784,8 +1784,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		}
 		i, _ := strconv.Atoi(target)
 		m.settings.RemoveRun(i)
-		return m.saveApps()
-	case ui.PromptAppsPorts:
+		return m.saveRuns()
+	case ui.PromptRunsPorts:
 		if m.settings == nil {
 			return nil
 		}
@@ -1794,8 +1794,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			m.setFlash(errBadPorts.Error())
 			return nil
 		}
-		m.settings.SetAppsPorts(target, ps)
-		return m.saveApps()
+		m.settings.SetRunsPorts(target, ps)
+		return m.saveRuns()
 	case ui.PromptRemoveOverride:
 		return m.removeOverride(target)
 	case ui.PromptSettingText:
@@ -2455,8 +2455,8 @@ func (m *Model) bar() string {
 		text = m.flash
 	case m.settings != nil && m.settingsOnMCPRow():
 		text = ui.SettingsMCPBar(m.narrow)
-	case m.settings != nil && m.settings.AppsShown():
-		text = m.settings.SettingsAppsBar(m.narrow)
+	case m.settings != nil && m.settings.RunsShown():
+		text = m.settings.SettingsRunsBar(m.narrow)
 	case m.settings != nil && m.settings.GitShown():
 		text = m.settings.SettingsGitBar(m.narrow)
 	case m.settings != nil:

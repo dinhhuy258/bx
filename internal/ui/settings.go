@@ -34,15 +34,15 @@ const (
 	SettingsAccountText                           // Enter on a text field of the account form: edit AccountFormText in a prompt
 	SettingsAccountSave                           // C-s in the account form: save AccountForm
 	SettingsAccountBack                           // Esc in the account form: the caller asks first when it has edits
-	SettingsAppsOpen                              // Enter on an apps project row: load AppsProject's page
-	SettingsAppsEditText                          // e on an apps page (Enter on a broken one): edit the file in $EDITOR
-	SettingsAppsRemove                            // Backspace on a run: ask, then RemoveRun and save AppsSave
-	SettingsAppsPorts                             // Enter on a port row: edit AppsPortsRow in a prompt
-	SettingsAppsForm                              // Enter on a run or + add run: the run form is open (Task 19)
-	SettingsAppsSave                              // the run form saved (C-s): save AppsSave
-	SettingsAppsText                              // Enter on a text field of the run form: edit AppsFormText in a prompt
-	SettingsAppsBuild                             // Enter on the Dockerfile field: edit it in $EDITOR
-	SettingsAppsDiscard                           // Esc in the run form with edits: ask first
+	SettingsRunsOpen                              // Enter on an runs project row: load RunsProject's page
+	SettingsRunsEditText                          // e on an runs page (Enter on a broken one): edit the file in $EDITOR
+	SettingsRunsRemove                            // Backspace on a run: ask, then RemoveRun and save RunsSave
+	SettingsRunsPorts                             // Enter on a port row: edit RunsPortsRow in a prompt
+	SettingsRunsForm                              // Enter on a run or + add run: the run form is open (Task 19)
+	SettingsRunsSave                              // the run form saved (C-s): save RunsSave
+	SettingsRunsText                              // Enter on a text field of the run form: edit RunsFormText in a prompt
+	SettingsRunsBuild                             // Enter on the Dockerfile field: edit it in $EDITOR
+	SettingsRunsDiscard                           // Esc in the run form with edits: ask first
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
@@ -55,7 +55,7 @@ type Settings struct {
 	saved    map[string]string // what the server holds; a missing key is the default
 	edits    map[string]string // changed keys only
 	sec, fld int
-	apps     appsState // the apps section (settings_apps.go)
+	runs     runsState // the runs section (settings_runs.go)
 	sync     syncList
 	git      []GitOverride     // the git section's base overrides, by project
 	acc      GitAccounts       // the git section's GitHub accounts
@@ -82,7 +82,7 @@ func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 		if i := slices.IndexFunc(sections, func(sec settings.Section) bool { return sec.ID == syncSection }); i >= 0 {
 			at = i + 1
 		}
-		s.sections = slices.Insert(slices.Clone(sections), at, settings.Section{ID: gitSection, Title: "Git"}, settings.Section{ID: appsSection, Title: "Apps"})
+		s.sections = slices.Insert(slices.Clone(sections), at, settings.Section{ID: gitSection, Title: "Git"}, settings.Section{ID: runsSection, Title: "Runs"})
 	}
 	s.saved = maps.Clone(values)
 	if s.saved == nil {
@@ -98,8 +98,8 @@ func (s *Settings) rowCount() int {
 	if s.GitShown() {
 		return len(s.gitRows())
 	}
-	if s.AppsShown() {
-		return len(s.appsRows())
+	if s.RunsShown() {
+		return len(s.runsRows())
 	}
 	return len(s.fields()) + len(s.syncRows()) + s.mcpRowCount()
 }
@@ -153,8 +153,8 @@ func (s *Settings) Key(key string) SettingsResult {
 	if s.GitShown() {
 		return s.gitKey(key)
 	}
-	if s.AppsShown() {
-		return s.appsKey(key)
+	if s.RunsShown() {
+		return s.runsKey(key)
 	}
 	if _, ok := s.MCPChoice(); ok && key != "Tab" && key != "Esc" && key != "C-c" && !isMove(key) {
 		return s.mcpKey(key) // moves, Tab and Esc work as on any row
@@ -272,8 +272,8 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 			}
 			return pad(append(lines, git...), h)
 		}
-		if s.AppsShown() {
-			return pad(append(lines, s.appsLines(w, h-len(lines), true, pal)...), h)
+		if s.RunsShown() {
+			return pad(append(lines, s.runsLines(w, h-len(lines), true, pal)...), h)
 		}
 		if s.sync.confirm {
 			return pad(append(lines, s.confirmLines(w, h-len(lines), pal)...), h)
@@ -299,7 +299,7 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 		l = append(l, truncate(" "+cursor+" "+title, left))
 	}
 	var r []string
-	if !s.GitShown() && !s.AppsShown() {
+	if !s.GitShown() && !s.RunsShown() {
 		r = append(r, pal.bold.Render(s.sections[s.sec].Title))
 		if help := s.sections[s.sec].Help; help != "" {
 			r = append(r, wrap(help, right, pal.dim)...)
@@ -309,8 +309,8 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 	switch {
 	case s.GitShown():
 		r = s.gitLines(right, h-len(lines), false, pal)
-	case s.AppsShown():
-		r = s.appsLines(right, h-len(lines), false, pal)
+	case s.RunsShown():
+		r = s.runsLines(right, h-len(lines), false, pal)
 	case s.sync.confirm:
 		r = append(r, s.confirmLines(right, h-len(lines)-len(r), pal)...)
 	default:

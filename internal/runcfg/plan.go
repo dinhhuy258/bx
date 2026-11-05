@@ -19,7 +19,7 @@ func Expand(s string, v Vars) string {
 	return strings.NewReplacer("${host}", v.Host, "${story}", v.Story, "${root}", v.Root, "${dir}", v.Dir).Replace(s)
 }
 
-// Opts are where a run runs: the story folder (Root), the app host, the user the containers
+// Opts are where a run runs: the story folder (Root), the run host, the user the containers
 // run as, the project's cache folder (~/.bx/cache/<project>) and the login shell on the host.
 type Opts struct {
 	Project, Story, Root, Host string

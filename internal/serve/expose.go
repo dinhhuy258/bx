@@ -12,7 +12,7 @@ import (
 // errTaken is a forward whose port something else holds on the Tailscale address.
 var errTaken = errors.New("taken")
 
-// Forwards are the TCP forwards from the Tailscale address to apps that listen on loopback
+// Forwards are the TCP forwards from the Tailscale address to runs that listen on loopback
 // only, one per port, same port. Sync opens and closes them after every port scan.
 type Forwards struct {
 	Host   string // the address the forwards listen on: the Tailscale IP
