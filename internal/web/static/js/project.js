@@ -47,6 +47,9 @@ export function showProject(root, name) {
     body.replaceChildren(...[...groups].map(([story, rows]) => group(story, rows.sort(order))));
   }
 
+  // changed: a story's diff has lines or uncommitted files to show; +0 −0 is no change
+  const changed = (d) => !!d && !!(d.add || d.del || d.dirty);
+
   // behindOf is the commits origin has that a story's branch ('' = the project folder's) lacks,
   // as last fetched: what a sync would bring in
   const behindOf = (story) => (story ? ((snap.live.diff || {})[story] || {}).behind : snap.live.behind) || 0;
@@ -79,7 +82,7 @@ export function showProject(root, name) {
         h('span', { class: 'sec-label' }, story ? [icon('branch'), h('span', { class: 'story' }, story)] : [icon('chat'), 'Chats']),
         prPills(story),
         n ? h('span', { class: 'behind', title: `origin has ${n} new ${n === 1 ? 'commit' : 'commits'}` }, `↓${n}`) : null,
-        d ? h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${d.add}`), h('span', { class: 'del' }, `−${d.del}`),
+        changed(d) ? h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${d.add}`), h('span', { class: 'del' }, `−${d.del}`),
           d.dirty ? h('span', {}, `· ${d.dirty} uncommitted`) : null) : null,
         h('button', { class: 'ib', 'aria-label': story ? 'Story actions' : 'Chats actions', onclick: () => storyMenu(story) }, icon('more'))),
       runCard(story, runs),
@@ -162,13 +165,14 @@ export function showProject(root, name) {
       sheet('Chats', items);
       return;
     }
-    const rv = ((snap.live && snap.live.review) || {})[story] || 0, d = ((snap.live && snap.live.diff) || {})[story];
+    const rv = ((snap.live && snap.live.review) || {})[story] || 0, dd = ((snap.live && snap.live.diff) || {})[story];
+    const d = changed(dd) ? dd : null;
     const hint = rv || d ? [rv ? `${rv} to send` : null, rv && d ? ' · ' : null,
       d ? h('span', { class: 'add' }, `+${d.add}`) : null, d ? ' ' : null, d ? h('span', { class: 'del' }, `−${d.del}`) : null]
       .filter(Boolean) : '';
     const pb = ((snap.live && snap.live.pr) || {})[story];
     const items = [pb && pb.count ? { label: 'Pull request', icon: 'branch', hint: prBadgeText(pb), run: () => { location.hash = prHref(story); } } : null,
-      { label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } },
+      rv || d ? { label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } } : null,
       { label: 'New session', run: () => newSession(story) }, shellItem,
       { label: 'Start runs', icon: 'play', hint: 'Start the runs of Settings › Runs (TUI)', run: () => runAction(story, 'run') }, syncItem].filter(Boolean);
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
