@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dinhhuy258/bx/internal/state"
 )
 
 func TestProjectName(t *testing.T) {
@@ -91,5 +93,59 @@ func TestGitHubRepos(t *testing.T) {
 	repos, err := a.GitHubRepos()
 	if err != nil || strings.Join(repos, ",") != "a/b,c/d" {
 		t.Fatal(repos, err)
+	}
+}
+
+// addRepoProject registers a git repo project called name in the projects folder.
+func addRepoProject(t *testing.T, a *App, name string) string {
+	t.Helper()
+	dir := a.Cfg.ProjectDir(name)
+	if err := a.Git.Init(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.register(name, dir, state.KindRepo); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestNewWorkspace(t *testing.T) {
+	a, _, _ := newApp(t)
+	api := addRepoProject(t, a, "api")
+	addRepoProject(t, a, "web")
+	name, err := a.NewWorkspace("shop", []string{"api", "web"})
+	if err != nil || name != "shop" {
+		t.Fatalf("%q %v", name, err)
+	}
+	p, _ := a.LoadProject("shop")
+	if !p.IsWorkspace() || p.Path != a.Cfg.ProjectDir("shop") {
+		t.Fatalf("%+v", p)
+	}
+	if target, _ := os.Readlink(filepath.Join(p.Path, "api")); target != api {
+		t.Fatalf("api -> %q", target)
+	}
+	if got, _ := a.WorkspaceRepos(p); strings.Join(got, " ") != "api web" {
+		t.Fatalf("repos = %v", got)
+	}
+	for _, c := range []struct {
+		name  string
+		picks []string
+		want  string
+	}{
+		{"one", []string{"api"}, "at least 2"},
+		{"dup", []string{"api", "api"}, "twice"},
+		{"nope", []string{"api", "ghost"}, "no project"},
+		{"ws", []string{"api", "shop"}, "is a workspace"},
+		{"shop", []string{"api", "web"}, "already exists"},
+		{"Bad Name", []string{"api", "web"}, "project name"},
+	} {
+		if _, err := a.NewWorkspace(c.name, c.picks); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
+		}
+		if c.name != "shop" {
+			if _, err := os.Lstat(a.Cfg.ProjectDir(c.name)); err == nil {
+				t.Errorf("%s: folder left behind", c.name)
+			}
+		}
 	}
 }

@@ -45,6 +45,7 @@ var keymapGroups = []keymapGroup{
 	}},
 	{"PROJECT", "the one on screen", []keymapItem{
 		{"new_story", "new story · a branch and worktree"},
+		{"edit_workspace", "edit workspace · link or unlink repositories"},
 		{"shell", "new shell"},
 		{"projects", "open another project"},
 		{"prev_project", "previous open project"},

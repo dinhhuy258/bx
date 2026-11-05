@@ -172,3 +172,9 @@ func TestReviewFileAndKey(t *testing.T) {
 		t.Errorf("G = %q", a)
 	}
 }
+
+func TestDefaultEditWorkspaceKey(t *testing.T) {
+	if k := Default(t.TempDir()).Keys.List["edit_workspace"]; len(k) != 1 || k[0] != "E" {
+		t.Fatalf("edit_workspace = %v", k)
+	}
+}

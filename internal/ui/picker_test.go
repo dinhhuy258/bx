@@ -97,3 +97,15 @@ func TestTick(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestChecklistTicked(t *testing.T) {
+	p := NewChecklist("x", []string{"a", "b", "c"})
+	if got := p.Ticked(); len(got) != 0 {
+		t.Fatalf("nothing ticked: %v", got)
+	}
+	p.Tick("c")
+	p.Tick("a")
+	if got := strings.Join(p.Ticked(), " "); got != "a c" {
+		t.Fatalf("ticked = %q", got)
+	}
+}

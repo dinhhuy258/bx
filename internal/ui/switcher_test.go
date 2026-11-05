@@ -72,6 +72,14 @@ func TestSwitcherKeys(t *testing.T) {
 	if s.Key("Esc", "") != SwitchCancel {
 		t.Fatal("esc")
 	}
+	// the Workspace button
+	s = switcherSample()
+	for _, k := range "workspace" { // "work" alone also matches home-network
+		s.Key(string(k), string(k))
+	}
+	if s.Key("Enter", "") != SwitchAction || s.Action() != SwitchWorkspace {
+		t.Fatal(s.Action())
+	}
 }
 
 func TestSwitcherArrowsReachTheButtons(t *testing.T) {

@@ -8,8 +8,10 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
+	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/git"
 	"github.com/dinhhuy258/bx/internal/state"
 )
@@ -314,4 +316,118 @@ func (a *App) closeWorkspaceStory(p *state.Project, name string, force bool) err
 		return err
 	}
 	return a.forgetStory(p, name)
+}
+
+// InUseError refuses to unlink a repository while a story has a worktree of it.
+type InUseError struct {
+	Repo    string
+	Stories []string
+}
+
+func (e *InUseError) Error() string {
+	return fmt.Sprintf("%s is in story %s: close it first", e.Repo, strings.Join(e.Stories, ", "))
+}
+
+// WorkspaceLinks lists the links at the top of a workspace folder, sorted.
+func (a *App) WorkspaceLinks(p *state.Project) ([]api.Link, error) {
+	entries, err := os.ReadDir(p.Path)
+	if err != nil {
+		return nil, err
+	}
+	out := []api.Link{}
+	for _, e := range entries {
+		if e.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		_, err := os.Stat(filepath.Join(p.Path, e.Name()))
+		out = append(out, api.Link{Name: e.Name(), Missing: err != nil})
+	}
+	return out, nil
+}
+
+// EditWorkspace links repo projects into a workspace folder and removes links from it, all
+// or nothing. Only links are removed, and not while a story has a worktree under one. The
+// folders of open stories follow: a new link appears in each, a removed one goes.
+func (a *App) EditWorkspace(p *state.Project, link, unlink []string) error {
+	if !p.IsWorkspace() {
+		return fmt.Errorf("%s is not a workspace", p.Name)
+	}
+	for _, n := range link {
+		if slices.Contains(unlink, n) {
+			return fmt.Errorf("%s is both linked and unlinked", n)
+		}
+	}
+	targets, err := a.linkTargets(link)
+	if err != nil {
+		return err
+	}
+	for _, n := range link {
+		if _, err := os.Lstat(filepath.Join(p.Path, n)); err == nil {
+			return fmt.Errorf("%s is already in %s", n, p.Path)
+		}
+	}
+	old := map[string]string{}
+	for _, n := range unlink {
+		if n == "" || n == "." || n == ".." || strings.ContainsRune(n, '/') {
+			return fmt.Errorf("no %s in %s", n, p.Path)
+		}
+		full := filepath.Join(p.Path, n)
+		fi, err := os.Lstat(full)
+		if err != nil {
+			return fmt.Errorf("no %s in %s", n, p.Path)
+		}
+		if fi.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("%s is a folder, not a link: bx only removes links", n)
+		}
+		var in []string
+		for name, st := range p.Stories {
+			if slices.ContainsFunc(st.RepoNames(), func(r string) bool { return r == n || strings.HasPrefix(r, n+"/") }) {
+				in = append(in, name)
+			}
+		}
+		if len(in) > 0 {
+			sort.Strings(in)
+			return &InUseError{Repo: n, Stories: in}
+		}
+		if old[n], err = os.Readlink(full); err != nil {
+			return err
+		}
+	}
+	var made, gone []string
+	rollback := func(err error) error {
+		for _, n := range made {
+			_ = os.Remove(filepath.Join(p.Path, n))
+		}
+		for _, n := range gone {
+			_ = os.Symlink(old[n], filepath.Join(p.Path, n))
+		}
+		return err
+	}
+	for _, n := range link {
+		if err := os.Symlink(targets[n], filepath.Join(p.Path, n)); err != nil {
+			return rollback(err)
+		}
+		made = append(made, n)
+	}
+	for _, n := range unlink {
+		if err := os.Remove(filepath.Join(p.Path, n)); err != nil {
+			return rollback(err)
+		}
+		gone = append(gone, n)
+	}
+	for name, st := range p.Stories {
+		mirror := a.Cfg.WorktreeDir(p.Name, name)
+		if _, err := os.Stat(mirror); err != nil {
+			continue
+		}
+		for _, n := range unlink {
+			if fi, err := os.Lstat(filepath.Join(mirror, n)); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+				_ = os.Remove(filepath.Join(mirror, n))
+			}
+		}
+		if err := fill(p.Path, mirror, "", st.RepoNames()); err != nil {
+			return fmt.Errorf("story %s: %w", name, err)
+		}
+	}
+	return nil
 }

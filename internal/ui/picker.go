@@ -52,6 +52,17 @@ func (p *Picker) Checked() []string {
 	return out
 }
 
+// Ticked returns the ticked items in list order. Unlike Checked, nothing ticked is nothing.
+func (p *Picker) Ticked() []string {
+	var out []string
+	for _, it := range p.items {
+		if p.checked[it] {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 // Tick ticks an item of a checklist. It does nothing on a single-choice picker.
 func (p *Picker) Tick(item string) {
 	if p.checked != nil {

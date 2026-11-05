@@ -15,8 +15,9 @@ const (
 	PromptRename
 	PromptCloseStory
 	PromptCloseStoryForce
-	PromptAddFolder  // an absolute folder path on the server
-	PromptNewProject // a project name
+	PromptAddFolder    // an absolute folder path on the server
+	PromptNewProject   // a project name
+	PromptNewWorkspace // a workspace name
 	PromptDiscardSettings
 	PromptAddRepoForce          // y/n: add repositories whose originals have uncommitted files
 	PromptStop                  // y/n: stop a live session (Target is its number)
@@ -245,7 +246,7 @@ func (p *Prompt) Line() string {
 // titles name the dialog of a form; a question's title is its Label.
 var titles = map[PromptKind]string{
 	PromptNewStory: "New story", PromptRename: "Rename session", PromptRenameShell: "Rename shell",
-	PromptAddFolder: "Add existing folder", PromptNewProject: "New empty project", PromptSettingText: "Edit setting",
+	PromptAddFolder: "Add existing folder", PromptNewProject: "New empty project", PromptNewWorkspace: "New workspace", PromptSettingText: "Edit setting",
 	PromptAccountText: "Edit account", PromptRuleOwner: "Account rule · owner/*, host/* or host/owner/*",
 }
 
@@ -310,6 +311,8 @@ func (p *Prompt) verb() string {
 		return "kill and delete"
 	case PromptRemoveOverride, PromptRemoveMCP, PromptRemoveAccount, PromptRemoveRule, PromptRemoveAccountOverride:
 		return "remove"
+	case PromptNewWorkspace:
+		return "next"
 	case PromptNewShell:
 		return "open"
 	case PromptNewSession:

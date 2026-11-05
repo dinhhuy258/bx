@@ -68,6 +68,19 @@ function newProject() {
       const v = await ask('New project', [{ name: 'name', label: 'Name' }], 'Create');
       if (v && v.name) create({ kind: 'new', name: v.name });
     } },
+    { label: 'Workspace from projects', run: async () => {
+      let all = [];
+      try { all = (await api.projects()).filter((p) => p.kind !== 'workspace').map((p) => p.name).sort(); }
+      catch (e) { toast(e.message); return; }
+      if (all.length < 2) { toast('Need at least 2 repo projects'); return; }
+      const v = await ask('New workspace', [
+        { name: 'name', label: 'Name' },
+        { name: 'projects', label: 'Repositories to link', type: 'checks', options: all, value: [] },
+      ], 'Create');
+      if (!v) return;
+      if (v.projects.length < 2) { toast('Pick at least 2 projects'); return; }
+      create({ kind: 'workspace', name: v.name, projects: v.projects });
+    } },
   ]);
 }
 

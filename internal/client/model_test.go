@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -33,6 +34,7 @@ type fakeBackend struct {
 	dirty     int    // stories/close without force is refused with this many files
 	closeMsg  string // the Message of a stories/close that goes through
 	created   []api.NewProject
+	links     []api.Link // the links of every workspace
 	createErr error
 	values    map[string]string // the server's settings
 	saves     []map[string]string
@@ -250,6 +252,10 @@ func (f *fakeBackend) ProjectRepos(context.Context, string) ([]string, error) {
 	return []string{"api", "libs/auth", "web"}, nil
 }
 
+func (f *fakeBackend) WorkspaceLinks(context.Context, string) ([]api.Link, error) {
+	return f.links, nil
+}
+
 func (f *fakeBackend) Projects(context.Context) ([]api.ProjectSummary, error) { return f.projects, nil }
 
 func (f *fakeBackend) Snapshot(_ context.Context, p string) (api.Snapshot, error) {
@@ -278,6 +284,12 @@ func (f *fakeBackend) Do(_ context.Context, project, action string, a api.Action
 	}
 	if a.K != 0 {
 		parts = append(parts, fmt.Sprintf("$%d", a.K))
+	}
+	for _, n := range a.Link {
+		parts = append(parts, "+"+n)
+	}
+	for _, n := range a.Unlink {
+		parts = append(parts, "-"+n)
 	}
 	if a.Force {
 		parts = append(parts, "force")
@@ -1515,7 +1527,7 @@ func TestAddFolderFromThePicker(t *testing.T) {
 	h.press("Enter")
 	h.update(tea.PasteMsg{Content: "/srv/lab\r\n"}) // ⌘V, with the newline a copied path often has
 	h.press("Enter")
-	if len(h.be.created) != 1 || h.be.created[0] != (api.NewProject{Kind: "folder", Path: "/srv/lab"}) {
+	if len(h.be.created) != 1 || !reflect.DeepEqual(h.be.created[0], api.NewProject{Kind: "folder", Path: "/srv/lab"}) {
 		t.Fatalf("%+v", h.be.created)
 	}
 	if h.m.project != "lab" {
@@ -1534,7 +1546,7 @@ func TestAddFirstFolderWithNoProjects(t *testing.T) {
 		t.Fatalf("the prompt should show what is typed:\n%s", v)
 	}
 	h.press("Enter")
-	if len(h.be.created) != 1 || h.be.created[0] != (api.NewProject{Kind: "folder", Path: "/srv/lab"}) {
+	if len(h.be.created) != 1 || !reflect.DeepEqual(h.be.created[0], api.NewProject{Kind: "folder", Path: "/srv/lab"}) {
 		t.Fatalf("%+v", h.be.created)
 	}
 	if h.m.project != "lab" || !strings.Contains(h.m.View().Content, "Add lease time") {
@@ -1568,7 +1580,7 @@ func TestCloneFromThePicker(t *testing.T) {
 		t.Fatal(h.m.View().Content)
 	}
 	h.press("Down", "Enter")
-	if len(h.be.created) != 1 || h.be.created[0] != (api.NewProject{Kind: "clone", Repo: "me/other"}) {
+	if len(h.be.created) != 1 || !reflect.DeepEqual(h.be.created[0], api.NewProject{Kind: "clone", Repo: "me/other"}) {
 		t.Fatalf("%+v", h.be.created)
 	}
 }
@@ -2386,5 +2398,97 @@ func TestPageStripClicks(t *testing.T) {
 		if !strings.Contains(ansi.Strip(line), "file server off") {
 			t.Errorf("width %d: %q", w, ansi.Strip(line))
 		}
+	}
+}
+
+// withProjects adds repo projects api, web and pay, and the workspace shop, to the project list.
+func withProjects(h *harness) {
+	h.m.projects = append(h.m.projects,
+		api.ProjectSummary{Name: "api"}, api.ProjectSummary{Name: "web"}, api.ProjectSummary{Name: "pay"},
+		api.ProjectSummary{Name: "shop", Kind: state.KindWorkspace})
+}
+
+func TestNewWorkspaceFlow(t *testing.T) {
+	h := start(t, 120, 30, "idle", "idle")
+	withProjects(h)
+	h.press("O")
+	h.typeText("workspace") // "work" alone also matches home-network
+	h.press("Enter")
+	h.typeText("ws")
+	h.press("Enter")
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.picker == nil || !strings.Contains(v, "link repositories into ws") || strings.Contains(v, "shop") {
+		t.Fatalf("checklist:\n%s", v)
+	}
+	h.press(" ")            // api
+	h.press("Down", "Down") // home-network, lab
+	h.press("Down", "Down") // pay, web
+	h.press(" ", "Enter")
+	want := api.NewProject{Kind: "workspace", Name: "ws", Projects: []string{"api", "web"}}
+	if n := len(h.be.created); n != 1 || !reflect.DeepEqual(h.be.created[0], want) {
+		t.Fatalf("%+v", h.be.created)
+	}
+}
+
+func TestNewWorkspaceNeedsTwo(t *testing.T) {
+	h := start(t, 120, 30, "idle", "idle")
+	withProjects(h)
+	h.press("O")
+	h.typeText("workspace")
+	h.press("Enter")
+	h.typeText("ws")
+	h.press("Enter")
+	h.press(" ", "Enter") // only api
+	if h.m.picker == nil || !strings.Contains(h.m.flash, "pick at least 2") || len(h.be.created) != 0 {
+		t.Fatalf("flash=%q created=%+v", h.m.flash, h.be.created)
+	}
+}
+
+func TestNewWorkspaceNeedsTwoRepoProjects(t *testing.T) {
+	h := start(t, 120, 30, "idle") // one repo project
+	h.press("O")
+	h.typeText("workspace")
+	h.press("Enter")
+	h.typeText("ws")
+	h.press("Enter")
+	if h.m.picker != nil || !strings.Contains(h.m.flash, "need at least 2 repo projects") {
+		t.Fatalf("flash=%q", h.m.flash)
+	}
+}
+
+func TestEditWorkspaceFlow(t *testing.T) {
+	h := start(t, 120, 30, "idle", "idle")
+	workspace(h) // home-network is a workspace
+	withProjects(h)
+	h.be.links = []api.Link{{Name: "api"}, {Name: "web", Missing: true}}
+	h.press("E")
+	v := ansi.Strip(h.m.View().Content)
+	if h.m.picker == nil || !strings.Contains(v, "repositories linked into home-network") ||
+		!strings.Contains(v, "[x] api") || !strings.Contains(v, "[x] web (missing)") || !strings.Contains(v, "[ ] pay") {
+		t.Fatalf("checklist:\n%s", v)
+	}
+	// api, lab, pay, web: tick pay, untick web
+	h.press("Down", "Down", " ", "Down", " ", "Enter")
+	if got := h.be.actions[len(h.be.actions)-1]; got != "home-network links +pay -web" {
+		t.Fatalf("actions = %q", h.be.actions)
+	}
+}
+
+func TestEditWorkspaceNoChange(t *testing.T) {
+	h := start(t, 120, 30, "idle", "idle")
+	workspace(h)
+	withProjects(h)
+	h.be.links = []api.Link{{Name: "api"}}
+	h.press("E", "Enter")
+	if h.m.flash != "no change" || len(h.be.actions) != 0 {
+		t.Fatalf("flash=%q actions=%q", h.m.flash, h.be.actions)
+	}
+}
+
+func TestEditWorkspaceNotAWorkspace(t *testing.T) {
+	h := start(t, 120, 30, "idle")
+	h.press("E")
+	if h.m.picker != nil || !strings.Contains(h.m.flash, "home-network is not a workspace") {
+		t.Fatalf("flash=%q", h.m.flash)
 	}
 }

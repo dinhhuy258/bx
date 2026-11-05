@@ -315,3 +315,146 @@ func TestSessionGetsClaudeSettings(t *testing.T) {
 		t.Fatalf("with the status line: %q", got)
 	}
 }
+
+// newLinkedWorkspace makes repos api and web outside the workspace, and a workspace folder of
+// links to them.
+func newLinkedWorkspace(t *testing.T) (*App, *state.Project, string) {
+	t.Helper()
+	a, _, _ := newApp(t)
+	repos := filepath.Join(t.TempDir(), "repos")
+	for _, rel := range []string{"api", "web"} {
+		dir := filepath.Join(repos, rel)
+		if err := a.Git.Init(dir); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644)
+		gitIn(t, dir, "add", ".")
+		gitIn(t, dir, "commit", "-qm", "code")
+	}
+	root := filepath.Join(t.TempDir(), "work")
+	os.MkdirAll(root, 0o755)
+	for _, rel := range []string{"api", "web"} {
+		if err := os.Symlink(filepath.Join(repos, rel), filepath.Join(root, rel)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	name, err := a.AddFolder(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := a.LoadProject(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a, p, repos
+}
+
+func TestWorkspaceStoryThroughLinks(t *testing.T) {
+	a, p, repos := newLinkedWorkspace(t)
+	if got, _ := a.WorkspaceRepos(p); strings.Join(got, " ") != "api web" {
+		t.Fatalf("repos = %v", got)
+	}
+	ctx := context.Background()
+	if _, err := a.NewStory(ctx, p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
+		t.Fatal(err)
+	}
+	mirror := a.Cfg.WorktreeDir(p.Name, "login")
+	if isLink(t, filepath.Join(mirror, "api")) || !isLink(t, filepath.Join(mirror, "web")) {
+		t.Fatal("api must be a worktree and web a link")
+	}
+	if b := gitIn(t, filepath.Join(mirror, "api"), "branch", "--show-current"); b != "feat/login" {
+		t.Fatalf("branch = %q", b)
+	}
+	if why := Guard(mirror, filepath.Join(mirror, "web", "main.go")); why == "" {
+		t.Fatal("an edit through the web link must be refused")
+	}
+	p, _ = a.LoadProject(p.Name)
+	if _, err := a.CloseStory(p, "login", false); err != nil {
+		t.Fatal(err)
+	}
+	if out := gitIn(t, filepath.Join(repos, "api"), "worktree", "list"); strings.Count(out, "\n") != 0 {
+		t.Fatalf("worktree left: %s", out)
+	}
+	if out := gitIn(t, filepath.Join(repos, "api"), "branch", "--list", "feat/login"); out != "" {
+		t.Fatalf("branch left: %q", out)
+	}
+}
+
+func TestEditWorkspace(t *testing.T) {
+	a, _, _ := newApp(t)
+	addRepoProject(t, a, "api")
+	addRepoProject(t, a, "web")
+	pay := addRepoProject(t, a, "pay")
+	gitIn(t, pay, "commit", "-q", "--allow-empty", "-m", "x")
+	if _, err := a.NewWorkspace("shop", []string{"api", "web"}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ := a.LoadProject("shop")
+	os.MkdirAll(filepath.Join(p.Path, "notes"), 0o755) // a real folder
+	ctx := context.Background()
+	if _, err := a.NewStory(ctx, p, StoryOpts{Name: "login", Repos: []string{"api"}}); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = a.LoadProject("shop")
+	mirror := a.Cfg.WorktreeDir("shop", "login")
+
+	// link pay, unlink web: the open story gets pay and loses web
+	if err := a.EditWorkspace(p, []string{"pay"}, []string{"web"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := a.WorkspaceRepos(p); strings.Join(got, " ") != "api pay" {
+		t.Fatalf("repos = %v", got)
+	}
+	if !isLink(t, filepath.Join(mirror, "pay")) {
+		t.Fatal("story folder misses the pay link")
+	}
+	if _, err := os.Lstat(filepath.Join(mirror, "web")); err == nil {
+		t.Fatal("story folder keeps the web link")
+	}
+
+	// refused, and nothing changes: api is in story login
+	err := a.EditWorkspace(p, []string{"web"}, []string{"api"})
+	var inUse *InUseError
+	if !errors.As(err, &inUse) || inUse.Repo != "api" || strings.Join(inUse.Stories, ",") != "login" {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(p.Path, "web")); err == nil {
+		t.Fatal("a refused edit linked web")
+	}
+	for _, c := range []struct {
+		link, unlink []string
+		want         string
+	}{
+		{nil, []string{"notes"}, "not a link"},
+		{nil, []string{"ghost"}, "no ghost"},
+		{nil, []string{"../x"}, "no ../x"},
+		{[]string{"api"}, nil, "already"},
+		{[]string{"shop"}, nil, "is a workspace"},
+		{[]string{"pay"}, []string{"pay"}, "both"},
+	} {
+		if err := a.EditWorkspace(p, c.link, c.unlink); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%v %v: err = %v, want %q", c.link, c.unlink, err, c.want)
+		}
+	}
+	home, _ := a.LoadProject("home-network")
+	if err := a.EditWorkspace(home, []string{"api"}, nil); err == nil || !strings.Contains(err.Error(), "not a workspace") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestWorkspaceLinks(t *testing.T) {
+	a, _, _ := newApp(t)
+	addRepoProject(t, a, "api")
+	web := addRepoProject(t, a, "web")
+	a.NewWorkspace("shop", []string{"api", "web"})
+	p, _ := a.LoadProject("shop")
+	os.MkdirAll(filepath.Join(p.Path, "notes"), 0o755)
+	os.RemoveAll(web)
+	got, err := a.WorkspaceLinks(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Name != "api" || got[0].Missing || got[1].Name != "web" || !got[1].Missing {
+		t.Fatalf("%+v", got)
+	}
+}

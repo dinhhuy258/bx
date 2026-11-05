@@ -1085,3 +1085,51 @@ func TestSyncAsksWhileClaudeWorksAndShowsBehind(t *testing.T) {
 		t.Fatalf("behind after sync %d", snap.Live.Behind)
 	}
 }
+
+func TestLinkedWorkspace(t *testing.T) {
+	s, _, ts := newServer(t)
+	for _, n := range []string{"api", "web"} {
+		dir := s.Cfg.ProjectDir(n)
+		if err := s.App.Git.Init(dir); err != nil {
+			t.Fatal(err)
+		}
+		if res, code := post(t, ts, "/api/projects", api.NewProject{Kind: "folder", Path: dir}); code != 200 || res.Name != n {
+			t.Fatalf("%d %+v", code, res)
+		}
+	}
+	if res, code := post(t, ts, "/api/projects", api.NewProject{Kind: "workspace", Name: "shop", Projects: []string{"api"}}); code != 400 {
+		t.Fatalf("one project: %d %+v", code, res)
+	}
+	if res, code := post(t, ts, "/api/projects", api.NewProject{Kind: "workspace", Name: "shop", Projects: []string{"api", "web"}}); code != 200 || res.Name != "shop" {
+		t.Fatalf("%d %+v", code, res)
+	}
+	sums, _ := get[[]api.ProjectSummary](t, ts, "/api/projects")
+	var shop api.ProjectSummary
+	for _, p := range sums {
+		if p.Name == "shop" {
+			shop = p
+		}
+	}
+	if shop.Kind != "workspace" {
+		t.Fatalf("%+v", shop)
+	}
+	links, code := get[[]api.Link](t, ts, "/api/projects/shop/links")
+	if code != 200 || len(links) != 2 || links[0].Name != "api" {
+		t.Fatalf("%d %+v", code, links)
+	}
+	if res, code := post(t, ts, "/api/projects/shop/stories", api.Action{Name: "login", Repos: []string{"api"}}); code != 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if res, code := post(t, ts, "/api/projects/shop/links", api.Action{Unlink: []string{"api"}}); code != 409 || !strings.Contains(res.Error, "login") {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if res, code := post(t, ts, "/api/projects/shop/links", api.Action{Unlink: []string{"web"}}); code != 200 {
+		t.Fatalf("%d %+v", code, res)
+	}
+	if repos, _ := get[[]string](t, ts, "/api/projects/shop/repos"); strings.Join(repos, " ") != "api" {
+		t.Fatalf("%v", repos)
+	}
+	if res, code := post(t, ts, "/api/projects/home-network/links", api.Action{Link: []string{"api"}}); code != 400 {
+		t.Fatalf("%d %+v", code, res)
+	}
+}

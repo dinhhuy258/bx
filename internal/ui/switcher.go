@@ -17,9 +17,10 @@ const (
 	SwitchAddFolder = iota
 	SwitchClone
 	SwitchNewEmpty
+	SwitchWorkspace
 )
 
-var switchActions = []string{"Existing folder", "Clone from GitHub", "New empty"}
+var switchActions = []string{"Existing folder", "Clone from GitHub", "New empty", "Workspace"}
 
 // SwitchResult is what a key did to the switcher.
 type SwitchResult int
@@ -86,7 +87,7 @@ func (s *Switcher) Choice() string {
 	return v[max(0, min(s.cursor, len(v)-1))].Name
 }
 
-// Action is the button under the cursor: SwitchAddFolder, SwitchClone or SwitchNewEmpty.
+// Action is the button under the cursor: SwitchAddFolder, SwitchClone, SwitchNewEmpty or SwitchWorkspace.
 func (s *Switcher) Action() int { return s.action }
 
 // Key feeds one key (bx key name plus the typed text).

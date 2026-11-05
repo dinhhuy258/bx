@@ -127,6 +127,12 @@ func (c *API) ProjectRepos(ctx context.Context, project string) ([]string, error
 	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/repos", nil, &out)
 }
 
+// WorkspaceLinks is GET /api/projects/{name}/links: the links at the top of a workspace.
+func (c *API) WorkspaceLinks(ctx context.Context, project string) ([]api.Link, error) {
+	var out []api.Link
+	return out, c.call(ctx, pollTimeout, http.MethodGet, "/api/projects/"+url.PathEscape(project)+"/links", nil, &out)
+}
+
 // Settings is GET /api/settings?tui=1: the sections and fields the server offers, and their
 // values, the TUI-only ones included.
 func (c *API) Settings(ctx context.Context) (api.Settings, error) {

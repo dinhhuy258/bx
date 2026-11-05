@@ -133,6 +133,10 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/sync", s.syncStory)
 	mux.HandleFunc("GET /api/projects/{name}/repos", s.workspaceRepos)
+	mux.HandleFunc("GET /api/projects/{name}/links", s.workspaceLinks)
+	mux.HandleFunc("POST /api/projects/{name}/links", s.action(func(p *state.Project, r api.Action) (int, error) {
+		return 0, s.App.EditWorkspace(p, r.Link, r.Unlink)
+	}))
 	mux.HandleFunc("POST /api/projects/{name}/stories/close", s.actionResult(func(p *state.Project, r api.Action) (api.Result, error) {
 		msg, err := s.App.CloseStory(p, r.Name, r.Force)
 		return api.Result{Message: msg}, err
@@ -370,7 +374,7 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		}
 		m := ui.NewModel(p)
 		m.SetLive(live)
-		sum := api.ProjectSummary{Name: name, BaseOverride: p.BaseOverride}
+		sum := api.ProjectSummary{Name: name, BaseOverride: p.BaseOverride, Kind: p.Kind}
 		sum.Running, sum.Waiting, sum.Unread = m.Counts()
 		for _, n := range sortedNums(p) {
 			if !p.Sessions[n].Done && m.State(n) == claude.Waiting {
@@ -463,6 +467,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		name, err = s.App.CloneProject(req.Repo)
 	case "new":
 		name, err = s.App.NewProject(req.Name)
+	case "workspace":
+		name, err = s.App.NewWorkspace(req.Name, req.Projects)
 	default:
 		err = fmt.Errorf("unknown kind %q", req.Kind)
 	}
@@ -644,6 +650,25 @@ func (s *Server) workspaceRepos(w http.ResponseWriter, r *http.Request) {
 		repos = []string{}
 	}
 	writeJSON(w, repos)
+}
+
+// workspaceLinks sends the links at the top of a workspace folder.
+func (s *Server) workspaceLinks(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	if !p.IsWorkspace() {
+		httpError(w, 400, fmt.Errorf("%s is not a workspace", p.Name))
+		return
+	}
+	links, err := s.App.WorkspaceLinks(p)
+	if err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	writeJSON(w, links)
 }
 
 // newStory creates a story and starts its first session. The slow part (fetching the base,
@@ -1009,6 +1034,7 @@ func (s *Server) actionResult(fn func(p *state.Project, r api.Action) (api.Resul
 		res, err := fn(p, req)
 		var dirty *app.DirtyError
 		var running *app.RunningError
+		var inUse *app.InUseError
 		switch {
 		case errors.As(err, &dirty):
 			w.Header().Set("Content-Type", "application/json")
@@ -1019,6 +1045,11 @@ func (s *Server) actionResult(fn func(p *state.Project, r api.Action) (api.Resul
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error(), Running: true})
+			return
+		case errors.As(err, &inUse):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(api.Result{Error: err.Error()})
 			return
 		case err != nil:
 			httpError(w, statusOf(err), err)

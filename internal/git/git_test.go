@@ -104,12 +104,20 @@ func TestSubRepos(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "tool"), nil, 0o644)
 	os.MkdirAll(filepath.Join(root, "wt"), 0o755)
 	os.WriteFile(filepath.Join(root, "wt", ".git"), []byte("gitdir: x\n"), 0o644) // a worktree's .git file
-	os.Symlink(filepath.Join(root, "api"), filepath.Join(root, "api-link"))
+	other := t.TempDir()
+	os.MkdirAll(filepath.Join(other, "svc", ".git"), 0o755)
+	os.MkdirAll(filepath.Join(other, "group", "pay", ".git"), 0o755)
+	os.Symlink(filepath.Join(root, "api"), filepath.Join(root, "api-link"))   // the same repo twice: listed once
+	os.Symlink(filepath.Join(other, "svc"), filepath.Join(root, "svc"))       // a linked repo
+	os.Symlink(filepath.Join(other, "group"), filepath.Join(root, "group"))   // a linked folder of repos
+	os.Symlink(filepath.Join(other, "gone"), filepath.Join(root, "gone"))     // broken: skipped
+	os.Symlink(root, filepath.Join(root, "docs", "loop"))                     // a loop: skipped
+	os.Symlink(filepath.Join(root, "tool"), filepath.Join(root, "tool-link")) // a link to a file: skipped
 	got, err := SubRepos(root, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "api libs/auth web wt"
+	want := "api group/pay libs/auth svc web wt"
 	if s := strings.Join(got, " "); s != want {
 		t.Fatalf("repos = %q, want %q", s, want)
 	}

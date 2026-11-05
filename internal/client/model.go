@@ -26,6 +26,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/claudesync"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/settings"
+	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
 	"github.com/dinhhuy258/bx/internal/uploads"
 )
@@ -43,6 +44,7 @@ type Backend interface {
 	CreateProject(ctx context.Context, p api.NewProject) (api.Result, error)
 	Repos(ctx context.Context) ([]string, error)
 	ProjectRepos(ctx context.Context, project string) ([]string, error)
+	WorkspaceLinks(ctx context.Context, project string) ([]api.Link, error)
 	Settings(ctx context.Context) (api.Settings, error)
 	SaveSettings(ctx context.Context, values map[string]string) (api.Settings, error)
 	MCP(ctx context.Context) (api.MCP, error)
@@ -102,6 +104,12 @@ type (
 		add            bool
 		repos          []string
 		err            error
+	}
+	// workspaceLinksMsg is the links of a workspace, for the checklist of Edit workspace.
+	workspaceLinksMsg struct {
+		project string
+		links   []api.Link
+		err     error
 	}
 	createdMsg struct {
 		res api.Result
@@ -169,6 +177,8 @@ const (
 	pickAccountProject           // settings › git: the project of a new account override
 	pickOverrideAccount          // settings › git: the account of a project override
 	pickReviewSend               // the session that gets a review's unsent comments
+	pickNewWorkspace             // repo projects to link into a new workspace
+	pickEditWorkspace            // links of the current workspace
 )
 
 // Model is the client: the list of the open project (ui.Model, drawn by ui.Render), the Claude
@@ -212,6 +222,9 @@ type Model struct {
 	browse       func(url string) tea.Cmd // opens a link in the local browser; tests replace it
 	pickStory    string                   // the story of a repository checklist
 	addRepos     []string                 // the repositories of an add waiting for its y/n
+	wsName       string                   // the name of the workspace being made
+	wsLinks      []string                 // the link names of the workspace being edited
+	wsItems      map[string]string        // its checklist rows ("web (missing)") by link name
 
 	draft      *storyDraft        // the new story being picked; see story.go
 	busy       string             // the key bar while a story is fetched or created
@@ -430,6 +443,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case storyReposMsg:
 		m.gotStoryRepos(msg)
+		return m, nil
+	case workspaceLinksMsg:
+		m.gotWorkspaceLinks(msg)
 		return m, nil
 	case storyInfoMsg:
 		m.gotStoryInfo(msg)
@@ -873,6 +889,12 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "new_session":
 		m.askNewSession(row.Story)
+	case "edit_workspace":
+		if !m.m.P.IsWorkspace() {
+			m.setFlash(m.project + " is not a workspace")
+			return m, nil
+		}
+		return m, m.loadWorkspaceLinks()
 	case "new_story":
 		if m.busy == "" { // one story at a time: Esc cancels the one in progress
 			m.openStorySource()
@@ -1248,6 +1270,8 @@ func (m *Model) switcherKey(key, text string) tea.Cmd {
 			m.openPrompt(ui.PromptAddFolder, "", "Folder on the server (absolute path)", "")
 		case ui.SwitchNewEmpty:
 			m.openPrompt(ui.PromptNewProject, "", "Project name", "")
+		case ui.SwitchWorkspace:
+			m.openPrompt(ui.PromptNewWorkspace, "", "Workspace name", "")
 		case ui.SwitchClone:
 			m.setFlash("loading repositories…")
 			be, ctx := m.be, m.ctx
@@ -1286,8 +1310,18 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 		}
 	case ui.PickChoose:
 		choice, checked, kind := m.picker.Choice(), m.picker.Checked(), m.pickKind
+		ticked, pk := m.picker.Ticked(), m.picker
 		m.picker = nil
 		switch kind {
+		case pickNewWorkspace:
+			if len(ticked) < 2 {
+				m.picker = pk // stays open to pick more
+				m.setFlash("pick at least 2 projects")
+				return nil
+			}
+			return m.create(api.NewProject{Kind: "workspace", Name: m.wsName, Projects: ticked})
+		case pickEditWorkspace:
+			return m.editWorkspace(ticked)
 		case pickRepos:
 			m.setFlash("cloning " + choice + "…")
 			return m.create(api.NewProject{Kind: "clone", Repo: choice})
@@ -1599,6 +1633,18 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			return nil
 		}
 		return m.create(api.NewProject{Kind: "new", Name: text})
+	case ui.PromptNewWorkspace:
+		if text == "" {
+			return nil
+		}
+		repos := m.repoProjects()
+		if len(repos) < 2 {
+			m.setFlash("need at least 2 repo projects")
+			return nil
+		}
+		m.wsName = text
+		m.picker, m.pickKind = ui.NewChecklist("link repositories into "+text, repos), pickNewWorkspace
+		return nil
 	}
 	return nil
 }
@@ -1672,6 +1718,105 @@ func (m *Model) gotStoryRepos(msg storyReposMsg) {
 	if tick != "" {
 		m.picker.Tick(tick)
 	}
+}
+
+// repoProjects names the known projects that are not workspaces, sorted.
+func (m *Model) repoProjects() []string {
+	var out []string
+	for _, p := range m.projects {
+		if p.Kind != state.KindWorkspace {
+			out = append(out, p.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// loadWorkspaceLinks asks for the links of the open workspace, for the Edit workspace checklist.
+func (m *Model) loadWorkspaceLinks() tea.Cmd {
+	be, ctx, project := m.be, m.ctx, m.project
+	return func() tea.Msg {
+		links, err := be.WorkspaceLinks(ctx, project)
+		return workspaceLinksMsg{project: project, links: links, err: err}
+	}
+}
+
+// gotWorkspaceLinks opens the checklist of Edit workspace: every repo project and every link,
+// the current links ticked. A link whose target is gone shows as "name (missing)".
+func (m *Model) gotWorkspaceLinks(msg workspaceLinksMsg) {
+	if msg.project != m.project || m.m == nil {
+		return
+	}
+	if msg.err != nil {
+		m.setFlash("error: " + msg.err.Error())
+		return
+	}
+	items, names := map[string]string{}, []string{}
+	for _, n := range m.repoProjects() {
+		if n != msg.project {
+			items[n] = n
+			names = append(names, n)
+		}
+	}
+	m.wsLinks = m.wsLinks[:0]
+	for _, l := range msg.links {
+		label := l.Name
+		if l.Missing {
+			label += " (missing)"
+		}
+		if _, ok := items[l.Name]; !ok {
+			names = append(names, l.Name)
+		}
+		items[l.Name] = label
+		m.wsLinks = append(m.wsLinks, l.Name)
+	}
+	sort.Strings(names)
+	labels, byLabel := make([]string, len(names)), map[string]string{}
+	for i, n := range names {
+		labels[i] = items[n]
+		byLabel[items[n]] = n
+	}
+	m.wsItems = byLabel
+	m.picker, m.pickKind = ui.NewChecklist("repositories linked into "+msg.project, labels), pickEditWorkspace
+	for _, n := range m.wsLinks {
+		m.picker.Tick(items[n])
+	}
+}
+
+// editWorkspace links the ticked projects that are not linked yet and unlinks the links that
+// are no longer ticked.
+func (m *Model) editWorkspace(ticked []string) tea.Cmd {
+	var picked []string
+	for _, label := range ticked {
+		picked = append(picked, m.wsItems[label])
+	}
+	var link, unlink []string
+	for _, n := range picked {
+		if !slices.Contains(m.wsLinks, n) {
+			link = append(link, n)
+		}
+	}
+	for _, n := range m.wsLinks {
+		if !slices.Contains(picked, n) {
+			unlink = append(unlink, n)
+		}
+	}
+	if len(link) == 0 && len(unlink) == 0 {
+		m.setFlash("no change")
+		return nil
+	}
+	if m.do("links", api.Action{Link: link, Unlink: unlink}) != nil {
+		return nil
+	}
+	var parts []string
+	if len(link) > 0 {
+		parts = append(parts, "linked "+strings.Join(link, ", "))
+	}
+	if len(unlink) > 0 {
+		parts = append(parts, "unlinked "+strings.Join(unlink, ", "))
+	}
+	m.setFlash(strings.Join(parts, " · "))
+	return m.poll()
 }
 
 // loadCleanup asks the server what cleanup can remove.

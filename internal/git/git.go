@@ -134,9 +134,15 @@ func (g *Git) Init(dest string) error {
 
 // SubRepos returns the folders under dir, up to depth levels down, that hold a .git entry,
 // as slash paths relative to dir, sorted. It does not look inside a repo it found, nor in
-// hidden folders or node_modules. Links are not followed.
+// hidden folders or node_modules. Links to folders are followed; a broken link, a link to a
+// file, and a folder already seen by its real path (a loop, or a second link to one repo)
+// are skipped.
 func SubRepos(dir string, depth int) ([]string, error) {
 	var out []string
+	seen := map[string]bool{}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		seen[real] = true
+	}
 	var walk func(rel string, level int) error
 	walk = func(rel string, level int) error {
 		entries, err := os.ReadDir(filepath.Join(dir, rel))
@@ -145,11 +151,25 @@ func SubRepos(dir string, depth int) ([]string, error) {
 		}
 		for _, e := range entries {
 			name := e.Name()
-			if !e.IsDir() || strings.HasPrefix(name, ".") || name == "node_modules" {
+			if strings.HasPrefix(name, ".") || name == "node_modules" {
 				continue
 			}
 			sub := filepath.Join(rel, name)
-			if _, err := os.Lstat(filepath.Join(dir, sub, ".git")); err == nil {
+			full := filepath.Join(dir, sub)
+			if !e.IsDir() {
+				if e.Type()&os.ModeSymlink == 0 {
+					continue
+				}
+				if fi, err := os.Stat(full); err != nil || !fi.IsDir() {
+					continue
+				}
+			}
+			real, err := filepath.EvalSymlinks(full)
+			if err != nil || seen[real] {
+				continue
+			}
+			seen[real] = true
+			if _, err := os.Lstat(filepath.Join(full, ".git")); err == nil {
 				out = append(out, filepath.ToSlash(sub))
 				continue
 			}

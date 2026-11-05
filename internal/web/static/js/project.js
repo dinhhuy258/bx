@@ -102,6 +102,7 @@ export function showProject(root, name) {
     const syncItem = { label: 'Sync with origin', icon: 'sync', hint: n ? `${n} new ${n === 1 ? 'commit' : 'commits'} on origin` : 'Fast-forward from origin', run: () => sync(story) };
     if (!story) {
       const items = [{ label: 'New session', run: () => newSession('') }, shellItem];
+      if (snap.project.kind === 'workspace') items.push({ label: 'Edit workspace', icon: 'folder', hint: 'Link or unlink repositories', run: () => editWorkspace() });
       if (snap.project.kind !== 'workspace') items.push(syncItem); // a workspace folder is no repository
       sheet('Chats', items);
       return;
@@ -164,6 +165,31 @@ export function showProject(root, name) {
     const have = new Set(((snap.project.stories[story] || {}).repos || []).map((r) => r.rel));
     const v = await ask(`Add to ${story}`, [{ name: 'repos', label: 'Repositories', type: 'checks', options: all.filter((r) => !have.has(r)) }], 'Add');
     if (v && v.repos.length) force('stories/repos', { name: story, repos: v.repos }, `Add to ${story}`);
+  }
+
+  // editWorkspace ticks the repo projects linked into the workspace folder; the changes are
+  // applied together, and the server refuses to unlink a repository an open story uses.
+  async function editWorkspace() {
+    let links, projects;
+    try { [links, projects] = await Promise.all([api.workspaceLinks(name), api.projects()]); }
+    catch (e) { toast(e.message); return; }
+    const current = links.map((l) => l.name);
+    const repos = projects.filter((p) => p.kind !== 'workspace' && p.name !== name).map((p) => p.name);
+    const options = [...new Set([...repos, ...current])].sort();
+    const label = (n) => (links.some((l) => l.name === n && l.missing) ? `${n} (missing)` : n);
+    const v = await ask(`Edit ${name}`, [
+      { name: 'links', label: 'Linked repositories', type: 'checks', options: options.map(label), value: current.map(label) },
+    ], 'Apply');
+    if (!v) return;
+    const picked = v.links.map((s) => s.replace(/ \(missing\)$/, ''));
+    const link = picked.filter((n) => !current.includes(n));
+    const unlink = current.filter((n) => !picked.includes(n));
+    if (!link.length && !unlink.length) { toast('No change'); return; }
+    try {
+      await api.editWorkspace(name, link, unlink);
+      toast([link.length && `Linked ${link.join(', ')}`, unlink.length && `Unlinked ${unlink.join(', ')}`].filter(Boolean).join(' · '));
+    } catch (e) { toast(e.message); }
+    refresh();
   }
 
   async function act(action, body) {

@@ -56,6 +56,13 @@ type ProjectSummary struct {
 	WaitingSessions []int  `json:"waiting_sessions,omitempty"` // numbers, ascending
 	Unread          int    `json:"unread"`                     // idle sessions that finished a turn nobody has opened since
 	BaseOverride    string `json:"base_override,omitempty"`    // the branch new stories start from, set in settings › git
+	Kind            string `json:"kind,omitempty"`             // "workspace" or "" (a repo)
+}
+
+// Link is an entry at the top of a workspace folder that is a link (GET /api/projects/{name}/links).
+type Link struct {
+	Name    string `json:"name"`
+	Missing bool   `json:"missing,omitempty"` // the target is gone
 }
 
 // Action is the body of every POST /api/projects/{name}/<action>, shells, shells/close and
@@ -72,21 +79,24 @@ type Action struct {
 	// docs, none; "" = the last one); Source is "" or "new", "branch" or "pr"; Branch the
 	// existing branch, PR the pull request and PRRepo its workspace repository; UseExisting
 	// uses a new branch that exists (after a 409 with Exists).
-	Type        string `json:"type,omitempty"`
-	Source      string `json:"source,omitempty"`
-	Branch      string `json:"branch,omitempty"`
-	PR          int    `json:"pr,omitempty"`
-	PRRepo      string `json:"pr_repo,omitempty"`
-	UseExisting bool   `json:"use_existing,omitempty"`
-	Base        string `json:"base,omitempty"` // base: the base override; "" removes it
+	Type        string   `json:"type,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	Branch      string   `json:"branch,omitempty"`
+	PR          int      `json:"pr,omitempty"`
+	PRRepo      string   `json:"pr_repo,omitempty"`
+	UseExisting bool     `json:"use_existing,omitempty"`
+	Base        string   `json:"base,omitempty"`   // base: the base override; "" removes it
+	Link        []string `json:"link,omitempty"`   // links: repo projects to link into a workspace
+	Unlink      []string `json:"unlink,omitempty"` // links: links to remove from a workspace
 }
 
 // NewProject is the body of POST /api/projects.
 type NewProject struct {
-	Kind string `json:"kind"`           // "folder", "clone" or "new"
-	Name string `json:"name,omitempty"` // new
-	Path string `json:"path,omitempty"` // folder: absolute path on the server
-	Repo string `json:"repo,omitempty"` // clone: owner/repo
+	Kind     string   `json:"kind"`               // "folder", "clone", "new" or "workspace"
+	Name     string   `json:"name,omitempty"`     // new, workspace
+	Path     string   `json:"path,omitempty"`     // folder: absolute path on the server
+	Repo     string   `json:"repo,omitempty"`     // clone: owner/repo
+	Projects []string `json:"projects,omitempty"` // workspace: the repo projects to link
 }
 
 // Result is the reply of every POST. Num is the new session (POST sessions), Story and K the

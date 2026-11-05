@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -105,6 +106,65 @@ func (a *App) NewProject(name string) (string, error) {
 		return "", err
 	}
 	return name, a.register(name, dest, state.KindRepo)
+}
+
+// linkTargets returns the folder of each named repo project. A workspace, a name given twice
+// and a project that does not exist are refused.
+func (a *App) linkTargets(names []string) (map[string]string, error) {
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		if _, ok := out[n]; ok {
+			return nil, fmt.Errorf("%s is picked twice", n)
+		}
+		if !nameRe.MatchString(n) {
+			return nil, fmt.Errorf("no project %q", n)
+		}
+		if _, err := os.Stat(a.Cfg.StateFile(n)); err != nil {
+			return nil, fmt.Errorf("no project %q", n)
+		}
+		q, err := a.LoadProject(n)
+		if err != nil {
+			return nil, err
+		}
+		if q.IsWorkspace() {
+			return nil, fmt.Errorf("%s is a workspace: link repositories only", n)
+		}
+		out[n] = q.Path
+	}
+	return out, nil
+}
+
+// NewWorkspace makes a workspace in the projects folder: a folder of links, one per repo
+// project, named after it.
+func (a *App) NewWorkspace(name string, projects []string) (string, error) {
+	if err := a.checkNew(name); err != nil {
+		return "", err
+	}
+	if len(projects) < 2 {
+		return "", errors.New("pick at least 2 projects")
+	}
+	targets, err := a.linkTargets(projects)
+	if err != nil {
+		return "", err
+	}
+	dir := a.Cfg.ProjectDir(name)
+	if _, err := os.Lstat(dir); err == nil {
+		return "", fmt.Errorf("%s already exists", dir)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	for _, n := range projects {
+		if err := os.Symlink(targets[n], filepath.Join(dir, n)); err != nil {
+			_ = os.RemoveAll(dir) // only links: RemoveAll does not follow them
+			return "", err
+		}
+	}
+	if err := a.register(name, dir, state.KindWorkspace); err != nil {
+		_ = os.RemoveAll(dir)
+		return "", err
+	}
+	return name, nil
 }
 
 // cloneEnv is the account environment of a clone of o into the new project name.

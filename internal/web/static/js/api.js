@@ -26,6 +26,10 @@ export const api = {
   createProject: (body) => call('POST', '/api/projects', body),
   githubRepos: () => call('GET', '/api/github/repos'),
   projectRepos: (p) => call('GET', `/api/projects/${enc(p)}/repos`),
+  // the links at the top of a workspace folder: [{ name, missing }]
+  workspaceLinks: (p) => call('GET', `/api/projects/${enc(p)}/links`),
+  // link: repo projects to link in; unlink: links to remove. A 409 names the stories that block it.
+  editWorkspace: (p, link, unlink) => call('POST', `/api/projects/${enc(p)}/links`, { link, unlink }),
   // body is an api.Action; a 409 whose .result.exists is set means the branch exists
   newStory: (p, body) => call('POST', `/api/projects/${enc(p)}/stories`, body),
   storyInfo: (p) => call('GET', `/api/projects/${enc(p)}/storyinfo`),

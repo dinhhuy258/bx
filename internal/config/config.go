@@ -61,7 +61,7 @@ func Default(root string) *Config {
 		Keys: Keys{
 			List: map[string][]string{
 				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
-				"new_session": {"N"}, "new_story": {"W"},
+				"new_session": {"N"}, "new_story": {"W"}, "edit_workspace": {"E"},
 				"shell": {"T"}, "keymap": {"?"},
 				"rename": {"R"}, "close_story": {"D"}, "add_repo": {"+"},
 				"inbox": {"A"}, "projects": {"O"},
