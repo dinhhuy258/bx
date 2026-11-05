@@ -36,8 +36,8 @@ type postToolUse struct {
 
 // runPageHook is the PostToolUse hook of Write, Edit, MultiEdit and Bash (args: bx serve's base
 // URL). When the file is a page in the session's artifacts folder ($BX_ARTIFACTS) it tells bx
-// serve, which shows the link in the phone and the TUI. A Markdown doc matching $BX_DOCS (the
-// doc_pages globs) is first copied into that folder, where it is a page too. A Bash command
+// serve, which shows the link in the phone and the TUI. A Markdown or HTML doc matching $BX_DOCS
+// (the doc_pages globs) is first copied into that folder, where it is a page too. A Bash command
 // names no file: the hook compares the docs and the folder with the snapshot that
 // `bx page-hook --before` took (the PreToolUse hook of Bash), copies each doc the command
 // wrote, and tells bx serve of each page that changed. It runs after every edit and command, so
@@ -137,7 +137,7 @@ func scanPages(dir string) (map[string]pageStamp, error) {
 func scanDocs(globs []string) map[string]pageStamp {
 	out := map[string]pageStamp{}
 	for _, g := range globs {
-		matches, _ := filepath.Glob(g)
+		matches, _ := filepath.Glob(anyCaseExt(g))
 		for _, m := range matches {
 			if !isDoc(globs, m) {
 				continue
@@ -232,18 +232,40 @@ func isPage(dir, file string) bool {
 	return filepath.Dir(filepath.Clean(file)) == filepath.Clean(dir)
 }
 
-// isDoc reports whether file is a Markdown doc matching one of the $BX_DOCS globs.
+// isDoc reports whether file is a doc (a Markdown or HTML page by serve.IsPageName) matching
+// one of the $BX_DOCS globs. The extension matches in any case: a.MD counts for "*.md".
 func isDoc(globs []string, file string) bool {
-	if !filepath.IsAbs(file) || strings.HasPrefix(filepath.Base(file), ".") || !strings.EqualFold(filepath.Ext(file), ".md") {
+	if !filepath.IsAbs(file) || !serve.IsPageName(filepath.Base(file)) {
 		return false
 	}
-	file = strings.TrimSuffix(filepath.Clean(file), filepath.Ext(file)) + ".md" // globs say .md; a.MD counts too
+	file = filepath.Clean(file)
+	ext := filepath.Ext(file)
+	file = strings.TrimSuffix(file, ext) + strings.ToLower(ext)
 	for _, g := range globs {
 		if ok, _ := filepath.Match(g, file); ok {
 			return true
 		}
 	}
 	return false
+}
+
+// anyCaseExt turns the letters of glob g's extension into [xX] classes, so filepath.Glob finds
+// a.MD for "*.md" as isDoc does.
+func anyCaseExt(g string) string {
+	ext := filepath.Ext(g)
+	if ext == "" || strings.ContainsAny(ext, "*?[\\") {
+		return g
+	}
+	var b strings.Builder
+	b.WriteString(strings.TrimSuffix(g, ext))
+	for _, r := range ext {
+		if lo, up := strings.ToLower(string(r)), strings.ToUpper(string(r)); lo != up {
+			b.WriteString("[" + lo + up + "]")
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // mirrorDoc copies doc src to the top of the artifacts folder dir under its own name, through

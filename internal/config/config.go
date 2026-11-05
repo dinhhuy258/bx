@@ -23,9 +23,9 @@ type Config struct {
 // or an explicit host:port; only Tailscale (100.64.0.0/10) and loopback addresses are accepted.
 // FilesListen is the artifact file server: "auto" (Listen's host, port 7358), "off", or an
 // explicit host:port under the same rule.
-// DocPages are the Markdown docs, relative to a session's folder, that the page hook copies
+// DocPages are the Markdown and HTML docs, relative to a session's folder, that the page hook copies
 // into the session's artifacts folder when Claude writes them, so they get a link: exact
-// files ("README.md") or filepath.Match globs ("docs/*.md"; no "**"). [] copies none.
+// files ("README.md") or filepath.Match globs ("docs/*.md", ".archify/*/*.html"; no "**"). [] copies none.
 type Serve struct {
 	Listen      string   `toml:"listen"`
 	FilesListen string   `toml:"files_listen"`

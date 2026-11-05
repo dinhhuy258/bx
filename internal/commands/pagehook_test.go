@@ -147,17 +147,21 @@ func TestPageHookSeesPagesBashWrote(t *testing.T) {
 }
 
 func TestIsDoc(t *testing.T) {
-	globs := []string{"/repo/docs/*.md", "/repo/docs/*/*.md"}
+	globs := []string{"/repo/docs/*.md", "/repo/docs/*/*.md", "/repo/.archify/*/*.html"}
 	for file, want := range map[string]bool{
-		"/repo/docs/plan.md":    true,
-		"/repo/docs/plans/a.MD": true,
-		"/repo/docs/./plan.md":  true,
-		"/repo/docs/a/b/c.md":   false,
-		"/repo/docs/.plan.md":   false,
-		"/repo/docs/plan.html":  false,
-		"/repo/README.md":       false,
-		"docs/plan.md":          false,
-		"":                      false,
+		"/repo/.archify/x-1/x.html":               true,
+		"/repo/.archify/x-1/X.HTML":               true,
+		"/repo/.archify/x-1/candidate.json":       false,
+		"/repo/.archify/x-1/candidate.archify.md": false,
+		"/repo/docs/plan.md":                      true,
+		"/repo/docs/plans/a.MD":                   true,
+		"/repo/docs/./plan.md":                    true,
+		"/repo/docs/a/b/c.md":                     false,
+		"/repo/docs/.plan.md":                     false,
+		"/repo/docs/plan.html":                    false,
+		"/repo/README.md":                         false,
+		"docs/plan.md":                            false,
+		"":                                        false,
 	} {
 		if got := isDoc(globs, file); got != want {
 			t.Errorf("isDoc(%q) = %v", file, got)
@@ -195,11 +199,37 @@ func TestPageHookMirrorsDocs(t *testing.T) {
 	in := `{"session_id":"u1","tool_name":"Bash","tool_use_id":"toolu_9","tool_input":{"command":"x"}}`
 	run(in, "--before")
 	_ = os.WriteFile(filepath.Join(repo, "docs", "b.md"), []byte("# b"), 0o644)
+	time.Sleep(10 * time.Millisecond) // b.md first: the banner ends on the latest
+	_ = os.WriteFile(filepath.Join(repo, "docs", "c.MD"), []byte("# c"), 0o644)
 	run(in)
-	if want := []api.PageHook{{SessionID: "u1", Path: filepath.Join(dir, "b.md"), New: true}}; !reflect.DeepEqual(*got, want) {
+	if want := []api.PageHook{{SessionID: "u1", Path: filepath.Join(dir, "b.md"), New: true}, {SessionID: "u1", Path: filepath.Join(dir, "c.MD"), New: true}}; !reflect.DeepEqual(*got, want) {
 		t.Fatalf("bash: got %+v, want %+v", *got, want)
 	}
 	if left, _ := filepath.Glob(filepath.Join(dir, ".*")); len(left) != 0 {
 		t.Fatalf("temp files left: %v", left)
+	}
+}
+
+// An archify run: `node archify.mjs finalize` (Bash) writes the page and its working files into
+// .archify/<run>/; only the page is copied.
+func TestPageHookMirrorsArchifyPages(t *testing.T) {
+	dir, repo := t.TempDir(), t.TempDir()
+	got, _, run := pageHookServer(t, dir)
+	t.Setenv("BX_DOCS", filepath.Join(repo, ".archify/*/*.html"))
+	out := filepath.Join(repo, ".archify", "explainer-x-20261105-120000")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	in := `{"session_id":"u1","tool_name":"Bash","tool_use_id":"toolu_a","tool_input":{"command":"node archify.mjs finalize"}}`
+	run(in, "--before")
+	for _, f := range []string{"x.html", "candidate.archify.md", "x.finalize-summary.json"} {
+		_ = os.WriteFile(filepath.Join(out, f), []byte("x"), 0o644)
+	}
+	run(in)
+	if want := []api.PageHook{{SessionID: "u1", Path: filepath.Join(dir, "x.html"), New: true}}; !reflect.DeepEqual(*got, want) {
+		t.Fatalf("got %+v, want %+v", *got, want)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatalf("artifacts folder: %v", entries)
 	}
 }

@@ -86,7 +86,7 @@ func withHooks(hooks, add map[string]any) map[string]any {
 }
 
 // docGlobs are the doc_pages globs made absolute under the session's folder dir, joined for
-// $BX_DOCS: the page hook copies a Markdown doc Claude writes there into the artifacts folder.
+// $BX_DOCS: the page hook copies a Markdown or HTML doc Claude writes there into the artifacts folder.
 // Blank and absolute globs are skipped: a doc is always the session's own.
 func docGlobs(dir string, globs []string) string {
 	var out []string
