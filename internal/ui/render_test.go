@@ -307,3 +307,35 @@ func TestRenderShowsCommitsBehindOrigin(t *testing.T) {
 		t.Errorf("story row: %q", story)
 	}
 }
+
+func TestRenderRunRows(t *testing.T) {
+	p, live := sampleHomeNetwork()
+	story := "ups-nut-alerts" // no waiting session, so it can fold
+	m := NewModel(p)
+	live.Ports = map[string][]Port{story: {
+		{Port: 3000, URL: "http://dev:3000", Shell: 1, Run: "web"},
+		{Port: 5173, URL: "http://dev:5173", Forwarded: true, Shell: 1, Run: "web"},
+		{Port: 8000, Error: "taken", Shell: 2, Run: "api"},
+		{Port: 4000, URL: "http://dev:4000", Shell: 5},
+	}}
+	live.Running = story
+	m.SetLive(live)
+	m.SetShells([]Shell{
+		{Story: story, K: 1, Command: "node", Run: "web"},
+		{Story: story, K: 2, Command: "php", Run: "api"},
+		{Story: story, K: 3, Command: "python", Run: "worker"},
+		{Story: story, K: 4, Command: "zsh", Run: "queue"},
+		{Story: story, K: 5, Command: "go"},
+	}, nil)
+	out := Render(m, 60, 40, RenderOptions{Plain: true})
+	for _, want := range []string{"▶ web", ":3000 :5173 ⇄", "▶ api", "taken", "▶ worker", "starting…", "■ queue", "exited", "$5 go", ":4000"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	m.SetFolded(story, true)
+	out = Render(m, 60, 40, RenderOptions{Plain: true})
+	if !strings.Contains(out, "▶ :3000 +3") {
+		t.Errorf("folded summary:\n%s", out)
+	}
+}

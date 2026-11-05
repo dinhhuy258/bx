@@ -655,3 +655,30 @@ const NarrowWidth = 100
 
 // IsNarrow reports whether the whole tmux window is too small for two panes.
 func IsNarrow(windowWidth int) bool { return windowWidth < NarrowWidth }
+
+// RunPorts are the ports shell k of story listens on, as the last scan saw them.
+func (m *Model) RunPorts(story string, k int) []Port {
+	var out []Port
+	for _, p := range m.Live.Ports[story] {
+		if p.Shell == k {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// AppSummary is a folded story's apps: "▶ :3000 :5173", "▶ :3000 +2" past two ports, "▶"
+// while they start, "" when the story runs nothing.
+func (m *Model) AppSummary(story string) string {
+	if m.Live.Running != story || story == "" {
+		return ""
+	}
+	var ps []string
+	for _, p := range m.Live.Ports[story] {
+		ps = append(ps, fmt.Sprintf(":%d", p.Port))
+	}
+	if len(ps) > 2 {
+		ps = append(ps[:1], fmt.Sprintf("+%d", len(ps)-1))
+	}
+	return strings.TrimSpace("▶ " + strings.Join(ps, " "))
+}

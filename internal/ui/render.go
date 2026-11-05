@@ -217,6 +217,11 @@ func (m *Model) storyLine(r Row, width int, pal palette) string {
 		}
 	}
 	left := " " + pal.arrow.Render(arrow) + " " + pal.group.Render(name)
+	if !m.IsOpen(r.Story) {
+		if app := m.AppSummary(r.Story); app != "" {
+			left += "  " + pal.green.Render(app)
+		}
+	}
 	if r.Story != "" {
 		if b := m.Live.PR[r.Story]; b.Count > 0 {
 			full := left + "  " + prBadgeText(b, pal)
@@ -231,18 +236,52 @@ func (m *Model) storyLine(r Row, width int, pal palette) string {
 }
 
 // shellLine is the one line of a shell row: "$1  zsh", or "$2  dev server … npm" when the
-// shell has a title, with the command dim on the right.
+// shell has a title, with the command dim on the right. A run shell is "▶ web" with its ports
+// on the right, "starting…" before it listens, "■ queue … exited" once it is back at the
+// prompt. A plain shell that listens shows its ports in place of the command.
 func (m *Model) shellLine(r Row, guide string, width int, pal palette, selected bool) string {
 	sh, _ := m.Shell(r.Story, r.K)
+	ports := portsText(m.RunPorts(r.Story, r.K), pal)
+	if sh.Run != "" {
+		name := sh.Run
+		if selected {
+			name = pal.bold.Render(name)
+		}
+		if PlainShell(sh.Command) {
+			return fit(" "+guide+pal.dim.Render("■")+" "+name, pal.dim.Render("exited"), width)
+		}
+		right := ports
+		if right == "" {
+			right = pal.dim.Render("starting…")
+		}
+		return fit(" "+guide+pal.green.Render("▶")+" "+name, right, width)
+	}
 	label := sh.Label()
 	if selected {
 		label = pal.bold.Render(label)
 	}
-	right := ""
-	if sh.Title != "" {
+	right := ports
+	if right == "" && sh.Title != "" {
 		right = pal.dim.Render(sh.Command)
 	}
 	return fit(" "+guide+pal.cyan.Render(fmt.Sprintf("$%d", r.K))+" "+label, right, width)
+}
+
+// portsText is ":3000 :5173 ⇄ taken": each port, ⇄ after one bx forwards, red "taken"
+// for a forward that failed in place of the port.
+func portsText(ps []Port, pal palette) string {
+	var parts []string
+	for _, p := range ps {
+		switch {
+		case p.Error != "":
+			parts = append(parts, pal.red.Render(p.Error))
+		case p.Forwarded:
+			parts = append(parts, fmt.Sprintf(":%d", p.Port)+pal.dim.Render(" ⇄"))
+		default:
+			parts = append(parts, fmt.Sprintf(":%d", p.Port))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // behind is the amber "↓N" for the commits origin has that a folder's branch lacks, after
