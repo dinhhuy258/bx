@@ -158,3 +158,12 @@ func TestCleanupScanListsOrphanShells(t *testing.T) {
 		t.Fatalf("calls:\n%s", got)
 	}
 }
+
+func TestShellsCarryRun(t *testing.T) {
+	a, f, p := newApp(t)
+	f.Replies[listShells] = "$1\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tnode\tweb\n"
+	sh, err := a.Shells(p)
+	if err != nil || len(sh) != 1 || sh[0].Run != "web" {
+		t.Fatalf("%+v %v", sh, err)
+	}
+}

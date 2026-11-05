@@ -584,7 +584,7 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		s.Log("tmux shells: %v", err)
 	} else {
 		for _, sh := range all {
-			shells = append(shells, api.Shell{Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command})
+			shells = append(shells, api.Shell{Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command, Run: sh.Run})
 		}
 	}
 	dirs := map[string]string{"": s.App.Dir(p, "")}

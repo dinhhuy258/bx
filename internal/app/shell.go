@@ -22,11 +22,12 @@ func ShellName(project, story string, k int) string {
 }
 
 // Shell is a running shell of a project: shell K of Story ("" = chats, the project folder).
-// Title is its rename ("" = none) and Command what its pane runs now.
+// Title is its rename ("" = none) and Command what its pane runs now. Run is the run of a
+// run shell (see run.go); "" for a plain shell.
 type Shell struct {
-	ID, Story      string
-	K              int
-	Title, Command string
+	ID, Story           string
+	K                   int
+	Title, Command, Run string
 }
 
 // Shells lists the project's shells, sorted by story then number.
@@ -38,7 +39,7 @@ func (a *App) Shells(p *state.Project) ([]Shell, error) {
 	var out []Shell
 	for _, sh := range all {
 		if sh.Project == p.Name {
-			out = append(out, Shell{ID: sh.ID, Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command})
+			out = append(out, Shell{ID: sh.ID, Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command, Run: sh.Run})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -78,12 +79,18 @@ func (a *App) NewShell(p *state.Project, story string) (int, error) {
 // openShell starts shell k of a story running cmd ("" = the default shell) with env, titled
 // title ("" = its command).
 func (a *App) openShell(p *state.Project, story, cmd, title string, env []string) (int, error) {
+	k, _, err := a.openShellID(p, story, cmd, title, env, nil)
+	return k, err
+}
+
+// openShellID is openShell that also gives the tmux id and sets the extra options.
+func (a *App) openShellID(p *state.Project, story, cmd, title string, env []string, extra [][2]string) (int, string, error) {
 	if story != "" && p.Stories[story] == nil {
-		return 0, fmt.Errorf("no story %q", story)
+		return 0, "", fmt.Errorf("no story %q", story)
 	}
 	shells, err := a.Shells(p)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	used := map[int]bool{}
 	for _, sh := range shells {
@@ -97,7 +104,7 @@ func (a *App) openShell(p *state.Project, story, cmd, title string, env []string
 	}
 	id, err := a.Tmux.NewShell(ShellName(p.Name, story, k), a.Dir(p, story), cmd, env...)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	opts := [][2]string{{"@bx_project", p.Name}}
 	if story != "" {
@@ -107,16 +114,17 @@ func (a *App) openShell(p *state.Project, story, cmd, title string, env []string
 	if title != "" {
 		opts = append(opts, [2]string{"@bx_title", title})
 	}
+	opts = append(opts, extra...)
 	for _, o := range opts {
 		if err := a.Tmux.SetOption(id, o[0], o[1]); err != nil {
-			return 0, errors.Join(err, a.Tmux.KillSession(id))
+			return 0, "", errors.Join(err, a.Tmux.KillSession(id))
 		}
 	}
 	// best effort, as in launch
 	if err := a.Tmux.KeepServer(); err != nil {
 		a.logf("tmux keep server: %v", err)
 	}
-	return k, nil
+	return k, id, nil
 }
 
 // CloseShell kills shell k of a story.

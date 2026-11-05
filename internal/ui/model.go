@@ -65,6 +65,7 @@ type Shell struct {
 	K       int    `json:"k"`
 	Title   string `json:"title,omitempty"`   // the rename; "" = use Command
 	Command string `json:"command,omitempty"` // what the pane runs now
+	Run     string `json:"run,omitempty"`     // the run of a run shell; "" for a plain shell
 }
 
 // Label is what the shell is called: its title, else its command, else "shell".
