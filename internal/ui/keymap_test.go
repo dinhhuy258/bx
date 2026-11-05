@@ -19,9 +19,9 @@ func TestKeymapGroupsByWhatTheKeysActOn(t *testing.T) {
 		t.Fatal(v)
 	}
 	for _, want := range []string{
-		"D      delete · removes uploads and artifacts; transcript stays in ~/.claude",
-		"D      close · kills what runs in it",
-		"X      close · off this client, keeps running",
+		"M-d    delete · removes uploads and artifacts; transcript stays in ~/.claude",
+		"M-d    close · kills what runs in it",
+		"M-x    close · off this client, keeps running",
 		"zM     my macro",
 		"1…9    open project by its number in the tabs",
 	} {

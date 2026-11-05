@@ -56,16 +56,16 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		} else {
 			parts = []string{"CLAUDE", "type to write · Claude queues it while it works", "⏎ send", "esc interrupt", back}
 		}
-		if ctx.Page && cfg.Client.OpenPage != "" {
-			parts = append(parts, k(cfg.Client.OpenPage, "open page"))
+		if ctx.Page && cfg.PageKey() != "" {
+			parts = append(parts, k(cfg.PageKey(), "open page"))
 		}
 		parts = append(parts, k("C-c", "quit bx"))
 		return join(parts)
 	}
 	row, rowKeys := rowPart(m, cfg, ctx)
 	global := []string{"j/k move", lk("shell"), lk("fold_all"), lk("new_session"), lk("new_story")}
-	if ctx.Page && cfg.Client.OpenPage != "" {
-		global = append([]string{k(cfg.Client.OpenPage, "open page")}, global...)
+	if ctx.Page && cfg.PageKey() != "" {
+		global = append([]string{k(cfg.PageKey(), "open page")}, global...)
 	}
 	if r := m.Selected(); r.Kind == RowStory {
 		global = append(global, lk("cleanup"))

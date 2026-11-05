@@ -16,25 +16,25 @@ func TestDefaultsWhenFileMissing(t *testing.T) {
 	if c.Root != root {
 		t.Errorf("Root = %q", c.Root)
 	}
-	if c.Keys.First(c.Keys.List, "inbox") != "A" || c.Keys.First(c.Keys.List, "projects") != "O" {
+	if c.Keys.First(c.Keys.List, "inbox") != "M-a" || c.Keys.First(c.Keys.List, "projects") != "M-o" {
 		t.Fatalf("list keys: %+v", c.Keys.List)
 	}
 	if got := c.Keys.List["down"]; len(got) != 2 || got[0] != "j" || got[1] != "Down" {
 		t.Errorf("down = %v", got)
 	}
-	if c.Keys.List["fold_all"][0] != "Z" {
+	if c.Keys.List["fold_all"][0] != "M-z" {
 		t.Errorf("fold_all = %v", c.Keys.List["fold_all"])
 	}
 	if _, ok := c.Keys.List["activity"]; ok || c.Keys.First(c.Keys.List, "prev_project") != "[" || c.Keys.First(c.Keys.List, "next_project") != "]" {
 		t.Errorf("project keys: %+v", c.Keys.List)
 	}
-	if got := strings.Join(c.Keys.ListActions("D"), ","); got != "close_shell,close_story,delete_session" {
-		t.Errorf("D = %s", got)
+	if got := strings.Join(c.Keys.ListActions("M-d"), ","); got != "close_shell,close_story,delete_session" {
+		t.Errorf("M-d = %s", got)
 	}
-	if c.Keys.ListAction("X") != "close_project" || c.Keys.ListAction("S") != "stop_session" || c.Keys.ListAction("P") != "settings" || c.Keys.ListAction("x") != "" {
+	if c.Keys.ListAction("M-x") != "close_project" || c.Keys.ListAction("M-s") != "stop_session" || c.Keys.ListAction("M-p") != "settings" || c.Keys.ListAction("x") != "" {
 		t.Errorf("list keys: %+v", c.Keys.List)
 	}
-	for _, k := range []string{"n", "w", "t", "a", "o", "v", "s", "d"} { // actions take capitals; lowercase is free
+	for _, k := range []string{"n", "w", "t", "a", "o", "v", "s", "d", "N", "W", "T", "A", "O", "V", "S", "D", "M-h", "M-j", "M-k", "M-l"} { // actions take Alt keys; letters are free, and so is M-hjkl
 		if a := c.Keys.ListAction(k); a != "" {
 			t.Errorf("%s is bound to %s", k, a)
 		}
@@ -94,8 +94,8 @@ func TestActionForKey(t *testing.T) {
 	if a := c.Keys.ListAction("Down"); a != "down" {
 		t.Errorf("Down -> %q", a)
 	}
-	if a := c.Keys.ListAction("Z"); a != "fold_all" {
-		t.Errorf("Z -> %q", a)
+	if a := c.Keys.ListAction("M-z"); a != "fold_all" {
+		t.Errorf("M-z -> %q", a)
 	}
 	if a := c.Keys.ListAction("Q"); a != "" {
 		t.Errorf("Q -> %q", a)
@@ -131,7 +131,7 @@ func TestServeAndClientSections(t *testing.T) {
 		t.Fatalf("client = %+v", c.Client)
 	}
 	d := Default(root)
-	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.SwitchPane != "C-q" || d.Client.OpenPage != "M-o" {
+	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.SwitchPane != "C-q" || d.Client.OpenPage != "" || d.PageKey() != "M-v" {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
 	}
 }
@@ -168,13 +168,13 @@ func TestReviewFileAndKey(t *testing.T) {
 	if got := c.ReviewFile("home-network", "s1"); got != filepath.Join("/r", "review", "home-network", "s1.json") {
 		t.Errorf("ReviewFile = %s", got)
 	}
-	if a := c.Keys.ListAction("G"); a != "review" {
-		t.Errorf("G = %q", a)
+	if a := c.Keys.ListAction("M-g"); a != "review" {
+		t.Errorf("M-g = %q", a)
 	}
 }
 
 func TestDefaultEditWorkspaceKey(t *testing.T) {
-	if k := Default(t.TempDir()).Keys.List["edit_workspace"]; len(k) != 1 || k[0] != "E" {
+	if k := Default(t.TempDir()).Keys.List["edit_workspace"]; len(k) != 1 || k[0] != "M-e" {
 		t.Fatalf("edit_workspace = %v", k)
 	}
 }

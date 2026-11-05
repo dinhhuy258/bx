@@ -26,7 +26,7 @@ func accountsSettings(t *testing.T, c accounts.Config) *harness {
 			{Project: "lab", Origin: accounts.Origin{Host: "github.com", Owner: "dinhhuy258", Repo: "lab"}},
 		},
 	}
-	h.press("P", "Tab")
+	h.press("M-p", "Tab")
 	return h
 }
 

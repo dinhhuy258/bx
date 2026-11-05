@@ -80,7 +80,7 @@ func TestKeyBar(t *testing.T) {
 	m, _ := sampleModel()
 	cfg := config.Default("/x")
 	kb := KeyBar(m, cfg, BarContext{})
-	for _, want := range []string{"j/k move", "⏎ type in Claude", "Z fold all", "F focus", "N new session", "A inbox", "O projects"} {
+	for _, want := range []string{"j/k move", "⏎ type in Claude", "M-z fold all", "M-f focus", "M-n new session", "M-a inbox", "M-o projects"} {
 		if !strings.Contains(kb, want) {
 			t.Errorf("list bar missing %q: %s", want, kb)
 		}
@@ -92,22 +92,22 @@ func TestKeyBar(t *testing.T) {
 	if got := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Session: 2}); got != "CLAUDE  ↑↓ move  ⏎ confirm  esc no  ^q to list  ^c quit bx" || strings.Contains(got, "1-3") {
 		t.Errorf("Claude bar while asking: %q", got)
 	}
-	for _, want := range []string{"S stop", "R rename", "D delete"} {
+	for _, want := range []string{"M-s stop", "M-r rename", "M-d delete"} {
 		if !strings.Contains(kb, want) {
 			t.Errorf("session bar missing %q: %s", want, kb)
 		}
 	}
-	if strings.Contains(kb, "D close story") {
+	if strings.Contains(kb, "M-d close story") {
 		t.Error("close story only on story rows:", kb)
 	}
-	if i, j := strings.Index(kb, "S stop"), strings.Index(kb, "N new session"); i < 0 || j < 0 || i > j {
+	if i, j := strings.Index(kb, "M-s stop"), strings.Index(kb, "M-n new session"); i < 0 || j < 0 || i > j {
 		t.Error("lifecycle keys come before the global keys:", kb)
 	}
 	if !strings.HasPrefix(kb, "[2] Write the test") || !strings.Contains(kb, " › ⏎ type in Claude") || strings.Index(kb, "│") > strings.Index(kb, "j/k move") {
 		t.Error("the bar names the session, then its keys, then the global ones:", kb)
 	}
 	m.SelectStory("guest-vlan-fix")
-	if kb = KeyBar(m, cfg, BarContext{}); !strings.HasPrefix(kb, "story guest-vlan-fix › ⏎ collapse  U sync  D close  G review  │") || strings.Contains(kb, "D delete") {
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.HasPrefix(kb, "story guest-vlan-fix › ⏎ collapse  M-u sync  M-d close  M-g review  │") || strings.Contains(kb, "M-d delete") {
 		t.Error(kb)
 	}
 	m.SelectStory("zigbee-map-docs")
@@ -120,7 +120,7 @@ func TestKeyBar(t *testing.T) {
 		t.Fatal("selected", n)
 	}
 	kb = KeyBar(m, cfg, BarContext{})
-	if !strings.Contains(kb, "⏎ resume") || strings.Contains(kb, "type in Claude") || strings.Contains(kb, "S stop") || strings.Contains(kb, "F focus") {
+	if !strings.Contains(kb, "⏎ resume") || strings.Contains(kb, "type in Claude") || strings.Contains(kb, "M-s stop") || strings.Contains(kb, "M-f focus") {
 		t.Error(kb)
 	}
 	kb = KeyBar(m, cfg, BarContext{ClaudeFocused: true})
@@ -133,18 +133,18 @@ func TestKeyBar(t *testing.T) {
 	}
 
 	m.SelectStory("guest-vlan-fix")
-	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "T new shell") {
+	if kb = KeyBar(m, cfg, BarContext{}); !strings.Contains(kb, "M-t new shell") {
 		t.Error("a story row offers a new shell:", kb)
 	}
 	m.SetShells([]Shell{{Story: "guest-vlan-fix", K: 1, Command: "zsh"}}, nil)
 	m.SelectShell("guest-vlan-fix", 1)
 	kb = KeyBar(m, cfg, BarContext{})
-	for _, want := range []string{"$1 zsh › ⏎ open  R rename  D close  │", "T new shell"} {
+	for _, want := range []string{"$1 zsh › ⏎ open  M-r rename  M-d close  │", "M-t new shell"} {
 		if !strings.Contains(kb, want) {
 			t.Errorf("shell bar missing %q: %s", want, kb)
 		}
 	}
-	if strings.Contains(kb, "D delete") {
+	if strings.Contains(kb, "M-d delete") {
 		t.Error("D closes a shell, it deletes nothing:", kb)
 	}
 	if got, want := KeyBar(m, cfg, BarContext{ClaudeFocused: true, Shell: true}), "SHELL  type to run · exit closes it  ^q to list"; got != want {
@@ -188,8 +188,8 @@ func TestRenderShellRows(t *testing.T) {
 func TestFocusLine(t *testing.T) {
 	m, _ := sampleModel()
 	m.SelectSession(1)
-	line := FocusLine(m, "A", "C-q", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
-	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · A inbox · ● 1 running · ^q exit"
+	line := FocusLine(m, "M-a", "C-q", 1, []WaitingElsewhere{{Project: "ha-hermes-assist", Num: 1}})
+	want := "home-network · [1] Fix guest DHCP lease time · running    ◆ ha-hermes-assist [1] needs you · M-a inbox · ● 1 running · ^q exit"
 	if line != want {
 		t.Fatalf("\n got %q\nwant %q", line, want)
 	}
@@ -277,7 +277,7 @@ func TestActivityRowsAndRender(t *testing.T) {
 	if r := a.Selected(ActivityRows([]*Model{bx, home})); r != (ActivityRow{"home-network", 6}) {
 		t.Fatalf("cursor moved to %v", r)
 	}
-	if out := RenderActivity(nil, &a, 46, 10, RenderOptions{Plain: true}, "A back"); !strings.Contains(out, "Nothing needs you.") {
+	if out := RenderActivity(nil, &a, 46, 10, RenderOptions{Plain: true}, "M-a back"); !strings.Contains(out, "Nothing needs you.") {
 		t.Fatal(out)
 	}
 }

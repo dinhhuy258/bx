@@ -59,6 +59,16 @@ func (k Keys) ListActions(key string) []string {
 	return out
 }
 
+// FromClaude reports whether key, pressed in the Claude pane, runs a list action instead of
+// going to Claude: a Ctrl or Alt key bound in the list. Plain keys are typing; a key the list
+// does not bind stays Claude's.
+func (k Keys) FromClaude(key string) bool {
+	if !strings.HasPrefix(key, "M-") && !strings.HasPrefix(key, "C-") {
+		return false
+	}
+	return len(k.ListActions(key)) > 0
+}
+
 // IsPrefixOfSequence reports whether some bound sequence starts with keys ("z" for "z M").
 func (k Keys) IsPrefixOfSequence(keys string) bool {
 	for _, binds := range k.List {

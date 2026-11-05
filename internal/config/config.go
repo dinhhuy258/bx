@@ -34,7 +34,16 @@ type Serve struct {
 type Client struct {
 	Server     string `toml:"server"`
 	SwitchPane string `toml:"switch_pane"`
-	OpenPage   string `toml:"open_page"` // opens the page Claude just made in the open session
+	OpenPage   string `toml:"open_page"` // opens the page Claude just made; "" = the artifacts key does
+}
+
+// PageKey is the key that opens the page Claude just made: open_page when set, else the
+// artifacts key, which opens the list of pages when there is no new one.
+func (c *Config) PageKey() string {
+	if c.Client.OpenPage != "" {
+		return c.Client.OpenPage
+	}
+	return c.Keys.First(c.Keys.List, "artifacts")
 }
 
 // Keys holds the list binds. A bind is a list of key names; "z M" is a two-key sequence.
@@ -60,20 +69,22 @@ func Default(root string) *Config {
 		Root: root,
 		Keys: Keys{
 			List: map[string][]string{
-				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"Z"}, "focus": {"F"},
-				"new_session": {"N"}, "new_story": {"W"}, "edit_workspace": {"E"},
-				"shell": {"T"}, "keymap": {"?"},
-				"rename": {"R"}, "close_story": {"D"}, "add_repo": {"+"},
-				"inbox": {"A"}, "projects": {"O"},
-				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"X"},
+				// Ctrl and Alt keys work from the Claude pane too, taking them from Claude (see
+				// Keys.FromClaude); plain keys only from the list.
+				"down": {"j", "Down"}, "up": {"k", "Up"}, "open": {"Enter"}, "fold_all": {"M-z"}, "focus": {"M-f"},
+				"new_session": {"M-n"}, "new_story": {"M-w"}, "edit_workspace": {"M-e"},
+				"shell": {"M-t"}, "keymap": {"?"},
+				"rename": {"M-r"}, "close_story": {"M-d"}, "add_repo": {"+"},
+				"inbox": {"M-a"}, "projects": {"M-o"},
+				"prev_project": {"["}, "next_project": {"]"}, "close_project": {"M-x"},
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
-				"settings": {"P"}, "stop_session": {"S"}, "delete_session": {"D"}, "close_shell": {"D"}, "cleanup": {"C"}, "artifacts": {"V"},
-				"review": {"G"}, "sync": {"U"},
+				"settings": {"M-p"}, "stop_session": {"M-s"}, "delete_session": {"M-d"}, "close_shell": {"M-d"}, "cleanup": {"M-c"}, "artifacts": {"M-v"},
+				"review": {"M-g"}, "sync": {"M-u"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
-		Client: Client{SwitchPane: "C-q", OpenPage: "M-o"},
+		Client: Client{SwitchPane: "C-q"},
 	}
 }
 

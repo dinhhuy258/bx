@@ -798,7 +798,7 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if key == m.cfg.Client.OpenPage && key != "" && m.page != nil { // from both panes
+	if m.cfg.Client.OpenPage != "" && key == m.cfg.Client.OpenPage && m.page != nil { // from both panes
 		return m, m.openPage()
 	}
 	if m.claudeFocused {
@@ -816,6 +816,11 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// brings this machine's instead. A shell gets C-v as it is.
 		if key == "C-v" && !m.target.Shell() && m.conn != nil {
 			return m, m.attach()
+		}
+		// a Ctrl or Alt key of the list works from Claude too, on the session in the pane; a
+		// shell gets every key
+		if m.cfg.Keys.FromClaude(key) && !m.target.Shell() {
+			return m.claudeAction(key)
 		}
 		if m.conn != nil {
 			m.term.SendKey(k)
@@ -848,6 +853,41 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.seq = key
 		return m, nil
 	}
+	return m.runListAction(action)
+}
+
+// claudeAction runs the list action of a key pressed in the Claude pane. It acts on the session
+// in the pane: the list selects it (so D deletes it), or its story for the story actions.
+// Folding and the inbox change the list, so the keys go there; focus switches focus mode on
+// and off.
+func (m *Model) claudeAction(key string) (tea.Model, tea.Cmd) {
+	if m.m.P.Sessions[m.target.Num] != nil {
+		m.m.SelectSession(m.target.Num)
+	}
+	action := m.listAction(key)
+	switch action {
+	case "focus":
+		m.focusMode = !m.focusMode
+		m.resizeTerm()
+		return m, nil
+	case "fold_all", "inbox":
+		m.claudeFocused, m.focusMode = false, false
+		m.resizeTerm()
+	}
+	if action != "inbox" {
+		m.activity = false // the inbox has none of the session's keys
+	}
+	if s := m.m.P.Sessions[m.target.Num]; s != nil {
+		switch action {
+		case "sync", "add_repo", "review":
+			m.m.SelectStory(s.Story)
+		}
+	}
+	return m.runListAction(action)
+}
+
+// runListAction runs a list action on the selected row.
+func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	switch action {
 	case "prev_project":
 		return m, m.stepProject(-1)
@@ -931,7 +971,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if row.Kind == ui.RowStory && row.Story != "" {
 			return m, m.openReview(row.Story)
 		}
-	case "artifacts":
+	case "artifacts": // the page Claude just made in it, else the list of its pages
+		if sess != nil && num == m.target.Num && m.page != nil {
+			return m, m.openPage()
+		}
 		if sess != nil {
 			return m, m.loadArtifacts(num)
 		}
@@ -2288,7 +2331,7 @@ func (m *Model) pageStrip(ch, color string) (line string, closeAt int) {
 	if m.pageNew {
 		kind = "New page"
 	}
-	key := config.Pretty(m.cfg.Client.OpenPage)
+	key := config.Pretty(m.cfg.PageKey())
 	btn, btnStyle := " Open "+key+" ", lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(lipgloss.Color("#7aa2f7")).Bold(true)
 	switch {
 	case m.page.URL == "":

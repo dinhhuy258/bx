@@ -28,7 +28,7 @@ var keymapGroups = []keymapGroup{
 		{"stop_session", "stop · Claude exits; ⏎ resumes it"},
 		{"delete_session", "delete · removes uploads and artifacts; transcript stays in ~/.claude"},
 		{"rename", "rename"},
-		{"artifacts", "artifacts · the pages it made"},
+		{"artifacts", "artifacts · the page it just made, else the pages it made"},
 	}},
 	{"SHELL", "the selected $n row", []keymapItem{
 		{"open", "open the shell"},
@@ -90,7 +90,8 @@ func Keymap(cfg *config.Config, width int) string {
 	for _, l := range []line{
 		{keys(cfg.Client.SwitchPane), "between the list and Claude"},
 		{keys("C-c"), "quit bx · Claude keeps running; esc interrupts it · a shell keeps ^c"},
-		{keys(cfg.Client.OpenPage), "open the page Claude just made (or click it on the line under the title)"},
+		{keys(cfg.PageKey()), "open the page Claude just made (or click it on the line under the title)"},
+		{"M-…", "the list's Alt (and Ctrl) keys work from Claude too, on the session in it"},
 	} {
 		if l.keys != "" {
 			panes.lines = append(panes.lines, l)
