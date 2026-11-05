@@ -1,12 +1,17 @@
 package serve
 
 import (
+	"context"
 	"net"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 
+	"github.com/dinhhuy258/bx/internal/api"
+	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/ports"
+	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
 
@@ -53,4 +58,41 @@ func TestScanPorts(t *testing.T) {
 	if !s.Forwards.Open(3000) || s.Forwards.Open(4000) {
 		t.Error("forwards: 3000 should be open, 4000 not")
 	}
+}
+
+func TestAppRoutes(t *testing.T) {
+	s, f, ts := newServer(t)
+	os.MkdirAll(s.Cfg.AppsDir(), 0o755)
+	os.WriteFile(s.Cfg.AppFile("home-network"), []byte("[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\n"), 0o644)
+	s.App.Self, s.AppHost = "/bin/bx", "dev"
+	wt := s.Cfg.WorktreeDir("home-network", "s1")
+	f.Replies["new-session -d -s bxsh-home-network-s1-1 -c "+wt+" -e PAGER=cat -e GIT_PAGER=cat -e BX_APP_HOST=dev -P -F #{session_id}"] = "$9\n"
+
+	res, code := post(t, ts, "/api/projects/home-network/app/run", api.Action{Story: "s1"})
+	if code != 200 || res.Error != "" {
+		t.Fatalf("run: %d %+v", code, res)
+	}
+	if len(f.Inputs) == 0 || f.Inputs[len(f.Inputs)-1] != "/bin/bx run-exec home-network s1 web" {
+		t.Errorf("typed %q", f.Inputs)
+	}
+
+	// another story runs: 409 with what runs
+	f.Replies[listShells] = "$9\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tnode\tweb\n"
+	s.App.NewStory(context.Background(), mustLoad(t, s), app.StoryOpts{Name: "s2"})
+	res, code = post(t, ts, "/api/projects/home-network/app/run", api.Action{Story: "s2"})
+	if code != 409 || res.RunStory != "s1" || !slices.Equal(res.RunNames, []string{"web"}) {
+		t.Errorf("conflict: %d %+v", code, res)
+	}
+	if _, code = post(t, ts, "/api/projects/home-network/app/bogus", api.Action{Story: "s1"}); code != 404 {
+		t.Errorf("bogus action: %d", code)
+	}
+}
+
+func mustLoad(t *testing.T, s *Server) *state.Project {
+	t.Helper()
+	p, err := s.App.LoadProject("home-network")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

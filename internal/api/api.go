@@ -88,6 +88,11 @@ type Action struct {
 	Base        string   `json:"base,omitempty"`   // base: the base override; "" removes it
 	Link        []string `json:"link,omitempty"`   // links: repo projects to link into a workspace
 	Unlink      []string `json:"unlink,omitempty"` // links: links to remove from a workspace
+	// app/run, app/stop, app/setup: the runs (nil = all; setup takes one), Replace stops the
+	// story that runs first (after a 409 with RunStory), Setup runs the setups again.
+	Runs    []string `json:"runs,omitempty"`
+	Replace bool     `json:"replace,omitempty"`
+	Setup   bool     `json:"setup,omitempty"`
 }
 
 // NewProject is the body of POST /api/projects.
@@ -124,6 +129,9 @@ type Result struct {
 	Branch string `json:"branch,omitempty"`
 	// Line is the line of a refused MCP document (PUT /api/mcp/doc), 0 when unknown.
 	Line int `json:"line,omitempty"`
+	// app/run refused (409) because another story runs: that story and its runs.
+	RunStory string   `json:"run_story,omitempty"`
+	RunNames []string `json:"run_names,omitempty"`
 }
 
 // StoryInfo is GET /api/projects/{name}/storyinfo, for the new story prompt: the base a new

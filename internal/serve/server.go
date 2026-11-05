@@ -182,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
 	s.reviewRoutes(mux)
 	s.prRoutes(mux)
+	s.appRoutes(mux)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
 	return sameOrigin(mux)
 }
