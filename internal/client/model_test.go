@@ -20,6 +20,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/naming"
+	"github.com/dinhhuy258/bx/internal/runcfg"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
@@ -28,27 +29,36 @@ import (
 
 // fakeBackend serves fixed projects and snapshots and records every action.
 type fakeBackend struct {
-	projects  []api.ProjectSummary
-	snaps     map[string]api.Snapshot
-	actions   []string
-	dirty     int    // stories/close without force is refused with this many files
-	closeMsg  string // the Message of a stories/close that goes through
-	created   []api.NewProject
-	links     []api.Link // the links of every workspace
-	createErr error
-	values    map[string]string // the server's settings
-	saves     []map[string]string
-	saveErr   error
-	origDirty int          // stories/repos without force is refused with this many files
-	plan      api.SyncPlan // the reply of every sync plan
-	planErr   error
-	planReqs  []api.SyncPlanRequest
-	applyRes  api.SyncResult
-	applyErr  error
-	applies   []api.SyncApplyRequest
-	running   map[int]bool // delete without force on these sessions is refused as still running
-	cleanup   api.Cleanup  // the reply of every cleanup scan
-	cleaned   [][]string   // the ids of every cleanup apply
+	// apps
+	appActs      []string                 // "<project> <action> <story> [runs] [replace] [setup]"
+	appRes       api.Result               // the reply of every app action
+	appErr       error                    // its error (a *StatusError with Code 409 for a conflict)
+	runCfgs      map[string]api.RunConfig // by project
+	runSaves     []api.RunConfig
+	runSaveErr   []runcfg.FieldError // a structured save is refused with these
+	runTexts     map[string]string   // by project
+	runTextSaves []string
+	projects     []api.ProjectSummary
+	snaps        map[string]api.Snapshot
+	actions      []string
+	dirty        int    // stories/close without force is refused with this many files
+	closeMsg     string // the Message of a stories/close that goes through
+	created      []api.NewProject
+	links        []api.Link // the links of every workspace
+	createErr    error
+	values       map[string]string // the server's settings
+	saves        []map[string]string
+	saveErr      error
+	origDirty    int          // stories/repos without force is refused with this many files
+	plan         api.SyncPlan // the reply of every sync plan
+	planErr      error
+	planReqs     []api.SyncPlanRequest
+	applyRes     api.SyncResult
+	applyErr     error
+	applies      []api.SyncApplyRequest
+	running      map[int]bool // delete without force on these sessions is refused as still running
+	cleanup      api.Cleanup  // the reply of every cleanup scan
+	cleaned      [][]string   // the ids of every cleanup apply
 	// new stories
 	review      api.Review // the stored review: GET returns it, PUT and clear-sent change it
 	saveRev     []api.ReviewComments
@@ -2654,4 +2664,63 @@ func TestQuitKeyIsConfigurable(t *testing.T) {
 	if quitted(h) || strings.Contains(ansi.Strip(h.m.bar()), "quit bx") {
 		t.Fatal("C-c quit with no quit key")
 	}
+}
+
+func (f *fakeBackend) AppAction(_ context.Context, project, action string, a api.Action) (api.Result, error) {
+	parts := []string{project, action, a.Story}
+	if len(a.Runs) > 0 {
+		parts = append(parts, "["+strings.Join(a.Runs, ",")+"]")
+	}
+	if a.Replace {
+		parts = append(parts, "replace")
+	}
+	if a.Setup {
+		parts = append(parts, "setup")
+	}
+	f.appActs = append(f.appActs, strings.Join(parts, " "))
+	return f.appRes, f.appErr
+}
+
+func (f *fakeBackend) RunConfigs(context.Context) ([]api.RunConfigs, error) {
+	var out []api.RunConfigs
+	for _, p := range f.projects {
+		rc := f.runCfgs[p.Name]
+		names := []string{}
+		for _, r := range rc.Runs {
+			names = append(names, r.Name)
+		}
+		out = append(out, api.RunConfigs{Project: p.Name, Runs: names})
+	}
+	return out, nil
+}
+
+func (f *fakeBackend) RunConfig(_ context.Context, p string) (api.RunConfig, error) {
+	return f.runCfgs[p], nil
+}
+
+func (f *fakeBackend) SaveRunConfig(_ context.Context, p string, rc api.RunConfig) (api.RunConfig, error) {
+	f.runSaves = append(f.runSaves, rc)
+	if len(f.runSaveErr) > 0 {
+		rc.Errors = f.runSaveErr
+		return rc, &StatusError{Code: 400, Text: f.runSaveErr[0].Error()}
+	}
+	if f.runCfgs == nil {
+		f.runCfgs = map[string]api.RunConfig{}
+	}
+	f.runCfgs[p] = rc
+	return rc, nil
+}
+
+func (f *fakeBackend) RunConfigText(_ context.Context, p string) (string, error) {
+	return f.runTexts[p], nil
+}
+
+func (f *fakeBackend) SaveRunConfigText(_ context.Context, p, text string) (api.Result, error) {
+	f.runTextSaves = append(f.runTextSaves, p+"="+text)
+	return api.Result{}, nil
+}
+
+func (f *fakeBackend) DeleteRunConfig(_ context.Context, p string) error {
+	delete(f.runCfgs, p)
+	return nil
 }

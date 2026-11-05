@@ -68,6 +68,13 @@ type Backend interface {
 	MarkViewed(ctx context.Context, project, story string, v api.ReviewViewed) (api.Review, error)
 	Explain(ctx context.Context, project, story string, req api.ExplainRequest) (api.Review, error)
 	DeleteExplain(ctx context.Context, project, story, id string) (api.Review, error)
+	AppAction(ctx context.Context, project, action string, a api.Action) (api.Result, error)
+	RunConfigs(ctx context.Context) ([]api.RunConfigs, error)
+	RunConfig(ctx context.Context, project string) (api.RunConfig, error)
+	SaveRunConfig(ctx context.Context, project string, rc api.RunConfig) (api.RunConfig, error)
+	RunConfigText(ctx context.Context, project string) (string, error)
+	SaveRunConfigText(ctx context.Context, project, text string) (api.Result, error)
+	DeleteRunConfig(ctx context.Context, project string) error
 }
 
 // Conn is one open session stream.
