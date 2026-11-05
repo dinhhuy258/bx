@@ -1,6 +1,7 @@
 package runcfg
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -52,7 +53,7 @@ func TestParse(t *testing.T) {
 func TestParseErrors(t *testing.T) {
 	_, err := Parse([]byte("[[run]]\nname = \"a\"\ncmd = \n"))
 	var se *SyntaxError
-	if !asSyntax(err, &se) || se.Line != 3 {
+	if !errors.As(err, &se) || se.Line != 3 {
 		t.Errorf("syntax: %#v", err)
 	}
 	if _, err := Parse([]byte("[[run]]\nname = \"a\"\ncmd = \"x\"\nprot = 3\n")); err == nil || !strings.Contains(err.Error(), "prot") {

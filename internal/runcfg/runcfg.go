@@ -109,8 +109,6 @@ func (e *SyntaxError) Error() string {
 	return e.Msg
 }
 
-func asSyntax(err error, out **SyntaxError) bool { return errors.As(err, out) }
-
 // Parse reads a run config. An empty one is a File with no runs.
 func Parse(data []byte) (File, error) {
 	var f File

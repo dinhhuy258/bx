@@ -33,13 +33,6 @@ func NewForwards(host string) *Forwards {
 	return &Forwards{Host: host, listen: net.Listen, open: map[int]*forward{}}
 }
 
-// Open reports whether port has a forward.
-func (f *Forwards) Open(port int) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.open[port] != nil
-}
-
 // Sync makes the forwards match want (port → the loopback address to dial). A forward stays
 // through one scan without its port, so an app that restarts keeps it. The result holds an
 // entry per wanted port: nil when it is open, errTaken or the bind error when not; a failed

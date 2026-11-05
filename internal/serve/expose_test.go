@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+// Open reports whether port has a forward.
+func (f *Forwards) Open(port int) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.open[port] != nil
+}
+
 // echo listens on [::1]:0 and echoes, standing in for an app bound to loopback.
 func echo(t *testing.T) int {
 	t.Helper()
