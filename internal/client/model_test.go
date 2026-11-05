@@ -510,7 +510,7 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 		case "C-c", "C-h", "C-l", "C-q", "C-v", "C-s":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModCtrl}
-		case "M-a", "M-c", "M-d", "M-e", "M-f", "M-g", "M-n", "M-o", "M-p", "M-r", "M-s", "M-t", "M-u", "M-v", "M-w", "M-x", "M-z":
+		case "M-a", "M-c", "M-d", "M-e", "M-f", "M-g", "M-n", "M-o", "M-p", "M-r", "M-s", "M-t", "M-q", "M-u", "M-v", "M-w", "M-x", "M-z":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModAlt}
 		default:
 			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
@@ -2555,5 +2555,70 @@ func TestClaudeKeepsKeysTheListDoesNotBind(t *testing.T) {
 	h.press("M-t")
 	if !reachedClaude(h) || h.m.prompt.Active() {
 		t.Fatal("unbound M-t did not reach Claude")
+	}
+}
+
+// quitted reports whether bx closed.
+func quitted(h *harness) bool { return h.m.ctx.Err() != nil }
+
+func TestTwoKeyQuitWaitsForTheSecond(t *testing.T) {
+	two := func() *harness {
+		h := start(t, 200, 30, "running")
+		h.m.cfg.Client.Quit = "C-c C-c"
+		return h
+	}
+	h := two()
+	h.press("C-c")
+	if quitted(h) || h.m.flash != "^c to quit bx" {
+		t.Fatalf("one C-c: quit %v flash %q", quitted(h), h.m.flash)
+	}
+	h.press("C-c")
+	if !quitted(h) {
+		t.Fatal("C-c C-c did not quit")
+	}
+
+	h = two()
+	h.press("C-c", "k", "C-c") // another key cancels, and works as usual
+	if quitted(h) || h.m.m.Selected().Kind != ui.RowStory {
+		t.Fatalf("C-c k C-c: quit %v selected %+v", quitted(h), h.m.m.Selected())
+	}
+	h.m.quitAt = time.Now().Add(-2 * quitWindow) // too late for the second
+	h.press("C-c")
+	if quitted(h) || h.m.flash != "^c to quit bx" {
+		t.Fatal("a late second C-c quit")
+	}
+
+	h = two()
+	h.press("Enter", "C-c") // in Claude: bx takes both
+	if quitted(h) || reachedClaude(h) {
+		t.Fatal("the first C-c in Claude quit or reached Claude")
+	}
+	h.press("C-c")
+	if !quitted(h) {
+		t.Fatal("C-c C-c in Claude did not quit")
+	}
+}
+
+func TestQuitKeyIsConfigurable(t *testing.T) {
+	h := start(t, 200, 30, "running")
+	h.m.cfg.Client.Quit = "M-q"
+	h.press("Enter")
+	if bar := ansi.Strip(h.m.bar()); !strings.Contains(bar, "M-q quit bx") {
+		t.Fatalf("bar = %q", bar)
+	}
+	h.press("C-c") // no longer bx's: Claude gets it
+	if quitted(h) || !reachedClaude(h) {
+		t.Fatal("C-c did not reach Claude")
+	}
+	h.press("M-q")
+	if !quitted(h) {
+		t.Fatal("M-q did not quit")
+	}
+
+	h = start(t, 200, 30, "running")
+	h.m.cfg.Client.Quit = "" // no quit key at all
+	h.press("C-c")
+	if quitted(h) || strings.Contains(ansi.Strip(h.m.bar()), "quit bx") {
+		t.Fatal("C-c quit with no quit key")
 	}
 }

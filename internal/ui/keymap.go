@@ -89,7 +89,7 @@ func Keymap(cfg *config.Config, width int) string {
 	panes := block{head: pal.bold.Render("PANES") + pal.dim.Render(" · from the list and from Claude")}
 	for _, l := range []line{
 		{keys(cfg.Client.SwitchPane), "between the list and Claude"},
-		{keys("C-c"), "quit bx · Claude keeps running; esc interrupts it · a shell keeps ^c"},
+		{keys(cfg.Client.Quit), "quit bx · Claude keeps running; esc interrupts it · a shell keeps ^c"},
 		{keys(cfg.PageKey()), "open the page Claude just made (or click it on the line under the title)"},
 		{"M-…", "the list's Alt (and Ctrl) keys work from Claude too, on the session in it"},
 	} {

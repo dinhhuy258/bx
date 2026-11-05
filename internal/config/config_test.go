@@ -116,7 +116,7 @@ func TestRootFromEnv(t *testing.T) {
 
 func TestServeAndClientSections(t *testing.T) {
 	root := t.TempDir()
-	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\nswitch_pane = \"C-g\"\nopen_page = \"\"\n"
+	toml := "[serve]\nlisten = \"100.100.1.2:7357\"\n\n[client]\nserver = \"http://100.100.1.2:7357\"\nswitch_pane = \"C-g\"\nopen_page = \"\"\nquit = \"C-c C-c\"\n"
 	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -127,11 +127,11 @@ func TestServeAndClientSections(t *testing.T) {
 	if c.Serve.Listen != "100.100.1.2:7357" {
 		t.Fatalf("serve.listen = %q", c.Serve.Listen)
 	}
-	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.SwitchPane != "C-g" || c.Client.OpenPage != "" {
+	if c.Client.Server != "http://100.100.1.2:7357" || c.Client.SwitchPane != "C-g" || c.Client.OpenPage != "" || c.Client.Quit != "C-c C-c" {
 		t.Fatalf("client = %+v", c.Client)
 	}
 	d := Default(root)
-	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.SwitchPane != "C-q" || d.Client.OpenPage != "" || d.PageKey() != "M-v" {
+	if d.Serve.Listen != "auto" || d.Client.Server != "" || d.Client.SwitchPane != "C-q" || d.Client.Quit != "C-c" || d.Client.OpenPage != "" || d.PageKey() != "M-v" {
 		t.Fatalf("defaults = %+v %+v", d.Serve, d.Client)
 	}
 }

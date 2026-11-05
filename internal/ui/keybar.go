@@ -59,7 +59,9 @@ func KeyBar(m *Model, cfg *config.Config, ctx BarContext) string {
 		if ctx.Page && cfg.PageKey() != "" {
 			parts = append(parts, k(cfg.PageKey(), "open page"))
 		}
-		parts = append(parts, k("C-c", "quit bx"))
+		if cfg.Client.Quit != "" {
+			parts = append(parts, k(cfg.Client.Quit, "quit bx"))
+		}
 		return join(parts)
 	}
 	row, rowKeys := rowPart(m, cfg, ctx)

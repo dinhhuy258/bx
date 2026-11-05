@@ -270,6 +270,7 @@ type Model struct {
 	seq           string
 	flash         string
 	flashAt       time.Time
+	quitAt        time.Time // the first key of a two-key quit was pressed; zero when none waits
 	showKeys      bool
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -784,9 +785,10 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.reviewKey(key)
 	}
 	if m.m == nil {
+		if cmd, used := m.quitKey(key); used {
+			return m, cmd
+		}
 		switch {
-		case key == "C-c":
-			return m, m.quit()
 		case m.project == "" && m.loaded && m.cfg.Keys.ListAction(key) == "projects":
 			m.openProjectPicker()
 		case m.showKeys:
@@ -807,10 +809,12 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.resizeTerm()
 			return m, nil
 		}
-		// C-c closes bx from Claude too; Claude keeps running, and Esc interrupts it. A shell
-		// keeps C-c for its commands.
-		if key == "C-c" && !m.target.Shell() {
-			return m, m.quit()
+		// the quit key closes bx from Claude too; Claude keeps running, and Esc interrupts it.
+		// A shell keeps C-c for its commands.
+		if key != "C-c" || !m.target.Shell() {
+			if cmd, used := m.quitKey(key); used {
+				return m, cmd
+			}
 		}
 		// C-v is Claude Code's image paste, but Claude reads the server's clipboard: attach
 		// brings this machine's instead. A shell gets C-v as it is.
@@ -835,12 +839,13 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.showKeys = false
 		return m, nil
 	}
+	if cmd, used := m.quitKey(key); used {
+		m.seq = ""
+		return m, cmd
+	}
 	if m.seq != "" {
 		key = m.seq + " " + key
 		m.seq = ""
-	}
-	if key == "C-c" {
-		return m, m.quit()
 	}
 	if key == m.cfg.Client.SwitchPane && key != "" {
 		if m.target.Zero() || m.paneClosed { // nothing live in the pane to go to
@@ -2034,6 +2039,41 @@ func (m *Model) doIn(project, action string, a api.Action) error {
 
 func (m *Model) setFlash(s string) { m.flash, m.flashAt = s, time.Now() }
 
+// quitWindow is how soon the second key of a two-key quit ("C-c C-c") must come.
+const quitWindow = time.Second
+
+// quitKey handles key as the quit key (Client.Quit). used means bx took it: it quits, or it is
+// the first of two keys and the second is awaited. Any other key, or a late one, cancels the
+// wait and goes on as usual.
+func (m *Model) quitKey(key string) (cmd tea.Cmd, used bool) {
+	keys := strings.Fields(m.cfg.Client.Quit)
+	waiting := !m.quitAt.IsZero() && time.Since(m.quitAt) < quitWindow
+	if !m.quitAt.IsZero() {
+		m.quitAt = time.Time{}
+		if m.flash == m.quitHint() {
+			m.flash = ""
+		}
+	}
+	switch {
+	case len(keys) == 1 && key == keys[0], len(keys) == 2 && waiting && key == keys[1]:
+		return m.quit(), true
+	case len(keys) == 2 && key == keys[0]:
+		m.quitAt = time.Now()
+		m.setFlash(m.quitHint())
+		return nil, true
+	}
+	return nil, false
+}
+
+// quitHint is the flash while a two-key quit waits for its second key: "^c to quit bx".
+func (m *Model) quitHint() string {
+	keys := strings.Fields(m.cfg.Client.Quit)
+	if len(keys) == 0 {
+		return ""
+	}
+	return config.Pretty(keys[len(keys)-1]) + " to quit bx"
+}
+
 func (m *Model) quit() tea.Cmd {
 	m.cancel()
 	if m.conn != nil {
@@ -2150,7 +2190,10 @@ func (m *Model) empty() string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
 	brand := lipgloss.NewStyle().Foreground(lipgloss.Color("#bb9af7")).Bold(true)
 	key := func(action string) string { return config.Pretty(m.cfg.Keys.First(m.cfg.Keys.List, action)) }
-	hint := key("projects") + " open a project · " + key("settings") + " settings · " + key("keymap") + " keys · ^c quit"
+	hint := key("projects") + " open a project · " + key("settings") + " settings · " + key("keymap") + " keys"
+	if q := m.cfg.Client.Quit; q != "" {
+		hint += " · " + config.Pretty(q) + " quit"
+	}
 	lines := []string{brand.Render("bx"), "", "  No project open.", dim.Render("  " + hint)}
 	for len(lines) < m.height-1 {
 		lines = append(lines, "")

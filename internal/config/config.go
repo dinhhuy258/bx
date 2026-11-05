@@ -30,10 +30,12 @@ type Serve struct {
 
 // Client holds `bx` client settings: the server URL and the keys that work from both panes.
 // SwitchPane moves between the list and the Claude pane, both ways. Moving to the tmux panes
-// beside bx is left to tmux.
+// beside bx is left to tmux. Quit closes bx while Claude and the shells keep running: two keys
+// ("C-c C-c") want the second within a second, "" leaves bx without one, and a shell keeps C-c.
 type Client struct {
 	Server     string `toml:"server"`
 	SwitchPane string `toml:"switch_pane"`
+	Quit       string `toml:"quit"`
 	OpenPage   string `toml:"open_page"` // opens the page Claude just made; "" = the artifacts key does
 }
 
@@ -84,7 +86,7 @@ func Default(root string) *Config {
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
-		Client: Client{SwitchPane: "C-q"},
+		Client: Client{SwitchPane: "C-q", Quit: "C-c"},
 	}
 }
 
@@ -119,6 +121,7 @@ type rawConfig struct {
 	Client struct {
 		Server     *string `toml:"server"`
 		SwitchPane *string `toml:"switch_pane"`
+		Quit       *string `toml:"quit"`
 		OpenPage   *string `toml:"open_page"`
 	} `toml:"client"`
 }
@@ -136,6 +139,9 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 	if r.Client.SwitchPane != nil {
 		c.Client.SwitchPane = *r.Client.SwitchPane
+	}
+	if r.Client.Quit != nil {
+		c.Client.Quit = *r.Client.Quit
 	}
 	if r.Client.OpenPage != nil {
 		c.Client.OpenPage = *r.Client.OpenPage
