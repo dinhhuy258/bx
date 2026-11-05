@@ -588,10 +588,10 @@ func (s *Settings) runFormKey(key string) SettingsResult {
 			}
 		}
 	case "Enter":
-		switch k := f.field(); {
-		case k == rfBuild:
+		switch f.field() {
+		case rfBuild:
 			return SettingsRunsBuild
-		case k == rfWhere:
+		case rfWhere:
 		default:
 			if _, _, _, ok := s.RunsFormText(); ok {
 				return SettingsRunsText

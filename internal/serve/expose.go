@@ -47,7 +47,7 @@ func (f *Forwards) Sync(want map[int]string) map[int]error {
 			continue
 		}
 		if fw.misses++; fw.misses >= 2 {
-			fw.l.Close()
+			_ = fw.l.Close()
 			delete(f.open, port)
 		}
 	}
@@ -88,12 +88,12 @@ func (f *Forwards) serve(fw *forward) {
 // splice copies both ways between c and a new connection to addr, closing each write side
 // when its reader ends.
 func splice(c net.Conn, addr string) {
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	b, err := net.Dial("tcp", addr)
 	if err != nil {
 		return
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 	done := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(b, c)
@@ -114,7 +114,7 @@ func (f *Forwards) Close() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for port, fw := range f.open {
-		fw.l.Close()
+		_ = fw.l.Close()
 		delete(f.open, port)
 	}
 }
