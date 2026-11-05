@@ -70,7 +70,9 @@ export function showProject(root, name) {
   // group is just its label; its ⋯ menu starts the first session.
   function group(story, rows) {
     const d = story && snap.live.diff ? snap.live.diff[story] : null;
-    const shells = shellsOf(story);
+    const all = shellsOf(story);
+    const runs = all.filter((sh) => sh.run);
+    const shells = all.filter((sh) => !sh.run);
     const n = behindOf(story);
     return h('section', { class: 'sec' },
       h('div', { class: 'sec-head' },
@@ -80,9 +82,48 @@ export function showProject(root, name) {
         d ? h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${d.add}`), h('span', { class: 'del' }, `−${d.del}`),
           d.dirty ? h('span', {}, `· ${d.dirty} uncommitted`) : null) : null,
         h('button', { class: 'ib', 'aria-label': story ? 'Story actions' : 'Chats actions', onclick: () => storyMenu(story) }, icon('more'))),
+      appCard(story, runs),
       rows.length || shells.length
         ? h('div', { class: needsYou(story) ? 'card attn' : 'card' }, rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow))
         : null);
+  }
+
+  // appCard is a story's running apps: its links (new tab), then its run shells, with Stop and
+  // Restart. Nothing while the story runs no app.
+  function appCard(story, runs) {
+    const ports = ((snap.live && snap.live.ports) || {})[story || ''] || [];
+    if (!runs.length && !ports.length) return null;
+    const link = (p) => p.error
+      ? h('div', { class: 'item' }, h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, `:${p.port}`), h('span', { class: 'item-meta' }, p.error)))
+      : h('a', { class: 'item app-link', href: p.url, target: '_blank', rel: 'noopener' },
+        h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, p.url), p.forwarded ? h('span', { class: 'item-meta' }, '⇄ forwarded') : null),
+        h('span', { class: 'app-go', 'aria-hidden': 'true' }, '↗'));
+    return h('div', { class: 'card' },
+      h('div', { class: 'sec-head' }, h('span', { class: 'sec-label' }, '▶ App'),
+        h('button', { class: 'app-btn', onclick: () => appAction(story, 'stop') }, 'Stop'),
+        h('button', { class: 'app-btn', onclick: () => appRestart(story) }, 'Restart')),
+      ports.map(link), runs.map(shellRow));
+  }
+
+  // appAction posts app/run or app/stop; a run refused because another story runs asks first.
+  async function appAction(story, action, replace) {
+    try {
+      await api.action(name, `app/${action}`, { story, replace: !!replace });
+      toast(action === 'stop' ? `${story}: apps stopped` : `${story}: starting`);
+    } catch (e) {
+      if (e.status === 409 && e.result && e.result.run_story) {
+        const r = e.result;
+        if (await confirmBox(`Stop ${r.run_story} and run ${story}?`, 'Stop and run', { text: `${r.run_story} runs ${(r.run_names || []).join(', ')}. One story of a project runs at a time.` })) {
+          return appAction(story, action, true);
+        }
+      } else toast(e.message);
+    }
+    refresh();
+  }
+
+  async function appRestart(story) {
+    try { await api.action(name, 'app/stop', { story }); } catch (e) { toast(e.message); return; }
+    return appAction(story, 'run');
   }
 
   // shellRow is [$k][ label / command or "shell" ][busy][⋯]: the command shows after a rename,
@@ -91,7 +132,7 @@ export function showProject(root, name) {
     return h('div', { class: 'item' },
       h('a', { class: 'item-link', href: shellHref(name, sh.story, sh.k) },
         tile(`$${sh.k}`, 'shell'),
-        h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, shellLabel(sh)),
+        h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, sh.run && !sh.title ? sh.run : shellLabel(sh)),
           h('span', { class: 'item-meta' }, sh.title && sh.command ? h('span', { class: 'cmd' }, sh.command) : 'shell'))),
       sh.command && !plainShell(sh.command) ? h('span', { class: 'pill busy' }, 'busy') : null,
       h('button', { class: 'ib', 'aria-label': 'Shell actions', onclick: () => shellMenu({ project: name, sh, refresh, onClosed: refresh }) }, icon('more')));
@@ -128,7 +169,8 @@ export function showProject(root, name) {
     const pb = ((snap.live && snap.live.pr) || {})[story];
     const items = [pb && pb.count ? { label: 'Pull request', icon: 'branch', hint: prBadgeText(pb), run: () => { location.hash = prHref(story); } } : null,
       { label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } },
-      { label: 'New session', run: () => newSession(story) }, shellItem, syncItem].filter(Boolean);
+      { label: 'New session', run: () => newSession(story) }, shellItem,
+      { label: 'Run apps', icon: 'play', hint: 'Start the runs of Settings › Apps (TUI)', run: () => appAction(story, 'run') }, syncItem].filter(Boolean);
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
     // closing removes the worktree: red, in its own group, and asked twice when files would be lost
     items.push({ label: 'Close story', icon: 'trash', hint: 'Stops its sessions and removes its worktree', danger: true, run: async () => {
