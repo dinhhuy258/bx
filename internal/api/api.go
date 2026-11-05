@@ -2,6 +2,7 @@
 package api
 
 import (
+	"github.com/dinhhuy258/bx/internal/runcfg"
 	"time"
 
 	"github.com/dinhhuy258/bx/internal/claude"
@@ -379,4 +380,29 @@ type PRSend struct {
 	Threads []string `json:"threads,omitempty"`
 	Session int      `json:"session,omitempty"`
 	New     bool     `json:"new,omitempty"`
+}
+
+// RunConfig is GET and PUT /api/projects/{name}/runconfig: the project's runs and port lists
+// for Settings › Apps. GET adds Repos (a workspace's repositories, for the dir choice; nil in
+// a repo project), HasComments (a form save would drop the file's comments) and Error (the
+// file does not parse: edit it as text). A refused PUT is a 400 with Errors.
+type RunConfig struct {
+	Runs        []runcfg.Run        `json:"runs"`
+	Hide        []int               `json:"hide,omitempty"`
+	Show        []int               `json:"show,omitempty"`
+	Repos       []string            `json:"repos,omitempty"`
+	HasComments bool                `json:"has_comments,omitempty"`
+	Error       string              `json:"error,omitempty"`
+	Errors      []runcfg.FieldError `json:"errors,omitempty"`
+}
+
+// RunConfigText is GET and PUT /api/projects/{name}/runconfig?text=1: the file as it is.
+type RunConfigText struct {
+	Text string `json:"text"`
+}
+
+// RunConfigs is a row of GET /api/runconfigs: a project and its run names.
+type RunConfigs struct {
+	Project string   `json:"project"`
+	Runs    []string `json:"runs"`
 }

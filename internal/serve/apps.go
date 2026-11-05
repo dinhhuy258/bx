@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"slices"
 	"time"
 
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/ports"
+	"github.com/dinhhuy258/bx/internal/runcfg"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
@@ -130,6 +134,10 @@ func (s *Server) scanPorts() {
 
 func (s *Server) appRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/projects/{name}/app/{action}", s.appAction)
+	mux.HandleFunc("GET /api/runconfigs", s.runConfigs)
+	mux.HandleFunc("GET /api/projects/{name}/runconfig", s.getRunConfig)
+	mux.HandleFunc("PUT /api/projects/{name}/runconfig", s.putRunConfig)
+	mux.HandleFunc("DELETE /api/projects/{name}/runconfig", s.deleteRunConfig)
 }
 
 // appAction runs, stops or sets up a story's apps. It does not take the write lock: a stop
@@ -177,4 +185,116 @@ func (s *Server) appAction(w http.ResponseWriter, r *http.Request) {
 		s.Log("app %s: %s/%s %v", act, p.Name, a.Story, a.Runs)
 		writeJSON(w, api.Result{Story: a.Story})
 	}
+}
+
+func (s *Server) runConfigs(w http.ResponseWriter, r *http.Request) {
+	names, err := state.ListProjects(s.stateDir())
+	if err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	out := []api.RunConfigs{}
+	for _, name := range names {
+		p, err := s.App.LoadProject(name)
+		if err != nil {
+			continue
+		}
+		f, _ := s.App.RunConfig(p)
+		out = append(out, api.RunConfigs{Project: name, Runs: f.Names()})
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) getRunConfig(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	data, err := os.ReadFile(s.Cfg.AppFile(p.Name))
+	if err != nil && !os.IsNotExist(err) {
+		httpError(w, 500, err)
+		return
+	}
+	if r.URL.Query().Has("text") {
+		writeJSON(w, api.RunConfigText{Text: string(data)})
+		return
+	}
+	out := api.RunConfig{Runs: []runcfg.Run{}, HasComments: runcfg.HasComments(data)}
+	if p.IsWorkspace() {
+		out.Repos, _ = s.App.WorkspaceRepos(p)
+	}
+	if f, err := runcfg.Parse(data); err != nil {
+		out.Error = err.Error()
+	} else {
+		out.Runs, out.Hide, out.Show = slices.Clip(append(out.Runs, f.Runs...)), f.Hide, f.Show
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) putRunConfig(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	var repos []string
+	if p.IsWorkspace() {
+		repos, _ = s.App.WorkspaceRepos(p)
+	}
+	var data []byte
+	if r.URL.Query().Has("text") {
+		var t api.RunConfigText
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&t); err != nil {
+			httpError(w, 400, err)
+			return
+		}
+		f, err := runcfg.Parse([]byte(t.Text))
+		var se *runcfg.SyntaxError
+		if errors.As(err, &se) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			_ = json.NewEncoder(w).Encode(api.Result{Error: se.Msg, Line: se.Line})
+			return
+		}
+		if errs := runcfg.Validate(f, repos); len(errs) > 0 {
+			httpError(w, 400, errs[0])
+			return
+		}
+		data = []byte(t.Text) // as written: its comments stay
+	} else {
+		var c api.RunConfig
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&c); err != nil {
+			httpError(w, 400, err)
+			return
+		}
+		f := runcfg.File{Runs: c.Runs, Hide: c.Hide, Show: c.Show}
+		if errs := runcfg.Validate(f, repos); len(errs) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(400)
+			_ = json.NewEncoder(w).Encode(api.RunConfig{Runs: c.Runs, Errors: errs, Error: errs[0].Error()})
+			return
+		}
+		data = runcfg.Format(f)
+	}
+	if err := s.App.SaveRunConfig(p, data); err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	s.Log("run config: saved %s", p.Name)
+	r.URL.RawQuery = ""
+	s.getRunConfig(w, r)
+}
+
+func (s *Server) deleteRunConfig(w http.ResponseWriter, r *http.Request) {
+	p, err := s.load(r.PathValue("name"))
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	if err := s.App.DeleteRunConfig(p); err != nil {
+		httpError(w, 500, err)
+		return
+	}
+	writeJSON(w, api.Result{})
 }

@@ -1,16 +1,22 @@
 package serve
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/ports"
+	"github.com/dinhhuy258/bx/internal/runcfg"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
@@ -95,4 +101,73 @@ func mustLoad(t *testing.T, s *Server) *state.Project {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestRunConfigRoutes(t *testing.T) {
+	s, _, ts := newServer(t)
+	_ = s
+	empty, code := get[api.RunConfig](t, ts, "/api/projects/home-network/runconfig")
+	if code != 200 || len(empty.Runs) != 0 || empty.Repos != nil {
+		t.Fatalf("empty: %d %+v", code, empty)
+	}
+	// a structured save: refused fields, then a good one
+	bad := api.RunConfig{Runs: []runcfg.Run{{Name: "web"}}}
+	res, code := putAs[api.RunConfig](t, ts, "/api/projects/home-network/runconfig", bad)
+	if code != 400 || len(res.Errors) != 1 || res.Errors[0].Field != "cmd" {
+		t.Errorf("refused: %d %+v", code, res)
+	}
+	good := api.RunConfig{Runs: []runcfg.Run{{Name: "web", Cmd: "npm run dev", Port: runcfg.Ports{3000}}}, Hide: []int{5173}}
+	if _, code = putAs[api.RunConfig](t, ts, "/api/projects/home-network/runconfig", good); code != 200 {
+		t.Fatalf("save: %d", code)
+	}
+	list, _ := get[[]api.RunConfigs](t, ts, "/api/runconfigs")
+	if len(list) != 1 || list[0].Project != "home-network" || !slices.Equal(list[0].Runs, []string{"web"}) {
+		t.Errorf("list: %+v", list)
+	}
+	// text: read, a syntax error with its line, a commented save
+	txt, _ := get[api.RunConfigText](t, ts, "/api/projects/home-network/runconfig?text=1")
+	if !strings.Contains(txt.Text, `name = "web"`) {
+		t.Errorf("text: %q", txt.Text)
+	}
+	r, code := putAs[api.Result](t, ts, "/api/projects/home-network/runconfig?text=1", api.RunConfigText{Text: "[[run]]\nname = \n"})
+	if code != 400 || r.Line != 2 {
+		t.Errorf("syntax: %d %+v", code, r)
+	}
+	if _, code = putAs[api.Result](t, ts, "/api/projects/home-network/runconfig?text=1", api.RunConfigText{Text: "# mine\n[[run]]\nname = \"a\"\ncmd = \"x\"\n"}); code != 200 {
+		t.Errorf("text save: %d", code)
+	}
+	back, _ := get[api.RunConfig](t, ts, "/api/projects/home-network/runconfig")
+	if !back.HasComments || back.Runs[0].Name != "a" {
+		t.Errorf("after text save: %+v", back)
+	}
+	if code := del(t, ts, "/api/projects/home-network/runconfig"); code != 200 {
+		t.Errorf("delete: %d", code)
+	}
+}
+
+// putAs is a PUT whose reply is decoded whatever the status.
+func putAs[T any](t *testing.T, ts *httptest.Server, path string, body any) (T, int) {
+	t.Helper()
+	data, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPut, ts.URL+path, bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	var out T
+	_ = json.NewDecoder(r.Body).Decode(&out)
+	return out, r.StatusCode
+}
+
+func del(t *testing.T, ts *httptest.Server, path string) int {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+path, nil)
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	return r.StatusCode
 }
