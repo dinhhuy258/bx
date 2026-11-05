@@ -259,6 +259,9 @@ type Model struct {
 	appRuns     []string                  // the runs of a pending PromptRunReplace
 	appUp       string                    // a story just started; the first port it shows flashes "is up"
 	appRunNames []string                  // the run names read when the menu opened
+	appsOpen    string                    // settings opened from M-b: the apps page to show
+	appsPending *appsPageMsg              // that page, arrived before the sections
+	appsDrafts  map[string]mcpDraft       // refused run config texts, by project
 
 	draft      *storyDraft        // the new story being picked; see story.go
 	busy       string             // the key bar while a story is fetched or created
@@ -317,7 +320,7 @@ type Model struct {
 // it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, appsDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -495,6 +498,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.gotPRs(msg)
 	case storyMsg:
 		return m, m.gotStory(msg)
+	case appsProjectsMsg:
+		m.gotAppsProjects(msg)
+		return m, nil
+	case appsPageMsg:
+		m.gotAppsPage(msg)
+		return m, nil
+	case appsSavedMsg:
+		return m, m.gotAppsSaved(msg)
+	case appsTextMsg:
+		return m, m.gotAppsText(msg)
+	case appsEditedMsg:
+		return m, m.gotAppsEdited(msg)
+	case appsTextSavedMsg:
+		return m, m.gotAppsTextSaved(msg)
 	case appMsg:
 		return m, m.gotApp(msg)
 	case appConfigMsg:
@@ -1514,7 +1531,7 @@ func (m *Model) openSettings() tea.Cmd {
 	m.settings, m.settingsNote, m.syncDone = ui.NewSettings(host), "loading settings…", false
 	m.settings.SetGitOverrides(m.gitOverrides())
 	m.settings.SetMCPTotal(len(m.projects))
-	return tea.Batch(m.loadSettings(), m.scanSync(), m.loadMCP(), m.loadAccounts())
+	return tea.Batch(m.loadSettings(), m.scanSync(), m.loadMCP(), m.loadAccounts(), m.loadAppsProjects())
 }
 
 func (m *Model) loadSettings() tea.Cmd {
@@ -1537,6 +1554,13 @@ func (m *Model) gotSettings(msg settingsMsg) {
 		return
 	}
 	m.settings.Load(msg.s.Sections, msg.s.Values)
+	if m.appsOpen != "" {
+		m.settings.ShowApps(m.appsOpen)
+		if p := m.appsPending; p != nil {
+			m.appsPending = nil
+			m.gotAppsPage(*p)
+		}
+	}
 	if msg.saved {
 		m.setFlash("settings saved · new sessions use them")
 	}
@@ -1544,7 +1568,9 @@ func (m *Model) gotSettings(msg settingsMsg) {
 
 // settingsKey handles a key on the settings screen. Esc with unsaved changes asks first.
 func (m *Model) settingsKey(key string) tea.Cmd {
-	switch m.settings.Key(key) {
+	switch r := m.settings.Key(key); r {
+	case ui.SettingsAppsOpen, ui.SettingsAppsEditText, ui.SettingsAppsRemove, ui.SettingsAppsPorts, ui.SettingsAppsSave, ui.SettingsAppsText, ui.SettingsAppsBuild, ui.SettingsAppsForm:
+		return m.appsResult(r)
 	case ui.SettingsClose:
 		if n := len(m.settings.Changes()); n > 0 {
 			m.ask(ui.PromptDiscardSettings, "", fmt.Sprintf("Discard %s?", plural(n, "change", "changes")), "Your unsaved edits to the settings are lost.")
@@ -1737,6 +1763,24 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 		m.settings, m.mcpDrafts = nil, map[string]mcpDraft{}
 	case ui.PromptRemoveMCP:
 		return m.saveMCP(target, "", "")
+	case ui.PromptRemoveRun:
+		if m.settings == nil {
+			return nil
+		}
+		i, _ := strconv.Atoi(target)
+		m.settings.RemoveRun(i)
+		return m.saveApps()
+	case ui.PromptAppsPorts:
+		if m.settings == nil {
+			return nil
+		}
+		ps, ok := ui.ParsePorts(text)
+		if !ok {
+			m.setFlash(errBadPorts.Error())
+			return nil
+		}
+		m.settings.SetAppsPorts(target, ps)
+		return m.saveApps()
 	case ui.PromptRemoveOverride:
 		return m.removeOverride(target)
 	case ui.PromptSettingText:
@@ -2396,6 +2440,8 @@ func (m *Model) bar() string {
 		text = m.flash
 	case m.settings != nil && m.settingsOnMCPRow():
 		text = ui.SettingsMCPBar(m.narrow)
+	case m.settings != nil && m.settings.AppsShown():
+		text = m.settings.SettingsAppsBar(m.narrow)
 	case m.settings != nil && m.settings.GitShown():
 		text = m.settings.SettingsGitBar(m.narrow)
 	case m.settings != nil:

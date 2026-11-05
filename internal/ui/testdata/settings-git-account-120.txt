@@ -2,9 +2,9 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Claude            │ Git › account work
  › Git               │ gh login huy-acme on github.com · token scopes repo, read:org, workflow
-   MCP               │
-   Notifications     │    Label         work
-                     │    gh login      ◂ huy-acme            github.com ▸
+   Apps              │
+   MCP               │    Label         work
+   Notifications     │    gh login      ◂ huy-acme            github.com ▸
                      │    Commit name   Huy Duong
                      │  › Commit email  huy.duong@acme.io
                      │    SSH key       ~/.ssh/id_ed25519_acme

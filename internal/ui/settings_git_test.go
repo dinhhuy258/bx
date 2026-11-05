@@ -23,7 +23,7 @@ func TestSettingsGitSectionIsTheClients(t *testing.T) {
 	for _, sec := range s.sections {
 		ids = append(ids, sec.ID+" "+sec.Title)
 	}
-	if got := strings.Join(ids, ", "); got != "claude Claude, git Git, mcp MCP, notifications Notifications" {
+	if got := strings.Join(ids, ", "); got != "claude Claude, git Git, apps Apps, mcp MCP, notifications Notifications" {
 		t.Fatalf("sections = %s", got)
 	}
 	for _, sec := range settings.Sections {
@@ -32,7 +32,7 @@ func TestSettingsGitSectionIsTheClients(t *testing.T) {
 		}
 	}
 	s.Load(settings.Sections, nil) // a second load adds it once
-	if len(s.sections) != 4 {
+	if len(s.sections) != 5 {
 		t.Fatalf("%d sections after a reload", len(s.sections))
 	}
 	if s.GitShown() {

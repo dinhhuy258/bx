@@ -185,6 +185,3 @@ func (m *Model) checkAppUp() {
 		}
 	}
 }
-
-// openAppsSettings is replaced by Task 18.
-func (m *Model) openAppsSettings(string) tea.Cmd { return m.openSettings() }

@@ -34,6 +34,14 @@ const (
 	SettingsAccountText                           // Enter on a text field of the account form: edit AccountFormText in a prompt
 	SettingsAccountSave                           // C-s in the account form: save AccountForm
 	SettingsAccountBack                           // Esc in the account form: the caller asks first when it has edits
+	SettingsAppsOpen                              // Enter on an apps project row: load AppsProject's page
+	SettingsAppsEditText                          // e on an apps page (Enter on a broken one): edit the file in $EDITOR
+	SettingsAppsRemove                            // Backspace on a run: ask, then RemoveRun and save AppsSave
+	SettingsAppsPorts                             // Enter on a port row: edit AppsPortsRow in a prompt
+	SettingsAppsForm                              // Enter on a run or + add run: the run form is open (Task 19)
+	SettingsAppsSave                              // the run form saved (C-s): save AppsSave
+	SettingsAppsText                              // Enter on a text field of the run form: edit AppsFormText in a prompt
+	SettingsAppsBuild                             // Enter on the Dockerfile field: edit it in $EDITOR
 )
 
 // Settings is the settings screen. It knows no setting by name: it draws the sections and
@@ -46,6 +54,7 @@ type Settings struct {
 	saved    map[string]string // what the server holds; a missing key is the default
 	edits    map[string]string // changed keys only
 	sec, fld int
+	apps     appsState // the apps section (settings_apps.go)
 	sync     syncList
 	git      []GitOverride     // the git section's base overrides, by project
 	acc      GitAccounts       // the git section's GitHub accounts
@@ -72,7 +81,7 @@ func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 		if i := slices.IndexFunc(sections, func(sec settings.Section) bool { return sec.ID == syncSection }); i >= 0 {
 			at = i + 1
 		}
-		s.sections = slices.Insert(slices.Clone(sections), at, settings.Section{ID: gitSection, Title: "Git"})
+		s.sections = slices.Insert(slices.Clone(sections), at, settings.Section{ID: gitSection, Title: "Git"}, settings.Section{ID: appsSection, Title: "Apps"})
 	}
 	s.saved = maps.Clone(values)
 	if s.saved == nil {
@@ -87,6 +96,9 @@ func (s *Settings) Load(sections []settings.Section, values map[string]string) {
 func (s *Settings) rowCount() int {
 	if s.GitShown() {
 		return len(s.gitRows())
+	}
+	if s.AppsShown() {
+		return len(s.appsRows())
 	}
 	return len(s.fields()) + len(s.syncRows()) + s.mcpRowCount()
 }
@@ -139,6 +151,9 @@ func (s *Settings) Key(key string) SettingsResult {
 	}
 	if s.GitShown() {
 		return s.gitKey(key)
+	}
+	if s.AppsShown() {
+		return s.appsKey(key)
 	}
 	if _, ok := s.MCPChoice(); ok && key != "Tab" && key != "Esc" && key != "C-c" && !isMove(key) {
 		return s.mcpKey(key) // moves, Tab and Esc work as on any row
@@ -256,6 +271,9 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 			}
 			return pad(append(lines, git...), h)
 		}
+		if s.AppsShown() {
+			return pad(append(lines, s.appsLines(w, h-len(lines), true, pal)...), h)
+		}
 		if s.sync.confirm {
 			return pad(append(lines, s.confirmLines(w, h-len(lines), pal)...), h)
 		}
@@ -280,7 +298,7 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 		l = append(l, truncate(" "+cursor+" "+title, left))
 	}
 	var r []string
-	if !s.GitShown() {
+	if !s.GitShown() && !s.AppsShown() {
 		r = append(r, pal.bold.Render(s.sections[s.sec].Title))
 		if help := s.sections[s.sec].Help; help != "" {
 			r = append(r, wrap(help, right, pal.dim)...)
@@ -290,6 +308,8 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 	switch {
 	case s.GitShown():
 		r = s.gitLines(right, h-len(lines), false, pal)
+	case s.AppsShown():
+		r = s.appsLines(right, h-len(lines), false, pal)
 	case s.sync.confirm:
 		r = append(r, s.confirmLines(right, h-len(lines)-len(r), pal)...)
 	default:

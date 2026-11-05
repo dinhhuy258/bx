@@ -1,6 +1,6 @@
 bx settings                          dev
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- Claude · Git · MCP · Notifications
+ Claude · Git · Apps · MCP · Notificati…
 
    Model         ◂ default           ▸
    Effort        ◂ default           ▸

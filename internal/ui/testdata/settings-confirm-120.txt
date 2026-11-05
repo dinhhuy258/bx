@@ -2,9 +2,9 @@ bx settings                                                                     
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  › Claude            │ Claude
    Git               │ For new sessions. A resumed one keeps its model, effort and permission mode.
-   MCP               │
-   Notifications     │   ╭────────────────────────────────────────────────────────────╮
-                     │   │ Sync 4 changes to bx serve?                                │
+   Apps              │
+   MCP               │   ╭────────────────────────────────────────────────────────────╮
+   Notifications     │   │ Sync 4 changes to bx serve?                                │
                      │   │                                                            │
                      │   │   + skills/brainstorm                                      │
                      │   │   − skills/old-skill  deleted on the server                │
