@@ -27,6 +27,7 @@ func navReview() ReviewData {
 func TestReviewPagesHalfAScreen(t *testing.T) {
 	r := NewReview("s")
 	r.SetData(navReview())
+	r.Key("Enter", false)
 	r.Render(120, 22, true, false) // a diff pane of 20 lines: a half page is 9
 	r.Key("C-d", false)
 	if l, _ := r.Selected(); l.Line != 10 {
@@ -78,6 +79,7 @@ func TestReviewPagingKeepsARangeInItsHunk(t *testing.T) {
 	r := NewReview("s")
 	r.SetData(navReview())
 	r.Render(120, 22, true, false)
+	r.Key("Enter", false)
 	r.Key("v", false)
 	r.Key("C-d", false)
 	if l, _ := r.Selected(); l.StartLine != 1 || l.Line != 10 {
@@ -122,13 +124,13 @@ func TestReviewFiltersFiles(t *testing.T) {
 		t.Fatalf("\n%s", v)
 	}
 	r.Key("Enter", false)
-	r.Key("J", false)
+	r.Key("j", false)
 	if r.file != 2 {
-		t.Fatalf("J: file %d", r.file)
+		t.Fatalf("j: file %d", r.file)
 	}
-	r.Key("J", false)
+	r.Key("j", false)
 	if r.file != 2 {
-		t.Fatalf("J stays on the last match: file %d", r.file)
+		t.Fatalf("j stays on the last match: file %d", r.file)
 	}
 	if r.Key("Esc", false) != ReviewKeep || r.filter != "" || r.Key("Esc", false) != ReviewBack {
 		t.Fatal("Esc clears the filter, then leaves")
@@ -158,7 +160,7 @@ func TestReviewMarksFilesViewed(t *testing.T) {
 		t.Fatalf("%+v %v, file %d: marks and goes on", v, ok, r.file)
 	}
 	r.ToggleViewed() // query.go, with its comment
-	r.Key("K", false)
+	r.Key("k", false)
 	view := ansi.Strip(r.Render(120, 10, true, false))
 	for _, want := range []string{"2/4 viewed", "✓ viewed · internal/prwatch/query.go", "1 · why"} {
 		if !strings.Contains(view, want) {
@@ -200,7 +202,7 @@ func TestReviewNavScreens(t *testing.T) {
 	d.Files[2].Viewed = FileChanged
 	r.SetData(d)
 	r.ToggleViewed()
-	r.Key("K", false)
+	r.Key("k", false)
 	golden(t, "review-viewed-120", ansi.Strip(r.Render(120, 10, true, false)+"\n"+r.Bar(false)), 120)
 	r.Key("/", false)
 	for _, k := range []string{"q", "u", "e", "r", "y"} {
@@ -215,4 +217,58 @@ func TestReviewNavScreens(t *testing.T) {
 	n.Key("/", true)
 	n.Key("q", true)
 	golden(t, "review-narrow-filter-40", ansi.Strip(n.Render(40, 8, true, true)+"\n"+n.Bar(true)), 40)
+}
+
+func TestReviewFocus(t *testing.T) {
+	r := NewReview("s")
+	d := navReview()
+	d.Comments = []Comment{{ID: "c", File: "internal/prwatch/query_test.go", Side: "new", Line: 1, Body: "why"}}
+	r.SetData(d)
+	golden(t, "review-list-focus-120", ansi.Strip(r.Render(120, 10, true, false)+"\n"+r.Bar(false)), 120)
+	if r.Key("c", false) != ReviewKeep || r.Key("v", false) != ReviewKeep || r.selecting {
+		t.Fatal("the list has no line to comment on or select")
+	}
+	r.Render(120, 6, true, false) // a list of 4 lines: a half page is 1
+	r.Key("C-d", false)
+	r.Key("G", false)
+	if r.file != 3 {
+		t.Fatalf("the list pages and ends: file %d", r.file)
+	}
+	r.Key("g", false)
+	r.Key("Enter", false)
+	r.Key("j", false)
+	r.Key("j", false) // line 3 of api.go
+	if r.Key("Esc", false) != ReviewKeep || r.pane != 0 {
+		t.Fatal("Esc goes to the list")
+	}
+	r.Key("Enter", false)
+	if l, _ := r.Selected(); l.Line != 3 {
+		t.Fatalf("back on the line it left: %+v", l)
+	}
+	r.Key("Esc", false)
+	r.Key("n", false)
+	if l, _ := r.Selected(); r.pane != 1 || l.File != "internal/prwatch/query_test.go" || l.Edit == nil {
+		t.Fatalf("n from the list opens the code on the comment: pane %d %+v", r.pane, l)
+	}
+	r.Key("Esc", false)
+	r.Key("k", false)
+	if r.Key("n", false) != ReviewKeep || r.pane != 1 {
+		t.Fatal("n finds it again from the file above")
+	}
+	r.Key("Esc", false)
+	r.Key("n", false) // no comment below the cursor
+	if r.pane != 0 {
+		t.Fatal("n with no comment after stays in the list")
+	}
+	for _, k := range []string{"l", "Right"} {
+		if r.Key(k, false); r.pane != 0 {
+			t.Fatalf("%s doesn't open the code", k)
+		}
+	}
+	r.Key("Enter", false)
+	for _, k := range []string{"h", "Left"} {
+		if r.Key(k, false); r.pane != 1 {
+			t.Fatalf("%s doesn't leave the code", k)
+		}
+	}
 }

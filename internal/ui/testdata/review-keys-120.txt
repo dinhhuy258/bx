@@ -1,12 +1,12 @@
 review · pr-review vs master · 4 files · +43 −0 · 1/4 viewed
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────┐─────────────────────────────────────────────────────────────────────────────────
  M internal/api/api.go       +40 −0 ✓ │Keys on the review screen
 >A internal/prwatch/query.go    +1 −0 │
- A internal/prwatch/query_te… +1 −0 ◐ │j/k ↑/↓           next or previous line
- A internal/serve/server.go     +1 −0 │^d/^u             half a page down or up
+ A internal/prwatch/query_te… +1 −0 ◐ │⏎                 open the file's code (from the list), or read an explanation
+ A internal/serve/server.go     +1 −0 │j/k ↑/↓           next or previous file, or line in the code
+                                      │^d/^u             half a page down or up, in the list or the code
                                       │^f/^b PgDn/PgUp   a page down or up
-                                      │g/G               first or last line of the file
-                                      │J/K               next or previous file
+                                      │g/G               first or last file, or line of the file
                                       │n/N               next or previous comment, across files
                                       │/                 filter the files by name (every word matches; !word leaves out)
                                       │space             mark the file viewed (or not) and go to the next one
@@ -14,12 +14,12 @@ review · pr-review vs master · 4 files · +43 −0 · 1/4 viewed
                                       │c                 comment on the line, or edit its comment
                                       │v                 select lines (o other end)
                                       │e                 ask Claude to explain the line or the selection
-                                      │⏎                 read an explanation
                                       │x                 delete the unsent comment, or stop / dismiss an explanation
                                       │S                 send the unsent comments to a session
                                       │C                 clear the sent comments
                                       │R                 refresh the diff
-                                      │esc               clear the filter, then leave
+                                      │esc               back to the list; on the list, clear the filter, then leave
+                                      │
                                       │
                                       │
 j/k scroll · any other key closes

@@ -19,7 +19,7 @@ func TestReviewCommentSendFlow(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.be.review = reviewFixture()
 	h.be.sendRes = api.Result{Num: 1, Message: "Pasted 1 comment into [1]"}
-	h.press("k", "M-g") // the story row s1, then review
+	h.press("k", "M-g", "Enter") // the story row s1, then review
 	if h.m.review == nil || !strings.Contains(ansi.Strip(h.m.View().Content), "review · s1 vs main") {
 		t.Fatalf("review not open:\n%s", ansi.Strip(h.m.View().Content))
 	}
@@ -47,7 +47,7 @@ func TestReviewCommentSendFlow(t *testing.T) {
 	if !strings.Contains(ansi.Strip(h.m.bar()), "Pasted 1 comment into [1]") {
 		t.Fatalf("bar %q", ansi.Strip(h.m.bar()))
 	}
-	h.press("Esc")
+	h.press("Esc", "Esc") // to the file list, then out
 	if h.m.review != nil {
 		t.Fatal("Esc must leave the review")
 	}
@@ -57,7 +57,7 @@ func TestReviewEmptyCommentDeletes(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.be.review = reviewFixture()
 	h.be.review.Comments = []api.Comment{{ID: "c1", File: "a.go", Side: "new", Line: 2, Body: "old"}}
-	h.press("k", "M-g", "j", "c")
+	h.press("k", "M-g", "Enter", "j", "c")
 	for range 3 {
 		h.press("BSpace")
 	}
@@ -71,7 +71,7 @@ func TestReviewConflictReloads(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.be.review = reviewFixture()
 	h.be.reviewErr = &StatusError{Code: 409, Text: "comments changed on another device"}
-	h.press("k", "M-g", "j", "c")
+	h.press("k", "M-g", "Enter", "j", "c")
 	h.typeText("x")
 	h.press("Enter")
 	if !strings.Contains(ansi.Strip(h.m.bar()), "comments changed on another device · reloaded") {
@@ -90,7 +90,7 @@ func TestStoryRowShowsReviewKey(t *testing.T) {
 func TestReviewRangeComment(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.be.review = reviewFixture()
-	h.press("k", "M-g", "v", "j")
+	h.press("k", "M-g", "Enter", "v", "j")
 	if !strings.Contains(ansi.Strip(h.m.bar()), "SELECT 1–2 · 2 lines") {
 		t.Fatalf("bar %q", ansi.Strip(h.m.bar()))
 	}
@@ -113,7 +113,7 @@ func TestReviewExplainFlow(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	h.m.reviewTick = func(string) tea.Cmd { return nil } // the real wait would never end here
 	h.be.review = reviewFixture()
-	h.press("k", "M-g", "v", "j", "e")
+	h.press("k", "M-g", "Enter", "v", "j", "e")
 	v := ansi.Strip(h.m.View().Content)
 	if !strings.Contains(v, "Explain · a.go:1–2") || !strings.Contains(v, "Conversation") || !strings.Contains(v, "[1] Add lease time") {
 		t.Fatalf("form:\n%s", v)
