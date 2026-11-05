@@ -1525,7 +1525,7 @@ func TestStaleConnectIsClosed(t *testing.T) {
 func TestAddFolderFromThePicker(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.press("M-o")
-	h.typeText("existing")
+	h.typeText("folder")
 	h.press("Enter")
 	h.update(tea.PasteMsg{Content: "/srv/lab\r\n"}) // ⌘V, with the newline a copied path often has
 	h.press("Enter")
@@ -1541,7 +1541,7 @@ func TestAddFirstFolderWithNoProjects(t *testing.T) {
 	h := start(t, 120, 30) // no projects: the empty screen
 	h.be.snaps["lab"] = snapshot("lab", "running")
 	h.press("M-o")
-	h.typeText("existing")
+	h.typeText("folder")
 	h.press("Enter")
 	h.typeText("/srv/lab")
 	if v := h.m.View().Content; !strings.Contains(v, "/srv/lab") {
@@ -1559,7 +1559,7 @@ func TestAddFirstFolderWithNoProjects(t *testing.T) {
 func TestCancelledOrFailedFirstAddStaysEmpty(t *testing.T) {
 	h := start(t, 120, 30)
 	h.press("M-o")
-	h.typeText("existing")
+	h.typeText("folder")
 	h.press("Enter", "Esc")
 	if v := h.m.View().Content; h.m.picker != nil || !strings.Contains(v, "No project open.") {
 		t.Fatalf("Esc should go back to the empty screen:\n%s", v)

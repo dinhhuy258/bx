@@ -20,7 +20,7 @@ const (
 	SwitchWorkspace
 )
 
-var switchActions = []string{"Existing folder", "Clone from GitHub", "New empty", "Workspace"}
+var switchActions = []string{"Folder", "Clone", "New empty", "Workspace"}
 
 // SwitchResult is what a key did to the switcher.
 type SwitchResult int

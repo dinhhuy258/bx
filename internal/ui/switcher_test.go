@@ -26,7 +26,7 @@ func TestSwitcherListsOpenFirstAndStartsOnAnotherProject(t *testing.T) {
 	if open < 0 || server < open || strings.Index(out, "home-network") > server || strings.Index(out, "lab") < server {
 		t.Fatalf("open projects first:\n%s", out)
 	}
-	for _, want := range []string{"● 2  ◆ 1", "◎ 1", "+  Existing folder", "+  Clone from GitHub", "+  New empty"} {
+	for _, want := range []string{"● 2  ◆ 1", "◎ 1", "+  Folder", "+  Clone", "+  New empty", "+  Workspace"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("no %q in\n%s", want, out)
 		}
