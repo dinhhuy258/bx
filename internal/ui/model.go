@@ -40,6 +40,23 @@ type Live struct {
 	Unread     map[string]bool         `json:"unread"`           // by session uuid: finished a turn nobody has opened since (serve/unread.go)
 	Review     map[string]int          `json:"review,omitempty"` // by story: unsent review comments
 	PR         map[string]PRBadge      `json:"pr,omitempty"`     // by story: its pull requests, from the PR poller
+	// Ports are the ports of each story's apps ("" = the chats), from bx serve's scan; Running
+	// is the story whose runs are open (one per project), "" when none.
+	Ports   map[string][]Port `json:"ports,omitempty"`
+	Running string            `json:"running,omitempty"`
+}
+
+// Port is a port a story's app listens on. URL opens it over Tailscale. Forwarded means bx
+// forwards it because the app listens on loopback only, and Error is why that forward failed
+// ("taken"). Shell, Session and Run are what owns it, when known.
+type Port struct {
+	Port      int    `json:"port"`
+	URL       string `json:"url"`
+	Forwarded bool   `json:"forwarded,omitempty"`
+	Error     string `json:"error,omitempty"`
+	Shell     int    `json:"shell,omitempty"`
+	Session   int    `json:"session,omitempty"`
+	Run       string `json:"run,omitempty"`
 }
 
 // RowKind tells what a row is.

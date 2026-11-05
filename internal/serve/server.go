@@ -16,6 +16,7 @@ import (
 	"github.com/dinhhuy258/bx/internal/app"
 	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
+	"github.com/dinhhuy258/bx/internal/ports"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/tmux"
@@ -52,6 +53,14 @@ type Server struct {
 	prBadges map[string]map[string]ui.PRBadge // by project, story: the last look, for Live.PR
 	prNext   map[string]time.Time             // "project/story": when the poller looks again
 	prKick   chan string                      // "project/story" to look at now (sync, refresh)
+
+	// apps (see apps.go)
+	Proc     ports.Proc // /proc; nil reads the machine's
+	Forwards *Forwards  // nil forwards nothing (bx serve on loopback)
+	AppHost  string     // the host in app links
+	appMu    sync.Mutex // one run or stop at a time
+	portsMu  sync.Mutex
+	portsBy  map[string]map[string][]ui.Port // by project, story: the last scan
 
 	prepared func() // tests: called by newStory between PrepareStory and taking write; nil in production
 }
@@ -895,6 +904,12 @@ func (s *Server) collect(p *state.Project) ui.Live {
 	l.Unread = s.unreadSnapshot()
 	l.Review = s.reviewCounts(p)
 	l.PR = s.prBadgesOf(p.Name)
+	s.portsMu.Lock()
+	l.Ports = s.portsBy[p.Name]
+	s.portsMu.Unlock()
+	if story, err := s.App.RunningStory(p); err == nil {
+		l.Running = story
+	}
 	return l
 }
 
