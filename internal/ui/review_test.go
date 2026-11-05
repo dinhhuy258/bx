@@ -318,3 +318,19 @@ func TestReviewKeepsTheCursorWhenACardAppears(t *testing.T) {
 		t.Fatalf("the selection moved: %+v", l)
 	}
 }
+
+func TestReviewFileListColours(t *testing.T) {
+	r := NewReview("login-timeout")
+	r.SetData(sampleReview())
+	pal := newPalette(false)
+	lines := r.fileLines(40, 5, pal)
+	for _, want := range []string{
+		pal.amber.Render("M"), pal.green.Render("A"), // modified, added
+		pal.green.Render("+2"), pal.red.Render("−1"), pal.dim.Render("−0"), // no deleted lines: dim
+		pal.amber.Render("●1"),
+	} {
+		if !strings.Contains(strings.Join(lines, "\n"), want) {
+			t.Errorf("file list lacks %q:\n%q", want, lines)
+		}
+	}
+}

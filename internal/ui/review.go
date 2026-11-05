@@ -683,6 +683,30 @@ func padCells(s string, w int) string {
 	return s
 }
 
+// statusStyle colours a file's status letter as git does: added green, modified amber,
+// deleted red, renamed blue; a file no longer changed is dim.
+func statusStyle(status string, pal palette) lipgloss.Style {
+	switch status {
+	case "added":
+		return pal.green
+	case "modified":
+		return pal.amber
+	case "deleted":
+		return pal.red
+	case "renamed":
+		return pal.blue
+	}
+	return pal.dim
+}
+
+// countStyle is st for a count of changed lines, dim when there are none.
+func countStyle(n int, st lipgloss.Style, pal palette) lipgloss.Style {
+	if n == 0 {
+		return pal.dim
+	}
+	return st
+}
+
 // fileLines lists the files, the selected one in a band, scrolled to keep it in view.
 func (r *Review) fileLines(w, h int, pal palette) []string {
 	counts := map[string]int{}
@@ -693,10 +717,11 @@ func (r *Review) fileLines(w, h int, pal palette) []string {
 	var out []string
 	for i := first; i < len(r.data.Files) && len(out) < h; i++ {
 		f := r.data.Files[i]
-		letter := strings.ToUpper(f.Status[:1])
-		right := fmt.Sprintf("+%d −%d", f.Add, f.Del)
+		letter := statusStyle(f.Status, pal).Render(strings.ToUpper(f.Status[:1]))
+		right := countStyle(f.Add, pal.green, pal).Render(fmt.Sprintf("+%d", f.Add)) + " " +
+			countStyle(f.Del, pal.red, pal).Render(fmt.Sprintf("−%d", f.Del))
 		if n := counts[f.Path]; n > 0 {
-			right += fmt.Sprintf(" ●%d", n)
+			right += " " + pal.amber.Render(fmt.Sprintf("●%d", n))
 		}
 		line := fit(" "+letter+" "+ReviewText(f.Path), right+" ", w)
 		if i == r.file {
