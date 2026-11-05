@@ -551,7 +551,7 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 		case "PgUp":
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
-		case "C-c", "C-h", "C-l", "C-q", "C-v", "C-s":
+		case "C-a", "C-c", "C-g", "C-h", "C-l", "C-q", "C-v", "C-s", "C-w":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModCtrl}
 		case "M-a", "M-b", "M-c", "M-d", "M-e", "M-f", "M-g", "M-m", "M-n", "M-o", "M-p", "M-r", "M-s", "M-t", "M-q", "M-u", "M-v", "M-w", "M-x", "M-z":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModAlt}

@@ -58,3 +58,39 @@ func TestRunFormSaves(t *testing.T) {
 		t.Errorf("flash %q", h.m.flash)
 	}
 }
+
+func TestRunFormCommandEditsInEditor(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.be.runCfgs = map[string]api.RunConfig{"home-network": {Runs: []runcfg.Run{{Name: "web", Cmd: "npm run dev"}}}}
+	drain(h.m, h.m.openRunsSettings("home-network"))
+	h.press("Enter")           // web
+	h.press("j", "j", "Enter") // Command
+	if h.m.prompt.Input != "npm run dev" {
+		t.Fatalf("input %q", h.m.prompt.Input)
+	}
+	// C-w drops the word before the cursor; C-a then typing inserts at the start
+	h.press("C-w", "C-a")
+	h.typeText("pnpm ")
+	if h.m.prompt.Input != "pnpm npm run " {
+		t.Fatalf("input %q", h.m.prompt.Input)
+	}
+	// C-g: the text in $EDITOR; the edited lines come back as one line, the prompt still open
+	var got string
+	h.m.edit = func(path string, _ int, done func(error) tea.Msg) tea.Cmd {
+		data, _ := os.ReadFile(path)
+		got = string(data)
+		os.WriteFile(path, []byte("go run ./cmd/bx\nserve\n"), 0o600)
+		return func() tea.Msg { return done(nil) }
+	}
+	h.press("C-g")
+	if got != "pnpm npm run " {
+		t.Errorf("editor got %q", got)
+	}
+	if !h.m.prompt.Active() || h.m.prompt.Input != "go run ./cmd/bx serve" {
+		t.Fatalf("active %v input %q", h.m.prompt.Active(), h.m.prompt.Input)
+	}
+	h.press("Enter", "C-s")
+	if n := len(h.be.runSaves); n != 1 || h.be.runSaves[0].Runs[0].Cmd != "go run ./cmd/bx serve" {
+		t.Fatalf("saves %+v", h.be.runSaves)
+	}
+}

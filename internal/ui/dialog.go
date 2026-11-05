@@ -17,10 +17,14 @@ const (
 	ToneForm                // blue frame with fields
 )
 
+// fieldRows is how many lines a long text field wraps onto before it scrolls.
+const fieldRows = 4
+
 // Field is one input of a form dialog: a text (Value) or a choice (Choices, Choice).
 type Field struct {
 	Label   string
 	Value   string
+	Back    int // the cursor: runes of Value after it, 0 = at the end
 	Choices []string
 	Choice  int
 }
@@ -86,8 +90,15 @@ func (d Dialog) Render(w, h int, plain bool) string {
 	}
 	var mid []string
 	body := d.Body
-	// the frame, the title's blank line and the footer take 6 rows; fields 2 or 3 each
+	// the frame, the title's blank line and the footer take 6 rows; fields 3 each, and a long
+	// value wraps onto up to fieldRows lines
 	room := max(h-8-3*len(d.Fields), 1)
+	for _, f := range d.Fields {
+		if len(f.Choices) == 0 {
+			n, _, _ := fieldLines(f.Value, f.Back, iw-2, fieldRows, func(rune) string { return " " })
+			room = max(room-(len(n)-1), 1)
+		}
+	}
 	if len(body) > room {
 		cut := len(body) - (room - 1)
 		body = append(body[:room-1:room-1], fmt.Sprintf("+%d more", cut))
@@ -109,17 +120,38 @@ func (d Dialog) Render(w, h int, plain bool) string {
 			mid = append(mid, row(choiceLine(label, f, focused, pal, plain)), row(""))
 			continue
 		}
-		value := truncate(f.Value, iw-3)
-		cur := ""
-		if focused {
-			cur = "▏"
-			if !plain {
-				cur = "\x1b[7m \x1b[m" + input
+		// the cursor: plain draws ▏ before its rune; else the rune (a space at the end) reversed
+		cursor := func(c rune) string {
+			switch {
+			case !focused && c == 0:
+				return ""
+			case !focused:
+				return string(c)
+			case plain && c == 0:
+				return "▏"
+			case plain:
+				return "▏" + string(c)
+			case c == 0:
+				c = ' '
 			}
+			return "\x1b[7m" + string(c) + "\x1b[m" + input
 		}
-		in := " " + value + cur
-		in += strings.Repeat(" ", max(iw-lipgloss.Width(in), 0))
-		mid = append(mid, row(label), frame.Render("│")+band("  ", 0, panel)+band(in, 0, input)+band("  ", 0, panel)+frame.Render("│"), row(""))
+		lines, above, below := fieldLines(f.Value, f.Back, iw-2, fieldRows, cursor)
+		switch {
+		case above && below:
+			label += muted.Render("  ↑↓ more")
+		case above:
+			label += muted.Render("  ↑ more")
+		case below:
+			label += muted.Render("  ↓ more")
+		}
+		mid = append(mid, row(label))
+		for _, l := range lines {
+			in := " " + l
+			in += strings.Repeat(" ", max(iw-lipgloss.Width(in), 0))
+			mid = append(mid, frame.Render("│")+band("  ", 0, panel)+band(in, 0, input)+band("  ", 0, panel)+frame.Render("│"))
+		}
+		mid = append(mid, row(""))
 	}
 	for i, l := range d.After {
 		if i+1 == d.Mark && !plain {

@@ -515,6 +515,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runsBuildMsg:
 		m.gotRunsBuild(msg)
 		return m, nil
+	case promptEditedMsg:
+		m.gotPromptEdited(msg)
+		return m, nil
 	case runMsg:
 		return m, m.gotRun(msg)
 	case runConfigMsg:
@@ -842,6 +845,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, m.storyName(strings.TrimSpace(m.prompt.Input), m.prompt.BranchType(), m.prompt.StoryBranch())
 			}
 			return m, m.submit(kind, strings.TrimSpace(m.prompt.Input), m.prompt.Target)
+		case ui.PromptEdit:
+			return m, m.editPrompt()
 		case ui.PromptCancel:
 		}
 		return m, nil

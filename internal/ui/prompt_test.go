@@ -17,7 +17,7 @@ func TestPromptTypesSubmitsAndCancels(t *testing.T) {
 			t.Fatalf("%s: %v", k, r)
 		}
 	}
-	if p.Line() != "⏎ create · esc cancel" {
+	if p.Line() != "⏎ create · ^g editor · esc cancel" {
 		t.Fatal(p.Line())
 	}
 	if r := p.Key("Enter", ""); r != PromptSubmit || p.Active() || p.Input != "gest" {
@@ -92,7 +92,7 @@ func TestCommentPrompt(t *testing.T) {
 		d.Fields[0].Value != "first second" || p.YesNo() {
 		t.Fatalf("%+v", d)
 	}
-	if p.Line() != "⏎ save · esc cancel" {
+	if p.Line() != "⏎ save · ^g editor · esc cancel" {
 		t.Fatal(p.Line())
 	}
 	p.Ask(PromptClearSent, "s1", "Clear 2 sent comments?")
