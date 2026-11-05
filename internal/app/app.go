@@ -27,6 +27,9 @@ type App struct {
 	Git  *git.Git
 	UUID func() string
 	Self string // the bx binary, for the hooks it gives Claude; "" gives none
+	// Docker runs the docker CLI and returns its stdout; nil when docker is not installed, and
+	// stopping a story then skips its containers. Tests replace it.
+	Docker func(ctx context.Context, args ...string) (string, error)
 	// PluginDir is the bx Claude plugin (bx:artifact). When set, every session gets an
 	// artifacts folder, the plugin, and no claude.ai Artifact tools; "" gives none of that.
 	PluginDir string

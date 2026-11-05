@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"context"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/dinhhuy258/bx/internal/app"
@@ -29,6 +31,12 @@ func setup() (*config.Config, *app.App, *log.Logger, error) {
 	a.Log = logger.Printf
 	if a.Self, err = os.Executable(); err != nil {
 		logger.Printf("no bx binary path, workspace stories run without the guard: %v", err)
+	}
+	if _, err := exec.LookPath("docker"); err == nil {
+		a.Docker = func(ctx context.Context, args ...string) (string, error) {
+			out, err := exec.CommandContext(ctx, "docker", args...).Output()
+			return string(out), err
+		}
 	}
 	if dir := claude.ConfigDir(); dir != "" {
 		a.Transcripts = filepath.Join(dir, "projects")
