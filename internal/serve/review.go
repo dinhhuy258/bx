@@ -31,6 +31,7 @@ func (s *Server) reviewRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/projects/{name}/stories/{story}/review", s.putReview)
 	mux.HandleFunc("POST /api/projects/{name}/stories/{story}/review/send", s.sendReview)
 	mux.HandleFunc("POST /api/projects/{name}/stories/{story}/review/clear-sent", s.clearSent)
+	mux.HandleFunc("PUT /api/projects/{name}/stories/{story}/review/viewed", s.putViewed)
 	mux.HandleFunc("POST /api/projects/{name}/stories/{story}/review/explain", s.postExplain)
 	mux.HandleFunc("DELETE /api/projects/{name}/stories/{story}/review/explain/{id}", s.deleteExplain)
 }
@@ -158,6 +159,7 @@ func (s *Server) buildReview(ctx context.Context, p *state.Project, story string
 		return api.Review{}, err
 	}
 	out.Files, out.Comments, out.Explains = review.PlaceAll(out.Files, f.Comments, s.liveExplains(ef.Explains))
+	review.MarkViewed(out.Files, f.Viewed)
 	out.ExplainWith = ef.With
 	return out, nil
 }
@@ -227,7 +229,8 @@ func (s *Server) putReview(w http.ResponseWriter, r *http.Request) {
 			return f, codeError{http.StatusConflict, errors.New("comments changed on another device")}
 		}
 		cs, err := review.Apply(f.Comments, req.Comments)
-		return review.File{Comments: cs}, err
+		f.Comments = cs
+		return f, err
 	})
 	if err != nil {
 		httpError(w, reviewStatus(err), err)
@@ -236,9 +239,59 @@ func (s *Server) putReview(w http.ResponseWriter, r *http.Request) {
 	s.replyReview(w, r, p, story, f)
 }
 
+// putViewed marks a file viewed at the hash the client was shown, or unmarks it. It doesn't
+// change the comments' version. The diff is read before the write lock, and reused for the
+// reply when the comments didn't change meanwhile.
+func (s *Server) putViewed(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	var req api.ReviewViewed
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpError(w, http.StatusBadRequest, fmt.Errorf("decode body: %w", err))
+		return
+	}
+	p, story, err := s.loadStory(r)
+	if err != nil {
+		httpError(w, statusOf(err), err)
+		return
+	}
+	path := s.Cfg.ReviewFile(p.Name, story)
+	f, err := s.readReview(path)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, err)
+		return
+	}
+	out, err := s.buildReview(r.Context(), p, story, f)
+	if err != nil {
+		httpError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.write.Lock()
+	f, err = s.readReview(path)
+	if err == nil {
+		f.Viewed, err = review.SetViewed(f.Viewed, out.Files, req, time.Now())
+		if err != nil {
+			err = codeError{http.StatusBadRequest, err}
+		} else if err = review.Save(path, f); err != nil {
+			err = codeError{http.StatusInternalServerError, err}
+		}
+	}
+	s.write.Unlock()
+	if err != nil {
+		httpError(w, reviewStatus(err), err)
+		return
+	}
+	if f.Version != out.Version {
+		s.replyReview(w, r, p, story, f)
+		return
+	}
+	review.MarkViewed(out.Files, f.Viewed)
+	writeJSON(w, out)
+}
+
 func (s *Server) clearSent(w http.ResponseWriter, r *http.Request) {
 	p, story, f, err := s.editReview(r, func(f review.File) (review.File, error) {
-		return review.File{Comments: review.ClearSent(f.Comments)}, nil
+		f.Comments = review.ClearSent(f.Comments)
+		return f, nil
 	})
 	if err != nil {
 		httpError(w, reviewStatus(err), err)
@@ -355,7 +408,8 @@ func (s *Server) sendReview(w http.ResponseWriter, r *http.Request) {
 	}
 	at := time.Now().Unix()
 	if _, _, _, err := s.editReview(r, func(f review.File) (review.File, error) {
-		return review.File{Comments: review.MarkSent(f.Comments, pl.ids, pl.num, at)}, nil
+		f.Comments = review.MarkSent(f.Comments, pl.ids, pl.num, at)
+		return f, nil
 	}); err != nil {
 		httpError(w, http.StatusInternalServerError, fmt.Errorf("pasted into [%d] but couldn't mark the comments sent: %w", pl.num, err))
 		return

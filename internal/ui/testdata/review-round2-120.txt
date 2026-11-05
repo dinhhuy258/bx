@@ -14,4 +14,4 @@ review · login-timeout vs develop · 2 files · +3 −1 · 2 to send · 1 sent
                                       │
                                       │
                                       │
-j/k line · J/K file · c comment · v select · e explain · x delete · n/N next · S send 2 · C clear · R refresh · esc back
+j/k line · J/K file · c comment · v select · e explain · n/N next · S send 2 · C clear · / filter · ? keys · esc back

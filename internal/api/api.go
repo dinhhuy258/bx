@@ -333,6 +333,7 @@ type (
 	Comment        = ui.Comment
 	Explain        = ui.Explain
 	ExplainRequest = ui.ExplainRequest
+	ReviewViewed   = ui.ReviewViewed
 )
 
 // The states of an explanation, and the conversation that is no session.
@@ -341,6 +342,8 @@ const (
 	ExplainDone     = ui.ExplainDone
 	ExplainFailed   = ui.ExplainFailed
 	ExplainCodeOnly = ui.ExplainCodeOnly
+	FileViewed      = ui.FileViewed
+	FileChanged     = ui.FileChanged
 )
 
 // ReviewSend is POST …/review/send: the session to paste into, or New for a new one.

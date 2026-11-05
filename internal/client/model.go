@@ -62,6 +62,7 @@ type Backend interface {
 	SaveReview(ctx context.Context, project, story string, c api.ReviewComments) (api.Review, error)
 	SendReview(ctx context.Context, project, story string, r api.ReviewSend) (api.Result, error)
 	ClearSent(ctx context.Context, project, story string) (api.Review, error)
+	MarkViewed(ctx context.Context, project, story string, v api.ReviewViewed) (api.Review, error)
 	Explain(ctx context.Context, project, story string, req api.ExplainRequest) (api.Review, error)
 	DeleteExplain(ctx context.Context, project, story, id string) (api.Review, error)
 }

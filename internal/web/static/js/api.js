@@ -59,6 +59,8 @@ export const api = {
   saveReview: (p, s, body) => call('PUT', `/api/projects/${enc(p)}/stories/${enc(s)}/review`, body),
   // body is {session: n} or {new: true}; the reply's .message says what happened
   sendReview: (p, s, body) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/send`, body),
+  // mark a file viewed at the hash it was shown with, or unmark it: {path, hash, viewed}
+  markViewed: (p, s, body) => call('PUT', `/api/projects/${enc(p)}/stories/${enc(s)}/review/viewed`, body),
   clearSent: (p, s) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/clear-sent`, {}),
   // ask Claude about diff lines (the review comes back with it running), or stop / dismiss one
   explain: (p, s, body) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/explain`, body),

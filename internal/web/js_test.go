@@ -432,7 +432,7 @@ const fail = (m) => { console.error(m); process.exit(1); };
 const text = (e) => typeof e === 'string' ? e : (e.textContent ?? '') + (e.children || []).map(text).join('');
 
 const { api } = await import(process.argv[2] + '/api.js');
-const { showReview, unsentOf, sideOf, lineOf, quoteOf, rangeOf, linesOf } = await import(process.argv[2] + '/review.js');
+const { showReview, unsentOf, sideOf, lineOf, quoteOf, rangeOf, linesOf, matchFilter } = await import(process.argv[2] + '/review.js');
 const { ask } = await import(process.argv[2] + '/ui.js');
 
 if (sideOf({ kind: 'del', old: 4 }) !== 'old' || lineOf({ kind: 'del', old: 4 }) !== 4 || lineOf({ kind: 'add', new: 7 }) !== 7) fail('sideOf/lineOf');
@@ -445,6 +445,7 @@ if (rd.side !== 'old' || rd.start_line !== 5 || rd.line !== 6) fail('rangeOf rem
 const r1 = rangeOf([{ kind: 'del', old: 5, text: 'x' }, { kind: 'add', new: 5, text: 'y' }]);
 if (r1.start_line !== 0 || r1.line !== 5 || r1.side !== 'new') fail('rangeOf one line: ' + JSON.stringify(r1));
 if (linesOf({ line: 3 }) !== 'line 3' || linesOf({ start_line: 1, line: 3 }) !== 'lines 1–3') fail('linesOf');
+if (!matchFilter('internal/prwatch/query_test.go', 'PRWATCH test') || matchFilter('internal/serve/a_test.go', 'serve !_test') || !matchFilter('a.go', '! ')) fail('matchFilter');
 
 api.review = async () => ({ base: 'main', total: 1, version: 2, files: [{ path: 'a.go', status: 'modified', add: 1, del: 0,
   hunks: [{ header: '@@ -1 +1,2 @@', rows: [{ kind: 'ctx', old: 1, new: 1, text: 'x' }, { kind: 'add', old: 0, new: 2, text: 'y' }] }] }],
@@ -512,6 +513,28 @@ await new Promise((r) => setTimeout(r, 0));
 if (asked.length !== 1 || JSON.stringify(asked[0]) !== JSON.stringify({ file: 'a.go', side: 'new', line: 2, code: 'y', question: 'why?', session: -1 })) fail('asked: ' + JSON.stringify(asked));
 const card = made.filter((e) => e.className === 'rv-ex').pop();
 if (!card || !text(card).includes('Explaining…') || !text(card).includes('code only')) fail('card: ' + (card && text(card)));
+
+// Viewed: a viewed file is folded with a ✓ Viewed toggle; a tap unmarks it; the filter hides cards.
+made.length = 0;
+const marked = [];
+const viewedReview = (v) => ({ base: 'main', total: 2, version: 2, comments: [], files: [
+  { path: 'a.go', status: 'modified', add: 1, del: 0, hash: 'ha', viewed: v, hunks: [{ header: '@@ -1 +1 @@', rows: [{ kind: 'add', new: 1, text: 'y' }] }] },
+  { path: 'b_test.go', status: 'added', add: 1, del: 0, hash: 'hb', hunks: [{ header: '@@ -0,0 +1 @@', rows: [{ kind: 'add', new: 1, text: 'z' }] }] }] });
+api.review = async () => viewedReview('viewed');
+api.markViewed = async (n, s, body) => { marked.push(body); return viewedReview(body.viewed ? 'viewed' : ''); };
+showReview(new El('div'), 'home-network', 's1');
+await new Promise((r) => setTimeout(r, 0));
+const toggle = made.find((e) => e.tag === 'button' && text(e) === '✓ Viewed');
+if (!toggle || made.filter((e) => e.className === 'rv-hunks').length !== 1) fail('a viewed file is folded with a toggle');
+if (!made.some((e) => e.tag === 'button' && text(e) === 'Hide 1 viewed')) fail('no Hide viewed');
+toggle.fire('click');
+await new Promise((r) => setTimeout(r, 0));
+if (JSON.stringify(marked) !== JSON.stringify([{ path: 'a.go', hash: 'ha', viewed: false }])) fail('marked: ' + JSON.stringify(marked));
+const cards = made.filter((e) => e.tag === 'section' && e.className === 'card rv').slice(-2);
+const box = made.find((e) => e.className === 'rv-filter');
+box.value = '!_test';
+box.fire('input');
+if (cards[0].hidden || !cards[1].hidden) fail('filter: ' + cards.map((c) => c.hidden));
 
 made.length = 0;
 ask('Comment', [{ name: 'body', label: 'Comment', type: 'textarea', value: 'hi' }], 'Save');

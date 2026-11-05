@@ -52,6 +52,7 @@ type fakeBackend struct {
 	// new stories
 	review      api.Review // the stored review: GET returns it, PUT and clear-sent change it
 	saveRev     []api.ReviewComments
+	viewed      []api.ReviewViewed
 	sends       []api.ReviewSend
 	sendRes     api.Result
 	sendErr     error
@@ -214,6 +215,16 @@ func (f *fakeBackend) Explain(_ context.Context, _, _ string, r api.ExplainReque
 func (f *fakeBackend) DeleteExplain(_ context.Context, _, _, id string) (api.Review, error) {
 	f.dismissed = append(f.dismissed, id)
 	f.review.Explains = slices.DeleteFunc(f.review.Explains, func(e api.Explain) bool { return e.ID == id })
+	return f.review, nil
+}
+
+func (f *fakeBackend) MarkViewed(_ context.Context, _, _ string, v api.ReviewViewed) (api.Review, error) {
+	f.viewed = append(f.viewed, v)
+	for i := range f.review.Files {
+		if f.review.Files[i].Path == v.Path {
+			f.review.Files[i].Viewed = map[bool]string{true: api.FileViewed}[v.Viewed]
+		}
+	}
 	return f.review, nil
 }
 

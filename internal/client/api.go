@@ -232,6 +232,12 @@ func (c *API) SendReview(ctx context.Context, project, story string, r api.Revie
 	return out, c.call(ctx, sendTimeout, http.MethodPost, reviewPath(project, story)+"/send", r, &out)
 }
 
+// MarkViewed is PUT …/review/viewed: mark a file viewed, or unmark it.
+func (c *API) MarkViewed(ctx context.Context, project, story string, v api.ReviewViewed) (api.Review, error) {
+	var out api.Review
+	return out, c.call(ctx, reposTimeout, http.MethodPut, reviewPath(project, story)+"/viewed", v, &out)
+}
+
 // ClearSent is POST …/review/clear-sent: drop the sent comments.
 func (c *API) ClearSent(ctx context.Context, project, story string) (api.Review, error) {
 	var out api.Review

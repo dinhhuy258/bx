@@ -10,4 +10,4 @@ review · login-timeout vs develop · 2 files · +3 −1 · 1 to send
                                       │
                                       │
                                       │
-j/k scroll · x dismiss · esc close
+j/k scroll · ^d/^u page · x dismiss · esc close

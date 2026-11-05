@@ -199,3 +199,49 @@ func TestSendRefusesASessionOfAnotherStoryAndAFailedPaste(t *testing.T) {
 		t.Fatal("marked sent after a failed paste")
 	}
 }
+
+func markViewed(t *testing.T, ts string, v api.ReviewViewed) (api.Review, int) {
+	t.Helper()
+	var out api.Review
+	data, _ := json.Marshal(v)
+	req, _ := http.NewRequest(http.MethodPut, ts+reviewPath+"/viewed", bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	_ = json.NewDecoder(r.Body).Decode(&out)
+	return out, r.StatusCode
+}
+
+func TestViewedMarksFollowTheDiff(t *testing.T) {
+	s, _, ts := newServer(t)
+	notes := filepath.Join(s.Cfg.WorktreeDir("home-network", "s1"), "notes.txt")
+	writeFile(t, notes, "a\nb\n")
+	r, _ := get[api.Review](t, ts, reviewPath)
+	if r.Files[0].Hash == "" || r.Files[0].Viewed != "" {
+		t.Fatalf("%+v", r.Files[0])
+	}
+	r, code := markViewed(t, ts.URL, api.ReviewViewed{Path: "notes.txt", Hash: r.Files[0].Hash, Viewed: true})
+	if code != 200 || r.Files[0].Viewed != api.FileViewed || r.Version != 0 {
+		t.Fatalf("%d %+v: viewed, and the comments' version stays", code, r)
+	}
+	// a comment saved meanwhile keeps the mark
+	if r, code = saveComments(t, ts.URL, api.ReviewComments{Version: 0, Comments: []api.Comment{{File: "notes.txt", Side: "new", Line: 1, Body: "x"}}}); code != 200 || r.Files[0].Viewed != api.FileViewed {
+		t.Fatalf("%d %+v", code, r.Files)
+	}
+	writeFile(t, notes, "a\nb\nc\n")
+	if r, _ = get[api.Review](t, ts, reviewPath); r.Files[0].Viewed != api.FileChanged {
+		t.Fatalf("an edit after the mark: %+v", r.Files[0])
+	}
+	if r, _ = markViewed(t, ts.URL, api.ReviewViewed{Path: "notes.txt", Hash: "stale", Viewed: true}); r.Files[0].Viewed != api.FileChanged {
+		t.Fatalf("marked at a hash it no longer has: %+v", r.Files[0])
+	}
+	if r, _ = markViewed(t, ts.URL, api.ReviewViewed{Path: "notes.txt", Viewed: false}); r.Files[0].Viewed != "" {
+		t.Fatalf("unmark: %+v", r.Files[0])
+	}
+	if _, code = markViewed(t, ts.URL, api.ReviewViewed{Path: "nope.txt", Viewed: true}); code != http.StatusBadRequest {
+		t.Fatalf("a file that isn't changed: %d", code)
+	}
+}

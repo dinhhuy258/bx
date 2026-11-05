@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -22,6 +23,7 @@ const (
 	ReviewClearSent                  // C: ask to drop the sent comments
 	ReviewExplain                    // e: open the explain form on Selected
 	ReviewExplainDelete              // x on an explanation: stop it or dismiss it
+	ReviewToggleViewed               // Space: mark the file viewed or not, with ToggleViewed
 )
 
 // ReviewLine is the line under the cursor and its unsent comment, or the selected lines.
@@ -57,6 +59,7 @@ const (
 	itemNote                 // a folded file's note
 	itemExplain              // the header of an explanation's card: the cursor stops here
 	itemExplainLine          // one line of its answer
+	itemViewed               // a viewed file's note: folded, or changed since
 )
 
 type reviewItem struct {
@@ -90,6 +93,42 @@ type Review struct {
 	reading string
 	readTop int
 	Now     func() time.Time
+
+	// filter narrows the file list to the paths that hold each of its words (a !word leaves
+	// them out); typing is set while / edits it. hideViewed (H) leaves viewed files out.
+	filter     string
+	typing     bool
+	hideViewed bool
+
+	// paneH and listH are the heights of the diff pane and the file list at the last Render:
+	// what a page is.
+	paneH, listH int
+
+	// help (?) shows the keys in the diff pane, scrolled to helpTop.
+	help    bool
+	helpTop int
+}
+
+// reviewKeys is what ? shows.
+var reviewKeys = [][2]string{
+	{"j/k ↑/↓", "next or previous line"},
+	{"^d/^u", "half a page down or up"},
+	{"^f/^b PgDn/PgUp", "a page down or up"},
+	{"g/G", "first or last line of the file"},
+	{"J/K", "next or previous file"},
+	{"n/N", "next or previous comment, across files"},
+	{"/", "filter the files by name (every word matches; !word leaves out)"},
+	{"space", "mark the file viewed (or not) and go to the next one"},
+	{"H", "hide or show viewed files"},
+	{"c", "comment on the line, or edit its comment"},
+	{"v", "select lines (o other end)"},
+	{"e", "ask Claude to explain the line or the selection"},
+	{"⏎", "read an explanation"},
+	{"x", "delete the unsent comment, or stop / dismiss an explanation"},
+	{"S", "send the unsent comments to a session"},
+	{"C", "clear the sent comments"},
+	{"R", "refresh the diff"},
+	{"esc", "clear the filter, then leave"},
 }
 
 // NewReview starts an empty screen for story, until SetData.
@@ -207,9 +246,22 @@ func (r *Review) items(i int) []reviewItem {
 			mineE = append(mineE, &r.data.Explains[j])
 		}
 	}
+	if f.Viewed == FileViewed {
+		out := []reviewItem{{kind: itemViewed, text: fmt.Sprintf("✓ viewed · %s · +%d −%d · space to unmark", ReviewText(f.Path), f.Add, f.Del)}}
+		for _, c := range mine {
+			out = append(out, commentItems(itemPinned, c)...)
+		}
+		for _, e := range mineE {
+			out = append(out, explainItems(e)...)
+		}
+		return out
+	}
 	placed := map[*Comment]bool{}
 	placedE := map[*Explain]bool{}
 	var body []reviewItem
+	if f.Viewed == FileChanged {
+		body = append(body, reviewItem{kind: itemViewed, text: "◐ changed since you viewed it · space to mark it viewed again"})
+	}
 	if f.Folded != "" {
 		body = append(body, reviewItem{kind: itemNote, text: f.Folded})
 	}
@@ -346,20 +398,177 @@ func (r *Review) moveLine(d int) {
 	}
 }
 
+// moveFile moves d files down (up when negative) the list as it is shown, stopping at its ends.
+// From a file the list doesn't show, 1 is the next one shown.
 func (r *Review) moveFile(d int) {
-	if n := len(r.data.Files); n > 0 {
-		r.file = min(max(r.file+d, 0), n-1)
-		r.line, r.top = 0, 0
-		r.selecting, r.hint = false, ""
+	list := r.shown()
+	if len(list) == 0 {
+		return
+	}
+	pos := r.listPos(list)
+	if d > 0 && (pos >= len(list) || list[pos] != r.file) {
+		d-- // pos is already past the file
+	}
+	r.setFile(list[min(max(pos+d, 0), len(list)-1)])
+}
+
+// listPos is where the selected file is in list, or where it would be.
+func (r *Review) listPos(list []int) int {
+	for i, f := range list {
+		if f >= r.file {
+			return i
+		}
+	}
+	return len(list)
+}
+
+// setFile opens file i at its top.
+func (r *Review) setFile(i int) {
+	if i == r.file {
+		return
+	}
+	r.file, r.line, r.top = i, 0, 0
+	r.selecting, r.hint = false, ""
+	r.snap(1)
+}
+
+// shows says whether the file list shows file i: it matches the filter and isn't a viewed
+// file that H hides.
+func (r *Review) shows(i int) bool {
+	f := r.data.Files[i]
+	return (!r.hideViewed || f.Viewed != FileViewed) && MatchFilter(f.Path, r.filter)
+}
+
+// shown is the files the list shows, by index.
+func (r *Review) shown() []int {
+	var out []int
+	for i := range r.data.Files {
+		if r.shows(i) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// keepShown moves off a file the list stopped showing, to the next one it shows.
+func (r *Review) keepShown() {
+	if len(r.data.Files) > 0 && !r.shows(r.file) {
+		r.moveFile(1)
+	}
+}
+
+// MatchFilter says whether path holds every word of filter, ignoring case; a word that starts
+// with ! must not be in it.
+func MatchFilter(path, filter string) bool {
+	path = strings.ToLower(path)
+	for _, w := range strings.Fields(strings.ToLower(filter)) {
+		if not, ok := strings.CutPrefix(w, "!"); ok {
+			if not != "" && strings.Contains(path, not) {
+				return false
+			}
+		} else if !strings.Contains(path, w) {
+			return false
+		}
+	}
+	return true
+}
+
+// page is how far Ctrl-d and Ctrl-u go in a pane of h lines: half of it, at least a line.
+func page(h int) int {
+	if h <= 0 {
+		h = 20 // before the first Render
+	}
+	return max((h-1)/2, 1)
+}
+
+// moveBy moves the cursor n screen lines (up when negative) and scrolls the view as far, then
+// onto the nearest line it can stop on.
+func (r *Review) moveBy(n int) {
+	its := r.items(r.file)
+	if len(its) == 0 {
+		return
+	}
+	r.top = min(max(r.top+n, 0), max(len(its)-max(r.paneH, 1), 0))
+	r.line = min(max(r.line+n, 0), len(its)-1)
+	if n < 0 {
+		r.snap(-1)
+	} else {
 		r.snap(1)
 	}
 }
+
+// moveEdge goes to the first (d -1) or last (d 1) line of the file.
+func (r *Review) moveEdge(d int) {
+	its := r.items(r.file)
+	if d < 0 {
+		r.line, r.top = 0, 0
+		r.snap(1)
+		return
+	}
+	r.line = max(len(its)-1, 0)
+	r.snap(-1)
+}
+
+// fileEdge goes to the first (d -1) or last (d 1) file of the list.
+func (r *Review) fileEdge(d int) {
+	if list := r.shown(); len(list) > 0 {
+		if d < 0 {
+			r.setFile(list[0])
+		} else {
+			r.setFile(list[len(list)-1])
+		}
+	}
+}
+
+// ToggleViewed marks the selected file viewed, or unmarks it, and returns what to send. Marking
+// goes on to the next file of the list that isn't viewed. False when the file can't be marked
+// (a gone file, which has no diff).
+func (r *Review) ToggleViewed() (ReviewViewed, bool) {
+	if r.file >= len(r.data.Files) || r.data.Files[r.file].Hash == "" {
+		return ReviewViewed{}, false
+	}
+	f := &r.data.Files[r.file]
+	req := ReviewViewed{Path: f.Path, Hash: f.Hash, Viewed: f.Viewed != FileViewed}
+	f.Viewed = ""
+	if req.Viewed {
+		f.Viewed = FileViewed
+	}
+	r.selecting, r.hint, r.reading = false, "", ""
+	r.line, r.top = 0, 0
+	r.snap(1)
+	if req.Viewed {
+		for _, i := range r.shown() {
+			if i > r.file && r.data.Files[i].Viewed != FileViewed {
+				r.setFile(i)
+				break
+			}
+		}
+	}
+	return req, true
+}
+
+// Viewed counts the viewed files.
+func (r *Review) Viewed() int {
+	n := 0
+	for _, f := range r.data.Files {
+		if f.Viewed == FileViewed {
+			n++
+		}
+	}
+	return n
+}
+
+// Filtering says whether / is editing the filter.
+func (r *Review) Filtering() bool { return r.typing }
 
 // nextComment goes to the next (d 1) or previous (d -1) line with a comment, across files.
 func (r *Review) nextComment(d int) {
 	type pos struct{ file, line int }
 	var all []pos
 	for f := range r.data.Files {
+		if !r.shows(f) && f != r.file {
+			continue
+		}
 		for i, it := range r.items(f) {
 			if it.kind == itemPinned || (it.kind == itemRow && r.commentsOn(f, it.row) != nil) {
 				all = append(all, pos{f, i})
@@ -479,6 +688,13 @@ func (r *Review) selectKey(key string) ReviewAction {
 		r.moveEnd(1)
 	case "k", "Up":
 		r.moveEnd(-1)
+	case "C-d", "C-u", "C-f", "C-b", "PgDn", "PgUp":
+		n, d := r.pageKey(key)
+		for range n {
+			if r.hint != "" || !r.moveEnd(d) {
+				break
+			}
+		}
 	case "o":
 		r.anchor, r.line = r.line, r.anchor
 	case "c":
@@ -491,28 +707,135 @@ func (r *Review) selectKey(key string) ReviewAction {
 	return ReviewKeep
 }
 
-// moveEnd moves the cursor end of the range to the next row of the anchor's hunk.
-func (r *Review) moveEnd(d int) {
+// moveEnd moves the cursor end of the range to the next row of the anchor's hunk; false when
+// there is none.
+func (r *Review) moveEnd(d int) bool {
 	its := r.items(r.file)
 	for i := r.line + d; i >= 0 && i < len(its); i += d {
 		switch {
 		case its[i].kind == itemRow && its[i].hunk == its[r.anchor].hunk:
 			r.line = i
-			return
+			return true
 		case its[i].kind == itemHunk || its[i].kind == itemRow:
 			r.hint = "a range stays inside one hunk"
-			return
+			return false
 		}
 	}
+	return false
+}
+
+// pageKey is how many lines a paging key goes in the diff pane, and which way.
+func (r *Review) pageKey(key string) (n, d int) {
+	n = page(r.paneH)
+	if key == "C-f" || key == "C-b" || key == "PgDn" || key == "PgUp" {
+		n = max(r.paneH-1, 1)
+	}
+	if key == "C-u" || key == "C-b" || key == "PgUp" {
+		return n, -1
+	}
+	return n, 1
+}
+
+// helpKey handles a key while ? shows the keys: they scroll, anything else closes it.
+func (r *Review) helpKey(key string) ReviewAction {
+	switch key {
+	case "j", "Down":
+		r.helpTop++
+	case "k", "Up":
+		r.helpTop = max(r.helpTop-1, 0)
+	case "C-d", "C-u", "C-f", "C-b", "PgDn", "PgUp":
+		n, d := r.pageKey(key)
+		r.helpTop = max(r.helpTop+n*d, 0)
+	default:
+		r.help = false
+	}
+	return ReviewKeep
+}
+
+// helpLines is the key list, scrolled by helpTop.
+func (r *Review) helpLines(w, h int, pal palette) []string {
+	all := []string{pal.bold.Render("Keys on the review screen"), ""}
+	for _, k := range reviewKeys {
+		all = append(all, truncate(pal.amber.Render(padCells(k[0], 17))+" "+k[1], w))
+	}
+	r.helpTop = min(max(r.helpTop, 0), max(len(all)-h, 0))
+	return all[r.helpTop:min(r.helpTop+h, len(all))]
+}
+
+// filterKey handles a key while / edits the filter.
+func (r *Review) filterKey(key string) ReviewAction {
+	switch key {
+	case "Enter":
+		r.typing = false
+	case "Esc":
+		r.typing, r.filter = false, ""
+	case "BSpace":
+		if _, n := utf8.DecodeLastRuneInString(r.filter); n > 0 {
+			r.filter = r.filter[:len(r.filter)-n]
+		}
+	case "C-u":
+		r.filter = ""
+	case "Down", "C-n":
+		r.moveFile(1)
+		return ReviewKeep
+	case "Up", "C-p":
+		r.moveFile(-1)
+		return ReviewKeep
+	case "Space":
+		r.filter += " "
+	default:
+		if utf8.RuneCountInString(key) == 1 {
+			r.filter += key
+		}
+	}
+	r.keepShown()
+	return ReviewKeep
+}
+
+// listKey handles the keys that act on the file list on both screens; false when key isn't one.
+func (r *Review) listKey(key string) (ReviewAction, bool) {
+	switch key {
+	case "/":
+		r.typing = true
+		return ReviewKeep, true
+	case "?":
+		r.help, r.helpTop = true, 0
+		return ReviewKeep, true
+	case "H":
+		r.hideViewed = !r.hideViewed
+		r.keepShown()
+		return ReviewKeep, true
+	case "Space":
+		if r.file < len(r.data.Files) && r.data.Files[r.file].Hash != "" {
+			return ReviewToggleViewed, true
+		}
+		return ReviewKeep, true
+	}
+	return ReviewKeep, false
 }
 
 // Key handles a key; narrow has two panes, the files and the diff.
 func (r *Review) Key(key string, narrow bool) ReviewAction {
+	if r.help {
+		return r.helpKey(key)
+	}
+	if r.typing {
+		return r.filterKey(key)
+	}
 	if r.selecting {
 		return r.selectKey(key)
 	}
 	if r.reading != "" {
 		return r.readKey(key)
+	}
+	if a, ok := r.listKey(key); ok {
+		switch {
+		case r.typing && narrow:
+			r.pane = 0 // the filter is on the list
+		case r.help && narrow:
+			r.pane = 1 // the keys show in the diff pane
+		}
+		return a
 	}
 	switch key {
 	case "R":
@@ -534,11 +857,23 @@ func (r *Review) Key(key string, narrow bool) ReviewAction {
 			r.moveFile(1)
 		case "k", "Up":
 			r.moveFile(-1)
+		case "C-d", "PgDn", "C-f":
+			r.moveFile(page(r.listH))
+		case "C-u", "PgUp", "C-b":
+			r.moveFile(-page(r.listH))
+		case "g":
+			r.fileEdge(-1)
+		case "G":
+			r.fileEdge(1)
 		case "Enter", "l", "Right":
 			if len(r.data.Files) > 0 {
 				r.pane = 1
 			}
 		case "Esc":
+			if r.filter != "" {
+				r.filter = ""
+				return ReviewKeep
+			}
 			return ReviewBack
 		}
 		return ReviewKeep
@@ -548,6 +883,13 @@ func (r *Review) Key(key string, narrow bool) ReviewAction {
 		r.moveLine(1)
 	case "k", "Up":
 		r.moveLine(-1)
+	case "C-d", "C-u", "C-f", "C-b", "PgDn", "PgUp":
+		n, d := r.pageKey(key)
+		r.moveBy(n * d)
+	case "g":
+		r.moveEdge(-1)
+	case "G":
+		r.moveEdge(1)
 	case "J":
 		r.moveFile(1)
 	case "K":
@@ -584,6 +926,10 @@ func (r *Review) Key(key string, narrow bool) ReviewAction {
 			r.pane = 0
 			return ReviewKeep
 		}
+		if r.filter != "" {
+			r.filter = ""
+			return ReviewKeep
+		}
 		return ReviewBack
 	}
 	return ReviewKeep
@@ -596,6 +942,13 @@ func (r *Review) readKey(key string) ReviewAction {
 		r.readTop++
 	case "k", "Up":
 		r.readTop = max(r.readTop-1, 0)
+	case "C-d", "C-u", "C-f", "C-b", "PgDn", "PgUp":
+		n, d := r.pageKey(key)
+		r.readTop = max(r.readTop+n*d, 0)
+	case "g":
+		r.readTop = 0
+	case "G":
+		r.readTop = 1 << 30 // readLines brings it back to the last page
 	case "x":
 		return ReviewExplainDelete
 	case "Esc":
@@ -629,8 +982,14 @@ func (r *Review) Render(w, h int, plain, narrow bool) string {
 	if base == "" {
 		base = "HEAD"
 	}
-	head := fmt.Sprintf("%s · %s vs %s · %s · +%d −%d", pal.bold.Render("review"), r.Story, base,
-		pluralWord(r.data.Total, "file", "files"), add, del)
+	files := pluralWord(r.data.Total, "file", "files")
+	if n := len(r.shown()); n < len(r.data.Files) {
+		files = pal.amber.Render(fmt.Sprintf("%d of %s", n, files))
+	}
+	head := fmt.Sprintf("%s · %s vs %s · %s · +%d −%d", pal.bold.Render("review"), r.Story, base, files, add, del)
+	if n := r.Viewed(); n > 0 {
+		head += " · " + pal.green.Render(fmt.Sprintf("%d/%d viewed", n, len(r.data.Files)))
+	}
 	if n := r.Unsent(); n > 0 {
 		head += " · " + pal.amber.Render(fmt.Sprintf("%d to send", n))
 	}
@@ -643,6 +1002,10 @@ func (r *Review) Render(w, h int, plain, narrow bool) string {
 	}
 	lines := []string{truncate(head, w), second}
 	bh := max(h-2, 1)
+	r.paneH, r.listH = bh, bh
+	if r.typing || r.filter != "" {
+		r.listH = max(bh-1, 1)
+	}
 	switch {
 	case len(r.data.Files) == 0:
 		lines = append(lines, "", pal.dim.Render("No changes since "+base+"."))
@@ -689,16 +1052,41 @@ func (r *Review) fileLines(w, h int, pal palette) []string {
 	for _, c := range r.data.Comments {
 		counts[c.File]++
 	}
-	first := max(r.file-h+1, 0)
 	var out []string
-	for i := first; i < len(r.data.Files) && len(out) < h; i++ {
+	rows := h // the list's lines, under the filter's when it has one
+	if r.typing || r.filter != "" {
+		bar := pal.amber.Render("/") + " " + ReviewText(r.filter)
+		if r.typing {
+			bar += pal.amber.Render("▏")
+		}
+		out = append(out, truncate(bar, w))
+		rows = max(h-1, 1)
+	}
+	list := r.shown()
+	if len(list) == 0 {
+		return append(out, pal.dim.Render(truncate(" no file matches", w)))
+	}
+	first := max(min(r.listPos(list), len(list)-1)-rows+1, 0)
+	for _, i := range list[first:] {
+		if len(out) >= h {
+			break
+		}
 		f := r.data.Files[i]
 		letter := strings.ToUpper(f.Status[:1])
 		right := fmt.Sprintf("+%d −%d", f.Add, f.Del)
 		if n := counts[f.Path]; n > 0 {
 			right += fmt.Sprintf(" ●%d", n)
 		}
+		switch f.Viewed {
+		case FileViewed:
+			right += " ✓"
+		case FileChanged:
+			right += " ◐"
+		}
 		line := fit(" "+letter+" "+ReviewText(f.Path), right+" ", w)
+		if f.Viewed == FileViewed {
+			line = pal.dim.Render(line)
+		}
 		if i == r.file {
 			line = band(line, w, pal.selBG)
 			if pal.selBG == "" {
@@ -712,6 +1100,9 @@ func (r *Review) fileLines(w, h int, pal palette) []string {
 
 // paneLines is the diff pane: the open answer, or the selected file's diff.
 func (r *Review) paneLines(w, h int, pal palette, narrow bool) []string {
+	if r.help {
+		return r.helpLines(w, h, pal)
+	}
 	if r.reading != "" {
 		return r.readLines(w, h, pal)
 	}
@@ -808,6 +1199,12 @@ func (r *Review) diffLines(w, h int, pal palette, narrow bool) []string {
 			line = pal.cyan.Render(truncate(ReviewText(it.text), w))
 		case itemNote:
 			line = pal.dim.Render(truncate("  "+it.text, w))
+		case itemViewed:
+			style := pal.green
+			if r.data.Files[r.file].Viewed == FileChanged {
+				style = pal.amber
+			}
+			line = style.Render(truncate("  "+it.text, w))
 		case itemRow:
 			sign, style := " ", pal.dim
 			switch it.row.Kind {
@@ -898,8 +1295,17 @@ func (r *Review) commentLine(it reviewItem, w, indent int, pal palette) string {
 
 // Bar is the key bar of the screen.
 func (r *Review) Bar(narrow bool) string {
+	if r.help {
+		return "j/k scroll · any other key closes"
+	}
+	if r.typing {
+		if narrow {
+			return "⏎ keep · esc clear · ↑/↓ file"
+		}
+		return "type to filter · !word leaves out · ⏎ keep · esc clear · ↑/↓ file"
+	}
 	if r.reading != "" {
-		return "j/k scroll · x dismiss · esc close"
+		return "j/k scroll · ^d/^u page · x dismiss · esc close"
 	}
 	if r.selecting {
 		l, _ := r.Selected()
@@ -933,9 +1339,17 @@ func (r *Review) Bar(narrow bool) string {
 	}
 	switch {
 	case narrow && r.pane == 0:
-		return "⏎ open · j/k file" + send + " · esc back"
+		return "⏎ open · ? keys" + send + " · " + r.escWord()
 	case narrow:
 		return "c comment · x del" + send + " · esc files"
 	}
-	return "j/k line · J/K file · c comment · v select · e explain · x delete · n/N next" + send + clear + " · R refresh · esc back"
+	return "j/k line · J/K file · c comment · v select · e explain · n/N next" + send + clear + " · / filter · ? keys · " + r.escWord()
+}
+
+// escWord says what Esc does on the screen: clear the filter first, then leave.
+func (r *Review) escWord() string {
+	if r.filter != "" {
+		return "esc clear"
+	}
+	return "esc back"
 }
