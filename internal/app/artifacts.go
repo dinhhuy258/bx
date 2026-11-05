@@ -2,8 +2,10 @@ package app
 
 import (
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/dinhhuy258/bx/internal/uploads"
 )
@@ -28,7 +30,7 @@ func (a *App) ArtifactsLink(project string, num int) string {
 // artifactsPrompt is the --append-system-prompt of a session. Claude records it on the first
 // request and reuses it on resume, so it holds only what never changes for the session.
 func artifactsPrompt(dir, link string) string {
-	s := `This session runs in bx. When the user wants an HTML page, report, chart, diagram or mockup to open in a browser (an "artifact"), use the bx:artifact skill and save it in ` + dir + "."
+	s := `This session runs in bx. When the user wants a page, report, chart, diagram or mockup to open in a browser (an "artifact"), use the bx:artifact skill and save it in ` + dir + "."
 	if link != "" {
 		s += " Its link is " + link + "/<file name>."
 	}
@@ -81,4 +83,17 @@ func withHooks(hooks, add map[string]any) map[string]any {
 		}
 	}
 	return out
+}
+
+// docGlobs are the doc_pages globs made absolute under the session's folder dir, joined for
+// $BX_DOCS: the page hook copies a Markdown doc Claude writes there into the artifacts folder.
+// Blank and absolute globs are skipped: a doc is always the session's own.
+func docGlobs(dir string, globs []string) string {
+	var out []string
+	for _, g := range globs {
+		if g = strings.TrimSpace(g); g != "" && !filepath.IsAbs(g) {
+			out = append(out, filepath.Join(dir, g))
+		}
+	}
+	return strings.Join(out, string(os.PathListSeparator))
 }

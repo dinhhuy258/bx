@@ -23,9 +23,13 @@ type Config struct {
 // or an explicit host:port; only Tailscale (100.64.0.0/10) and loopback addresses are accepted.
 // FilesListen is the artifact file server: "auto" (Listen's host, port 7358), "off", or an
 // explicit host:port under the same rule.
+// DocPages are the Markdown docs, relative to a session's folder, that the page hook copies
+// into the session's artifacts folder when Claude writes them, so they get a link: exact
+// files ("README.md") or filepath.Match globs ("docs/*.md"; no "**"). [] copies none.
 type Serve struct {
-	Listen      string `toml:"listen"`
-	FilesListen string `toml:"files_listen"`
+	Listen      string   `toml:"listen"`
+	FilesListen string   `toml:"files_listen"`
+	DocPages    []string `toml:"doc_pages"`
 }
 
 // Client holds `bx` client settings: the server URL and the keys that work from both panes.
@@ -85,7 +89,7 @@ func Default(root string) *Config {
 				"review": {"M-g"}, "sync": {"M-u"},
 			},
 		},
-		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
+		Serve:  Serve{Listen: "auto", FilesListen: "auto", DocPages: []string{"docs/*.md", "docs/*/*.md"}},
 		Client: Client{SwitchPane: "C-q", Quit: "C-c"},
 	}
 }
@@ -115,8 +119,9 @@ type rawConfig struct {
 		List map[string]bind `toml:"list"`
 	} `toml:"keys"`
 	Serve struct {
-		Listen      *string `toml:"listen"`
-		FilesListen *string `toml:"files_listen"`
+		Listen      *string   `toml:"listen"`
+		FilesListen *string   `toml:"files_listen"`
+		DocPages    *[]string `toml:"doc_pages"`
 	} `toml:"serve"`
 	Client struct {
 		Server     *string `toml:"server"`
@@ -133,6 +138,9 @@ func (r rawConfig) applyTo(c *Config) {
 	}
 	if r.Serve.FilesListen != nil {
 		c.Serve.FilesListen = *r.Serve.FilesListen
+	}
+	if r.Serve.DocPages != nil {
+		c.Serve.DocPages = *r.Serve.DocPages
 	}
 	if r.Client.Server != nil {
 		c.Client.Server = *r.Client.Server

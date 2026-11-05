@@ -84,3 +84,31 @@ func TestFilesHandler(t *testing.T) {
 		t.Errorf("POST: %d", r.StatusCode)
 	}
 }
+
+func TestFilesHandlerRendersMarkdown(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "home-network", "3")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# Lease plan\n\n| a |\n|---|\n| 1 |\n"), 0o600)
+	ts := httptest.NewServer(FilesHandler(root))
+	defer ts.Close()
+	for _, c := range []struct{ query, ctype, body string }{
+		{"", "text/html; charset=utf-8", "<title>Lease plan</title>"},
+		{"?raw", "text/plain; charset=utf-8", "# Lease plan"},
+	} {
+		r, err := http.Get(ts.URL + "/home-network/3/plan.md" + c.query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		if r.StatusCode != 200 || r.Header.Get("Content-Type") != c.ctype || !strings.Contains(string(b), c.body) {
+			t.Errorf("%q: %d %q %q", c.query, r.StatusCode, r.Header.Get("Content-Type"), b)
+		}
+		if !strings.HasPrefix(r.Header.Get("Content-Security-Policy"), "sandbox allow-scripts") {
+			t.Errorf("%q: no sandbox", c.query)
+		}
+	}
+}

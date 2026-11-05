@@ -3,7 +3,9 @@ package commands
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/cli"
+	"github.com/dinhhuy258/bx/internal/serve"
 )
 
 func init() {
@@ -33,10 +36,12 @@ type postToolUse struct {
 
 // runPageHook is the PostToolUse hook of Write, Edit, MultiEdit and Bash (args: bx serve's base
 // URL). When the file is a page in the session's artifacts folder ($BX_ARTIFACTS) it tells bx
-// serve, which shows the link in the phone and the TUI. A Bash command names no file: the hook
-// compares the folder with the snapshot that `bx page-hook --before` took (the PreToolUse hook
-// of Bash) and tells bx serve of each page the command wrote. It runs after every edit and
-// command, so anything else exits at once; it never blocks Claude and always exits 0.
+// serve, which shows the link in the phone and the TUI. A Markdown doc matching $BX_DOCS (the
+// doc_pages globs) is first copied into that folder, where it is a page too. A Bash command
+// names no file: the hook compares the docs and the folder with the snapshot that
+// `bx page-hook --before` took (the PreToolUse hook of Bash), copies each doc the command
+// wrote, and tells bx serve of each page that changed. It runs after every edit and command, so
+// anything else exits at once; it never blocks Claude and always exits 0.
 func runPageHook(args []string, out, errOut io.Writer) int {
 	if len(args) != 1 {
 		return 0
@@ -46,22 +51,41 @@ func runPageHook(args []string, out, errOut io.Writer) int {
 		return 0
 	}
 	dir := os.Getenv("BX_ARTIFACTS")
+	docs := filepath.SplitList(os.Getenv("BX_DOCS"))
 	if args[0] == "--before" {
 		if h.ToolName == "Bash" {
-			saveSnapshot(dir, h.ToolUseID)
+			saveSnapshot(dir, docs, h.ToolUseID)
 		}
 		return 0
 	}
 	if h.ToolName == "Bash" {
-		for _, p := range changedPages(dir, h.ToolUseID) {
+		before, ok := loadSnapshot(h.ToolUseID)
+		if !ok {
+			return 0
+		}
+		for _, d := range changed(scanDocs(docs), before.Docs) {
+			mirrorDoc(dir, d.name)
+		}
+		now, err := scanPages(dir)
+		if err != nil {
+			return 0
+		}
+		for _, p := range changed(now, before.Pages) {
 			postPage(args[0], api.PageHook{SessionID: h.SessionID, Path: filepath.Join(dir, p.name), New: p.isNew})
 		}
 		return 0
 	}
-	if !isPage(dir, h.ToolInput.FilePath) {
+	file, isNew := h.ToolInput.FilePath, h.ToolName == "Write" && !writeUpdated(h.ToolResponse)
+	if isDoc(docs, file) {
+		var ok bool
+		if file, isNew, ok = mirrorDoc(dir, file); !ok {
+			return 0
+		}
+	}
+	if !isPage(dir, file) {
 		return 0
 	}
-	postPage(args[0], api.PageHook{SessionID: h.SessionID, Path: h.ToolInput.FilePath, New: h.ToolName == "Write" && !writeUpdated(h.ToolResponse)})
+	postPage(args[0], api.PageHook{SessionID: h.SessionID, Path: file, New: isNew})
 	return 0
 }
 
@@ -75,10 +99,18 @@ func postPage(base string, h api.PageHook) {
 	}
 }
 
-// pageStamp is what a snapshot keeps of a page: a page whose size or time differs was written.
+// pageStamp is what a snapshot keeps of a file: a file whose size or time differs was written.
 type pageStamp struct {
 	Size    int64 `json:"size"`
 	ModTime int64 `json:"mtime"` // nanoseconds
+}
+
+// stampOf is the stamp of a regular file, false for anything else.
+func stampOf(fi fs.FileInfo) (pageStamp, bool) {
+	if !fi.Mode().IsRegular() {
+		return pageStamp{}, false
+	}
+	return pageStamp{Size: fi.Size(), ModTime: fi.ModTime().UnixNano()}, true
 }
 
 // scanPages are the pages at the top of the artifacts folder dir, by name.
@@ -89,14 +121,42 @@ func scanPages(dir string) (map[string]pageStamp, error) {
 	}
 	out := map[string]pageStamp{}
 	for _, e := range entries {
-		if !e.Type().IsRegular() || !isPage(dir, filepath.Join(dir, e.Name())) {
+		if !isPage(dir, filepath.Join(dir, e.Name())) {
 			continue
 		}
 		if fi, err := e.Info(); err == nil {
-			out[e.Name()] = pageStamp{Size: fi.Size(), ModTime: fi.ModTime().UnixNano()}
+			if st, ok := stampOf(fi); ok {
+				out[e.Name()] = st
+			}
 		}
 	}
 	return out, nil
+}
+
+// scanDocs are the docs matching globs, by path.
+func scanDocs(globs []string) map[string]pageStamp {
+	out := map[string]pageStamp{}
+	for _, g := range globs {
+		matches, _ := filepath.Glob(g)
+		for _, m := range matches {
+			if !isDoc(globs, m) {
+				continue
+			}
+			if fi, err := os.Lstat(m); err == nil {
+				if st, ok := stampOf(fi); ok {
+					out[m] = st
+				}
+			}
+		}
+	}
+	return out
+}
+
+// snapshot is what `bx page-hook --before` notes before a Bash call: the pages of the artifacts
+// folder by name and the docs matching $BX_DOCS by path.
+type snapshot struct {
+	Pages map[string]pageStamp `json:"pages"`
+	Docs  map[string]pageStamp `json:"docs"`
 }
 
 // snapshotPath is where the snapshot of a Bash call lives between its two hooks: a private
@@ -108,8 +168,8 @@ func snapshotPath(toolUseID string) string {
 	return filepath.Join(os.TempDir(), "bx-page-hook-"+strconv.Itoa(os.Getuid()), toolUseID+".json")
 }
 
-// saveSnapshot notes the pages of dir before Bash call toolUseID runs.
-func saveSnapshot(dir, toolUseID string) {
+// saveSnapshot notes the pages of dir and the docs before Bash call toolUseID runs.
+func saveSnapshot(dir string, docs []string, toolUseID string) {
 	path := snapshotPath(toolUseID)
 	if dir == "" || path == "" {
 		return
@@ -121,8 +181,23 @@ func saveSnapshot(dir, toolUseID string) {
 	if os.MkdirAll(filepath.Dir(path), 0o700) != nil {
 		return
 	}
-	b, _ := json.Marshal(pages)
+	b, _ := json.Marshal(snapshot{Pages: pages, Docs: scanDocs(docs)})
 	_ = os.WriteFile(path, b, 0o600)
+}
+
+// loadSnapshot reads and removes the snapshot of Bash call toolUseID; false when there is none.
+func loadSnapshot(toolUseID string) (snapshot, bool) {
+	var s snapshot
+	path := snapshotPath(toolUseID)
+	if path == "" {
+		return s, false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return s, false
+	}
+	_ = os.Remove(path)
+	return s, json.Unmarshal(b, &s) == nil
 }
 
 type changedPage struct {
@@ -131,27 +206,9 @@ type changedPage struct {
 	modTime int64
 }
 
-// changedPages are the pages of dir that Bash call toolUseID wrote, by name: those not in its
-// snapshot (new) or changed since, oldest first, so the banner ends on the latest. It removes
-// the snapshot; with none it returns nothing.
-func changedPages(dir, toolUseID string) []changedPage {
-	path := snapshotPath(toolUseID)
-	if dir == "" || path == "" {
-		return nil
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	_ = os.Remove(path)
-	var before map[string]pageStamp
-	if json.Unmarshal(b, &before) != nil {
-		return nil
-	}
-	now, err := scanPages(dir)
-	if err != nil {
-		return nil
-	}
+// changed are the files of now not in before (new) or changed since, oldest first, so the
+// banner ends on the latest.
+func changed(now, before map[string]pageStamp) []changedPage {
 	var out []changedPage
 	for name, st := range now {
 		if old, ok := before[name]; !ok || old != st {
@@ -167,12 +224,58 @@ func changedPages(dir, toolUseID string) []changedPage {
 	return out
 }
 
-// isPage reports whether file is an .html page at the top of the artifacts folder dir.
+// isPage reports whether file is a page (serve.IsPageName) at the top of the artifacts folder dir.
 func isPage(dir, file string) bool {
-	if dir == "" || file == "" || !strings.EqualFold(filepath.Ext(file), ".html") {
+	if dir == "" || file == "" || !serve.IsPageName(filepath.Base(file)) {
 		return false
 	}
-	return filepath.Dir(filepath.Clean(file)) == filepath.Clean(dir) && !strings.HasPrefix(filepath.Base(file), ".")
+	return filepath.Dir(filepath.Clean(file)) == filepath.Clean(dir)
+}
+
+// isDoc reports whether file is a Markdown doc matching one of the $BX_DOCS globs.
+func isDoc(globs []string, file string) bool {
+	if !filepath.IsAbs(file) || strings.HasPrefix(filepath.Base(file), ".") || !strings.EqualFold(filepath.Ext(file), ".md") {
+		return false
+	}
+	file = strings.TrimSuffix(filepath.Clean(file), filepath.Ext(file)) + ".md" // globs say .md; a.MD counts too
+	for _, g := range globs {
+		if ok, _ := filepath.Match(g, file); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// mirrorDoc copies doc src to the top of the artifacts folder dir under its own name, through
+// a dot-named temp file the file server never serves. isNew is whether no copy was there.
+func mirrorDoc(dir, src string) (dst string, isNew, ok bool) {
+	if dir == "" {
+		return "", false, false
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return "", false, false
+	}
+	dst = filepath.Join(dir, filepath.Base(src))
+	_, err = os.Lstat(dst)
+	isNew = errors.Is(err, fs.ErrNotExist)
+	f, err := os.CreateTemp(dir, ".doc-*")
+	if err != nil {
+		return "", false, false
+	}
+	tmp := f.Name()
+	_, err = f.Write(b)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, dst)
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return "", false, false
+	}
+	return dst, isNew, true
 }
 
 // writeUpdated reports whether a Write's tool_response says it replaced a file ("type":

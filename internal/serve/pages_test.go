@@ -27,6 +27,8 @@ func TestPageOf(t *testing.T) {
 	}{
 		{root + "/home-network/1/report.html", "home-network", 1, "report.html"},
 		{root + "/home-network/12/Report.HTML", "home-network", 12, "Report.HTML"},
+		{root + "/home-network/1/plan.md", "home-network", 1, "plan.md"},
+		{root + "/home-network/1/.draft.md", "", 0, ""},
 		{root + "/home-network/1/sub/report.html", "", 0, ""},
 		{root + "/home-network/1/report.txt", "", 0, ""},
 		{root + "/home-network/1/.draft.html", "", 0, ""},

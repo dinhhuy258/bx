@@ -1,6 +1,8 @@
 package serve
 
 import (
+	"bytes"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -36,7 +38,8 @@ func ResolveFiles(cfg, apiAddr string) (string, error) {
 // FilesHandler serves the session artifacts under root, read-only: GET or HEAD of
 // /<project>/<num>/<file…>. Folders, dotfiles and anything outside root (by "..", or by a
 // symlink, which os.Root refuses) are 404. It is the second listener of bx serve, on its own
-// port, so the pages it serves are never same-origin with the API.
+// port, so the pages it serves are never same-origin with the API. A .md file is rendered as a
+// page (see markdown.go); with ?raw, or past maxMarkdown, it is served as text.
 func FilesHandler(root string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -78,6 +81,23 @@ func FilesHandler(root string) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Cache-Control", "no-store")
 		h.Set("Referrer-Policy", "no-referrer")
+		if isMarkdown(fi.Name()) {
+			h.Set("Content-Type", "text/plain; charset=utf-8")
+			if _, raw := r.URL.Query()["raw"]; !raw && fi.Size() <= maxMarkdown {
+				src, err := io.ReadAll(f)
+				if err != nil {
+					http.Error(w, "read error", http.StatusInternalServerError)
+					return
+				}
+				body := src
+				if page, err := renderMarkdown(src, fi.Name()); err == nil {
+					h.Set("Content-Type", "text/html; charset=utf-8")
+					body = page
+				}
+				http.ServeContent(w, r, fi.Name(), fi.ModTime(), bytes.NewReader(body))
+				return
+			}
+		}
 		http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
 	})
 }

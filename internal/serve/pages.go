@@ -122,7 +122,7 @@ func (s *Server) pageHook(w http.ResponseWriter, r *http.Request) {
 }
 
 // pageOf splits a page's path under the artifacts root into <project>/<num>/<name>. The name
-// must be an .html file not starting with a dot. A root reached through a symlink matches too.
+// must be a page (IsPageName). A root reached through a symlink matches too.
 func pageOf(root, path string) (project string, num int, name string, ok bool) {
 	if !filepath.IsAbs(path) {
 		return "", 0, "", false
@@ -145,7 +145,7 @@ func pageOf(root, path string) (project string, num int, name string, ok bool) {
 	}
 	n, err := strconv.Atoi(parts[1])
 	name = parts[2]
-	if err != nil || n <= 0 || strings.HasPrefix(name, ".") || !strings.EqualFold(filepath.Ext(name), ".html") {
+	if err != nil || n <= 0 || !IsPageName(name) {
 		return "", 0, "", false
 	}
 	return parts[0], n, name, true

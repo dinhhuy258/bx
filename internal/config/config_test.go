@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -145,14 +146,17 @@ func TestArtifactsConfig(t *testing.T) {
 	if c.Serve.FilesListen != "auto" {
 		t.Errorf("files_listen default = %q", c.Serve.FilesListen)
 	}
+	if !reflect.DeepEqual(c.Serve.DocPages, []string{"docs/*.md", "docs/*/*.md"}) {
+		t.Errorf("doc_pages default = %q", c.Serve.DocPages)
+	}
 	if c.ArtifactsDir() != filepath.Join(root, "artifacts") || c.PluginDir() != filepath.Join(root, "claude-plugin") {
 		t.Errorf("dirs %q %q", c.ArtifactsDir(), c.PluginDir())
 	}
-	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[serve]\nfiles_listen = \"off\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte("[serve]\nfiles_listen = \"off\"\ndoc_pages = []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if c, err = Load(root); err != nil || c.Serve.FilesListen != "off" {
-		t.Fatalf("override: %q %v", c.Serve.FilesListen, err)
+	if c, err = Load(root); err != nil || c.Serve.FilesListen != "off" || len(c.Serve.DocPages) != 0 {
+		t.Fatalf("override: %q %q %v", c.Serve.FilesListen, c.Serve.DocPages, err)
 	}
 }
 
