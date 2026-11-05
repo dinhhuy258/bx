@@ -46,6 +46,37 @@ func TestTermRendersBytesAndEncodesKeys(t *testing.T) {
 	}
 }
 
+func TestTermEncodesModifiedCursorKeysLikeXterm(t *testing.T) {
+	tm := NewTerm(40, 5)
+	cases := []struct {
+		key  tea.KeyPressMsg
+		want string
+	}{
+		{tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModAlt}, "\x1b[1;3D"},
+		{tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModAlt}, "\x1b[1;3C"},
+		{tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift}, "\x1b[1;2D"},
+		{tea.KeyPressMsg{Code: tea.KeyRight, Mod: tea.ModCtrl}, "\x1b[1;5C"},
+		{tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift | tea.ModAlt}, "\x1b[1;4A"},
+		{tea.KeyPressMsg{Code: tea.KeyHome, Mod: tea.ModShift}, "\x1b[1;2H"},
+		{tea.KeyPressMsg{Code: tea.KeyEnd, Mod: tea.ModShift}, "\x1b[1;2F"},
+		{tea.KeyPressMsg{Code: tea.KeyDelete, Mod: tea.ModAlt}, "\x1b[3;3~"},
+		{tea.KeyPressMsg{Code: tea.KeyPgUp, Mod: tea.ModCtrl}, "\x1b[5;5~"},
+		{tea.KeyPressMsg{Code: tea.KeyLeft}, "\x1b[D"},                     // plain keys stay the emulator's
+		{tea.KeyPressMsg{Code: 'b', Mod: tea.ModAlt, Text: "b"}, "\x1bb"}, // Alt letters too
+	}
+	for _, c := range cases {
+		tm.SendKey(c.key)
+		select {
+		case b := <-tm.Input():
+			if string(b) != c.want {
+				t.Errorf("%s = %q, want %q", c.key, b, c.want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s sent nothing", c.key)
+		}
+	}
+}
+
 func TestTermTakesOSC52Copies(t *testing.T) {
 	term := NewTerm(20, 5)
 	defer term.Close()

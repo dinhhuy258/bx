@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -88,7 +89,45 @@ func (t *Term) TakeCopied() []string {
 }
 
 // SendKey encodes a key press for the program on the other side.
-func (t *Term) SendKey(k tea.KeyPressMsg) { t.emu.SendKey(uv.KeyPressEvent(uv.Key(tea.Key(k)))) }
+func (t *Term) SendKey(k tea.KeyPressMsg) {
+	if seq, ok := modifiedKey(k); ok {
+		t.emu.SendText(seq)
+		return
+	}
+	t.emu.SendKey(uv.KeyPressEvent(uv.Key(tea.Key(k))))
+}
+
+// modifiedKey encodes a cursor or editing key held with Shift, Alt or Ctrl the way xterm does
+// (CSI 1;m D, CSI 3;m ~ with m = 1 + Shift + 2*Alt + 4*Ctrl). The emulator drops these keys
+// with Shift or Ctrl and sends Alt as Esc + the plain key, so Alt-Left and Shift-Home would not
+// move Claude's cursor by a word or to the line's start.
+func modifiedKey(k tea.KeyPressMsg) (string, bool) {
+	m := 1
+	if k.Mod.Contains(tea.ModShift) {
+		m++
+	}
+	if k.Mod.Contains(tea.ModAlt) {
+		m += 2
+	}
+	if k.Mod.Contains(tea.ModCtrl) {
+		m += 4
+	}
+	if m == 1 {
+		return "", false
+	}
+	final := map[rune]string{
+		tea.KeyUp: "A", tea.KeyDown: "B", tea.KeyRight: "C", tea.KeyLeft: "D",
+		tea.KeyHome: "H", tea.KeyEnd: "F",
+	}
+	if f, ok := final[k.Code]; ok {
+		return fmt.Sprintf("\x1b[1;%d%s", m, f), true
+	}
+	tilde := map[rune]int{tea.KeyInsert: 2, tea.KeyDelete: 3, tea.KeyPgUp: 5, tea.KeyPgDown: 6}
+	if n, ok := tilde[k.Code]; ok {
+		return fmt.Sprintf("\x1b[%d;%d~", n, m), true
+	}
+	return "", false
+}
 
 // Paste sends pasted text, bracketed when the program asked for bracketed paste (a mode Feed
 // sets, hence the lock).
