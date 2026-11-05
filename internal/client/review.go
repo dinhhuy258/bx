@@ -212,12 +212,12 @@ func (m *Model) clearSent(story string) tea.Cmd {
 	}
 }
 
-// openSendPicker lists the story's sessions, newest first, then a new session. A done or gone
-// session is resumed by the server.
-func (m *Model) openSendPicker() {
-	r := m.review
-	nums := m.m.P.SessionsOf(r.Story)
-	m.reviewSend = map[string]int{}
+// sessionPicker lists the story's sessions, newest first, then a new session, and returns the
+// picker with the session number of each label (0 = a new session). A done or gone session is
+// resumed by the server.
+func (m *Model) sessionPicker(story, title string) (*ui.Picker, map[string]int) {
+	nums := m.m.P.SessionsOf(story)
+	send := map[string]int{}
 	var items []string
 	for i := len(nums) - 1; i >= 0; i-- {
 		n, s := nums[i], m.m.P.Sessions[nums[i]]
@@ -231,15 +231,22 @@ func (m *Model) openSendPicker() {
 		}
 		label := fmt.Sprintf("[%d] %s · %s", n, title, state)
 		items = append(items, label)
-		m.reviewSend[label] = n
+		send[label] = n
 	}
 	items = append(items, "+ New session")
-	m.reviewSend["+ New session"] = 0
+	send["+ New session"] = 0
+	return ui.NewPicker(title, items), send
+}
+
+// openSendPicker asks which session gets the unsent comments.
+func (m *Model) openSendPicker() {
+	r := m.review
 	title := "send " + plural(r.Unsent(), "comment", "comments") + " · pasted, not submitted"
 	if n := r.SentCount(); n > 0 {
 		title += fmt.Sprintf(" · %d already sent, not included", n)
 	}
-	m.picker, m.pickKind = ui.NewPicker(title, items), pickReviewSend
+	m.picker, m.reviewSend = m.sessionPicker(r.Story, title)
+	m.pickKind = pickReviewSend
 }
 
 // sendReview asks the server to paste the unsent comments into session num (0 = a new one).

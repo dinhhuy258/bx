@@ -220,3 +220,33 @@ func TestReviewCalls(t *testing.T) {
 		t.Fatalf("%s\n%+v", strings.Join(got, "\n"), res)
 	}
 }
+
+func TestPRCalls(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got = append(got, r.Method+" "+r.URL.EscapedPath()+" "+strings.TrimSpace(string(body)))
+		if strings.HasSuffix(r.URL.Path, "/send") {
+			_, _ = w.Write([]byte(`{"num":3,"message":"Sent 1 comment to [3]"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"prs":[{"number":142}],"me":"huy"}`))
+	}))
+	defer srv.Close()
+	c := &API{Base: srv.URL, HTTP: srv.Client()}
+	ctx := context.Background()
+	d, err := c.PR(ctx, "home network", "s1")
+	if err != nil || d.Me != "huy" || len(d.PRs) != 1 || d.PRs[0].Number != 142 {
+		t.Fatal(d, err)
+	}
+	_, _ = c.RefreshPR(ctx, "p", "s1")
+	res, _ := c.SendPR(ctx, "p", "s1", api.PRSend{Kind: "address", Repo: "api", Threads: []string{"T1"}, Session: 3})
+	want := []string{
+		"GET /api/projects/home%20network/stories/s1/pr ",
+		"POST /api/projects/p/stories/s1/pr/refresh {}",
+		`POST /api/projects/p/stories/s1/pr/send {"kind":"address","repo":"api","threads":["T1"],"session":3}`,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") || res.Num != 3 {
+		t.Fatalf("%s\n%+v", strings.Join(got, "\n"), res)
+	}
+}

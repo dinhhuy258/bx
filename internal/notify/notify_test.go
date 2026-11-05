@@ -135,3 +135,12 @@ func TestClickBaseOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestPRURL(t *testing.T) {
+	if got := PRURL("https://bx.ts.net/", "home net", "guest-vlan-fix", "api"); got != "https://bx.ts.net/#/p/home%20net/pr/guest-vlan-fix?repo=api" {
+		t.Fatal(got)
+	}
+	if got := PRURL("http://h", "p", "s", ""); got != "http://h/#/p/p/pr/s" {
+		t.Fatal(got)
+	}
+}

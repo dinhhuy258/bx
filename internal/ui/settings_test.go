@@ -31,10 +31,10 @@ func TestSettingsStepMarksAndUnmarksChanges(t *testing.T) {
 	for range 20 {
 		s.Key("j")
 	}
-	if f, ok := s.field(); !ok || f.Key != "claude.pr_text" {
+	if f, ok := s.field(); !ok || f.Key != "claude.address" {
 		t.Fatalf("j stops on the last field, not %v", f)
 	}
-	for range 4 {
+	for range 6 {
 		s.Key("k")
 	}
 	s.Key("l")
@@ -99,6 +99,7 @@ func TestSettingsTextField(t *testing.T) {
 	s.Key("Tab") // mcp
 	s.Key("Tab") // notifications
 	s.Key("j")   // past Enabled
+	s.Key("j")   // past Pull requests
 	f, ok := s.TextField()
 	if !ok || f.Key != "notifications.ntfy_url" {
 		t.Fatalf("text field = %v %v", f, ok)
@@ -130,7 +131,7 @@ func TestSettingsNotificationsEnabled(t *testing.T) {
 	if f, ok := s.field(); !ok || f.Key != "notifications.enabled" {
 		t.Fatalf("first field = %v %v", f, ok)
 	}
-	if out := s.Render(120, 14, true, ""); !strings.Contains(out, "Enabled   ◂ on  ▸") {
+	if out := s.Render(120, 14, true, ""); !strings.Contains(out, "Enabled        ◂ on  ▸") {
 		t.Fatalf("no value is on:\n%s", out)
 	}
 	s.Key("l")
@@ -146,7 +147,7 @@ func TestSettingsNotificationsEnabled(t *testing.T) {
 		t.Fatalf("h: %v", s.Changes())
 	}
 	s.Load(nil, map[string]string{"notifications.enabled": "off"}) // the save's reply
-	if len(s.Changes()) != 0 || !strings.Contains(s.Render(120, 14, true, ""), "Enabled   ◂ off ▸") {
+	if len(s.Changes()) != 0 || !strings.Contains(s.Render(120, 14, true, ""), "Enabled        ◂ off ▸") {
 		t.Fatalf("after save: %v", s.Changes())
 	}
 	s.Key("l")

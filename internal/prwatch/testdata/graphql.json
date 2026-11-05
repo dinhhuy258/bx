@@ -1,0 +1,17 @@
+{"data":{"viewer":{"login":"huy"},"repository":{
+ "b0open":{"nodes":[{"number":142,"title":"Shorter DHCP lease","url":"https://github.com/acme/netcfg/pull/142","state":"OPEN","isDraft":false,
+  "baseRefName":"develop","headRefOid":"abc123","headRepository":{"nameWithOwner":"acme/netcfg"},
+  "reviewDecision":"CHANGES_REQUESTED","mergeStateStatus":"BEHIND",
+  "commits":{"nodes":[{"commit":{"statusCheckRollup":{"contexts":{"nodes":[
+    {"__typename":"CheckRun","name":"test / go 1.24","status":"COMPLETED","conclusion":"FAILURE","detailsUrl":"https://github.com/acme/netcfg/actions/runs/9182736/job/1","checkSuite":{"workflowRun":{"databaseId":9182736}}},
+    {"__typename":"CheckRun","name":"lint","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"u","checkSuite":{"workflowRun":{"databaseId":9182736}}},
+    {"__typename":"CheckRun","name":"deploy-preview","status":"COMPLETED","conclusion":"SKIPPED","detailsUrl":"u","checkSuite":null},
+    {"__typename":"CheckRun","name":"e2e","status":"IN_PROGRESS","conclusion":null,"detailsUrl":"u","checkSuite":null},
+    {"__typename":"StatusContext","context":"ci/legacy","state":"SUCCESS","targetUrl":"t"}]}}}}]},
+  "reviewThreads":{"nodes":[{"id":"T1","isResolved":false,"isOutdated":false,"path":"dhcp/lease.go","line":24,"startLine":null,"originalLine":24,
+    "comments":{"nodes":[{"author":{"login":"mai"},"body":"Read this from config.","createdAt":"2026-11-05T10:00:00Z","diffHunk":"@@ -20,5 +20,5 @@\n func a() {\n-\tlease := time.Hour\n+\tlease := 24 * time.Hour"}]}}]}}]},
+ "b0last":{"nodes":[]},
+ "b1open":{"nodes":[]},
+ "b1last":{"nodes":[{"number":120,"title":"Old","url":"u","state":"MERGED","isDraft":false,"baseRefName":"develop","headRefOid":"old999",
+  "headRepository":{"nameWithOwner":"acme/netcfg"},"reviewDecision":null,"mergeStateStatus":"UNKNOWN","commits":{"nodes":[]},"reviewThreads":{"nodes":[]}}]}
+}}}

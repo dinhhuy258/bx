@@ -61,6 +61,16 @@ func SessionURL(base, project string, num int) string {
 	return strings.TrimRight(base, "/") + "/#/p/" + url.PathEscape(project) + "/s/" + strconv.Itoa(num)
 }
 
+// PRURL is the web client's PR page of a story: <base>/#/p/<project>/pr/<story>, with
+// ?repo=<folder> for a workspace repo.
+func PRURL(base, project, story, repo string) string {
+	u := strings.TrimRight(base, "/") + "/#/p/" + url.PathEscape(project) + "/pr/" + url.PathEscape(story)
+	if repo != "" {
+		u += "?repo=" + url.QueryEscape(repo)
+	}
+	return u
+}
+
 // ClickBase picks the web client's base URL for a notification's tap: openURL if set, else
 // http://<the address bx serve listens on>. A bad openURL is an error and gives no link; a listen
 // address that doesn't resolve gives no link and no error (serve may not run on this machine).

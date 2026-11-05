@@ -42,6 +42,7 @@ var keymapGroups = []keymapGroup{
 		{"add_repo", "add repositories (workspace)"},
 		{"close_story", "close · stop its sessions, remove worktree"},
 		{"review", "review the diff, comment, send to Claude"},
+		{"pr", "pull request · checks, comments, fix with Claude"},
 	}},
 	{"PROJECT", "the one on screen", []keymapItem{
 		{"new_story", "new story · a branch and worktree"},

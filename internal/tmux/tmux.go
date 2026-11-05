@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Exec runs one tmux command and returns stdout.
@@ -212,6 +213,19 @@ func (t *Tmux) Paste(sid, text string) error {
 		return err
 	}
 	_, err := t.x.Run("paste-buffer", "-p", "-d", "-b", buf, "-t", sid)
+	return err
+}
+
+// submitDelay lets Claude's input take the bracketed paste before Enter; tests set it to 0.
+var submitDelay = 300 * time.Millisecond
+
+// Submit pastes text like Paste, then presses Enter so Claude starts on it.
+func (t *Tmux) Submit(sid, text string) error {
+	if err := t.Paste(sid, text); err != nil {
+		return err
+	}
+	time.Sleep(submitDelay)
+	_, err := t.x.Run("send-keys", "-t", sid, "Enter")
 	return err
 }
 

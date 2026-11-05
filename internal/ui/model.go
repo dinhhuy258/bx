@@ -39,6 +39,7 @@ type Live struct {
 	AgentsErr  bool                    `json:"agents_err"`       // claude agents --json failed; keep the last state
 	Unread     map[string]bool         `json:"unread"`           // by session uuid: finished a turn nobody has opened since (serve/unread.go)
 	Review     map[string]int          `json:"review,omitempty"` // by story: unsent review comments
+	PR         map[string]PRBadge      `json:"pr,omitempty"`     // by story: its pull requests, from the PR poller
 }
 
 // RowKind tells what a row is.

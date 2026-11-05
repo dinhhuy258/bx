@@ -2,6 +2,7 @@ import { api } from './api.js';
 import { h, icon, topBar, toneOf, dotted, tile, poll, toast, ask, confirmBox, sheet } from './ui.js';
 import { sessionMenu, withForce } from './sessionmenu.js';
 import { newStoryMenu } from './newstory.js';
+import { prBadgeText } from './pr.js';
 import { shellHref, shellLabel, plainShell, shellMenu, confirmNewShell, openShell } from './shell.js';
 
 const enc = encodeURIComponent;
@@ -53,6 +54,18 @@ export function showProject(root, name) {
   // shellsOf lists a story's shells ('' = Chats), by number (the server sorts them)
   const shellsOf = (story) => (snap.shells || []).filter((s) => s.story === story);
 
+  // prPills are a story's PR on its section head: the PR and CI in the state's colour, and the
+  // threads waiting for you
+  function prPills(story) {
+    const b = story ? ((snap.live && snap.live.pr) || {})[story] : null;
+    if (!b || !b.count) return null;
+    const cls = b.fail || b.changes || b.conflict ? 'p-red' : b.pending ? 'p-yel' : 'p-grn';
+    return [h('a', { class: `pill ${cls}`, href: prHref(story) }, prBadgeText({ ...b, threads: 0 })),
+      b.threads ? h('a', { class: 'pill p-yel', href: prHref(story) }, `💬${b.threads}`) : null];
+  }
+  const needsYou = (story) => { const b = story ? ((snap.live && snap.live.pr) || {})[story] : null; return !!b && (b.fail || b.conflict); };
+  const prHref = (story) => `#/p/${enc(name)}/pr/${enc(story)}`;
+
   // group lists a story's sessions, then its shells, in a card under the story's label. An empty
   // group is just its label; its ⋯ menu starts the first session.
   function group(story, rows) {
@@ -62,12 +75,13 @@ export function showProject(root, name) {
     return h('section', { class: 'sec' },
       h('div', { class: 'sec-head' },
         h('span', { class: 'sec-label' }, story ? [icon('branch'), h('span', { class: 'story' }, story)] : [icon('chat'), 'Chats']),
+        prPills(story),
         n ? h('span', { class: 'behind', title: `origin has ${n} new ${n === 1 ? 'commit' : 'commits'}` }, `↓${n}`) : null,
         d ? h('span', { class: 'diff' }, h('span', { class: 'add' }, `+${d.add}`), h('span', { class: 'del' }, `−${d.del}`),
           d.dirty ? h('span', {}, `· ${d.dirty} uncommitted`) : null) : null,
         h('button', { class: 'ib', 'aria-label': story ? 'Story actions' : 'Chats actions', onclick: () => storyMenu(story) }, icon('more'))),
       rows.length || shells.length
-        ? h('div', { class: 'card' }, rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow))
+        ? h('div', { class: needsYou(story) ? 'card attn' : 'card' }, rows.map(([n, s]) => sessionRow(n, s)), shells.map(shellRow))
         : null);
   }
 
@@ -111,8 +125,10 @@ export function showProject(root, name) {
     const hint = rv || d ? [rv ? `${rv} to send` : null, rv && d ? ' · ' : null,
       d ? h('span', { class: 'add' }, `+${d.add}`) : null, d ? ' ' : null, d ? h('span', { class: 'del' }, `−${d.del}`) : null]
       .filter(Boolean) : '';
-    const items = [{ label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } },
-      { label: 'New session', run: () => newSession(story) }, shellItem, syncItem];
+    const pb = ((snap.live && snap.live.pr) || {})[story];
+    const items = [pb && pb.count ? { label: 'Pull request', icon: 'branch', hint: prBadgeText(pb), run: () => { location.hash = prHref(story); } } : null,
+      { label: 'Review diff', hint, badge: rv || null, run: () => { location.hash = `#/p/${enc(name)}/d/${enc(story)}`; } },
+      { label: 'New session', run: () => newSession(story) }, shellItem, syncItem].filter(Boolean);
     if (snap.project.kind === 'workspace') items.push({ label: 'Add repositories', run: () => addRepos(story) });
     // closing removes the worktree: red, in its own group, and asked twice when files would be lost
     items.push({ label: 'Close story', icon: 'trash', hint: 'Stops its sessions and removes its worktree', danger: true, run: async () => {

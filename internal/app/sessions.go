@@ -503,6 +503,7 @@ func (a *App) forgetStory(p *state.Project, name string) error {
 	}
 	_ = os.Remove(a.Cfg.ReviewFile(p.Name, name))  // its review comments go with it
 	_ = os.Remove(a.Cfg.ExplainFile(p.Name, name)) // and its explanations
+	_ = os.Remove(a.Cfg.PRFile(p.Name, name))      // and its pull requests
 	delete(p.Stories, name)
 	return a.SaveProject(p)
 }

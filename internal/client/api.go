@@ -232,6 +232,28 @@ func (c *API) SendReview(ctx context.Context, project, story string, r api.Revie
 	return out, c.call(ctx, sendTimeout, http.MethodPost, reviewPath(project, story)+"/send", r, &out)
 }
 
+func prPath(project, story string) string {
+	return "/api/projects/" + url.PathEscape(project) + "/stories/" + url.PathEscape(story) + "/pr"
+}
+
+// PR is GET …/stories/{story}/pr: the pull requests of the story as the poller last saw them.
+func (c *API) PR(ctx context.Context, project, story string) (api.PRData, error) {
+	var out api.PRData
+	return out, c.call(ctx, reposTimeout, http.MethodGet, prPath(project, story), nil, &out)
+}
+
+// RefreshPR is POST …/pr/refresh: look at GitHub now and answer with the new look.
+func (c *API) RefreshPR(ctx context.Context, project, story string) (api.PRData, error) {
+	var out api.PRData
+	return out, c.call(ctx, sendTimeout, http.MethodPost, prPath(project, story)+"/refresh", struct{}{}, &out)
+}
+
+// SendPR is POST …/pr/send: paste and submit the failed checks or the picked threads of a PR.
+func (c *API) SendPR(ctx context.Context, project, story string, r api.PRSend) (api.Result, error) {
+	var out api.Result
+	return out, c.call(ctx, sendTimeout, http.MethodPost, prPath(project, story)+"/send", r, &out)
+}
+
 // ClearSent is POST …/review/clear-sent: drop the sent comments.
 func (c *API) ClearSent(ctx context.Context, project, story string) (api.Review, error) {
 	var out api.Review

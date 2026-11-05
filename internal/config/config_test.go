@@ -89,6 +89,23 @@ func TestPaths(t *testing.T) {
 	}
 }
 
+func TestPRFile(t *testing.T) {
+	c, _ := Load("/tmp/bxroot")
+	if got := c.PRFile("p", "s"); got != "/tmp/bxroot/pr/p/s.json" {
+		t.Fatalf("PRFile = %s", got)
+	}
+}
+
+func TestDefaultPRKey(t *testing.T) {
+	c, _ := Load("/tmp/bxroot")
+	if got := c.Keys.List["pr"]; len(got) != 1 || got[0] != "M-m" {
+		t.Fatalf("pr = %v", got)
+	}
+	if a := c.Keys.ListAction("M-m"); a != "pr" {
+		t.Fatalf("M-m = %q", a)
+	}
+}
+
 func TestActionForKey(t *testing.T) {
 	c, _ := Load(t.TempDir())
 	if a := c.Keys.ListAction("Down"); a != "down" {

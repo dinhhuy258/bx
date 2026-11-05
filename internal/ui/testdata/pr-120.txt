@@ -1,0 +1,20 @@
+pr #142 Shorter DHCP lease · guest-vlan-fix → develop · checked 20s ago
+✗ 1 check failed  💬 2 open threads  changes requested  ⇄ behind develop
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+CHECKS                                │✗ test / go 1.24  failed
+>✗ test / go 1.24                     │
+ ✓ lint                               │run 9
+THREADS                       1 picked│
+ [x] dhcp/lease.go:24             mai │F sends the last lines of the failed step to Claude
+ ⇢   README.md:12         sent 2h ago │
+ ✓   vlan/guest.go:8         resolved │o opens it on GitHub
+                                      │
+                                      │
+                                      │
+                                      │
+                                      │
+                                      │
+                                      │
+                                      │
+                                      │
+                                      │

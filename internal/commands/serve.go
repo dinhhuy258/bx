@@ -91,6 +91,7 @@ func runServe(args []string, out, errOut io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go s.Watch(ctx, serve.WatchEvery) // a session whose Claude exits becomes done
+	go s.WatchPRs(ctx)                // the PRs of story branches: badges, notifications
 	go func() {
 		<-ctx.Done()
 		log("bx serve: shutting down (Claude sessions keep running in tmux)")

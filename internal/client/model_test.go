@@ -53,6 +53,9 @@ type fakeBackend struct {
 	review      api.Review // the stored review: GET returns it, PUT and clear-sent change it
 	saveRev     []api.ReviewComments
 	sends       []api.ReviewSend
+	pr          api.PRData   // the reply of GET and refresh of a story's pull requests
+	prSends     []api.PRSend // every PR send
+	prRefreshes int
 	sendRes     api.Result
 	sendErr     error
 	reviewErr   error                 // PUT fails with this
@@ -201,6 +204,21 @@ func (f *fakeBackend) SaveReview(_ context.Context, _, _ string, c api.ReviewCom
 
 func (f *fakeBackend) SendReview(_ context.Context, _, _ string, r api.ReviewSend) (api.Result, error) {
 	f.sends = append(f.sends, r)
+	return f.sendRes, f.sendErr
+}
+
+func (f *fakeBackend) PR(_ context.Context, project, story string) (api.PRData, error) {
+	f.reads = append(f.reads, "pr "+project+" "+story)
+	return f.pr, nil
+}
+
+func (f *fakeBackend) RefreshPR(_ context.Context, _, _ string) (api.PRData, error) {
+	f.prRefreshes++
+	return f.pr, nil
+}
+
+func (f *fakeBackend) SendPR(_ context.Context, _, _ string, r api.PRSend) (api.Result, error) {
+	f.prSends = append(f.prSends, r)
 	return f.sendRes, f.sendErr
 }
 
@@ -506,11 +524,15 @@ func (h *harness) press(keys ...string) {
 			msg = tea.KeyPressMsg{Code: tea.KeyBackspace}
 		case "Tab":
 			msg = tea.KeyPressMsg{Code: tea.KeyTab}
+		case "S-Tab":
+			msg = tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
+		case "Space":
+			msg = tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 		case "PgUp":
 			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
 		case "C-c", "C-h", "C-l", "C-q", "C-v", "C-s":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModCtrl}
-		case "M-a", "M-c", "M-d", "M-e", "M-f", "M-g", "M-n", "M-o", "M-p", "M-r", "M-s", "M-t", "M-q", "M-u", "M-v", "M-w", "M-x", "M-z":
+		case "M-a", "M-c", "M-d", "M-e", "M-f", "M-g", "M-m", "M-n", "M-o", "M-p", "M-r", "M-s", "M-t", "M-q", "M-u", "M-v", "M-w", "M-x", "M-z":
 			msg = tea.KeyPressMsg{Code: rune(k[2]), Mod: tea.ModAlt}
 		default:
 			msg = tea.KeyPressMsg{Code: []rune(k)[0], Text: k}
@@ -1937,7 +1959,7 @@ func TestSettingsScreenEditsAndSaves(t *testing.T) {
 func TestSettingsEditsATextField(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.values = map[string]string{"notifications.ntfy_url": "https://ntfy.sh/a"}
-	h.press("M-p", "l", "Tab", "Tab", "Tab", "j") // an unsaved model change, then git, mcp, then the ntfy URL under Enabled
+	h.press("M-p", "l", "Tab", "Tab", "Tab", "j", "j") // an unsaved model change, then git, mcp, then the ntfy URL under Enabled and Pull requests
 	if !strings.Contains(h.m.bar(), "⏎ edit") {
 		t.Fatalf("bar on a text field: %q", h.m.bar())
 	}

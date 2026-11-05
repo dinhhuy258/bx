@@ -50,6 +50,21 @@ export function rangeOf(rows) {
     line: lineOf(mine[mine.length - 1]), code: mine.map((r) => r.text).join('\n'), last: mine[mine.length - 1] };
 }
 
+// pickSessionOf asks which session of a story gets a send: a sheet of its sessions, newest
+// first, and a new one. run gets {session: n} or {new: true}. A done session is resumed by the
+// server.
+export async function pickSessionOf(name, story, title, meta, run) {
+  let snap;
+  try { snap = await api.snapshot(name); } catch (e) { toast(e.message); return; }
+  const agents = (snap.live && snap.live.agents) || {};
+  const rows = Object.entries(snap.project.sessions || {}).filter(([, s]) => s.story === story)
+    .map(([k, s]) => [Number(k), s]).sort((a, b) => b[0] - a[0]);
+  const items = rows.map(([num, s]) => ({ label: `[${num}] ${s.title || 'untitled'}`,
+    hint: !s.done && agents[s.uuid] ? 'running' : 'done · resumes', run: () => run({ session: num }) }));
+  items.push({ label: '+ New session', icon: 'plus', run: () => run({ new: true }) });
+  sheet(title, items, { meta });
+}
+
 // showReview is #/p/{name}/d/{story}: the story's diff by file, tap a line to comment, Send
 // pastes the unsent comments into a session of the story (not submitted). The comment form's
 // Select more lines starts a range on its line: taps then move its ends inside that hunk, and
@@ -314,18 +329,10 @@ export function showReview(root, name, story) {
     }
   }
 
-  async function pickSession() {
-    let snap;
-    try { snap = await api.snapshot(name); } catch (e) { toast(e.message); return; }
+  function pickSession() {
     const n = unsentOf(data.comments).length, sent = data.comments.length - n;
-    const agents = (snap.live && snap.live.agents) || {};
-    const rows = Object.entries(snap.project.sessions || {}).filter(([, s]) => s.story === story)
-      .map(([k, s]) => [Number(k), s]).sort((a, b) => b[0] - a[0]);
-    const items = rows.map(([num, s]) => ({ label: `[${num}] ${s.title || 'untitled'}`,
-      hint: !s.done && agents[s.uuid] ? 'running' : 'done · resumes', run: () => sendTo({ session: num }) }));
-    items.push({ label: '+ New session', icon: 'plus', run: () => sendTo({ new: true }) });
-    sheet(`Send ${n} ${n === 1 ? 'comment' : 'comments'}`, items,
-      { meta: `Pasted into Claude's input, not submitted${sent ? ` · ${sent} already sent, not included` : ''}` });
+    return pickSessionOf(name, story, `Send ${n} ${n === 1 ? 'comment' : 'comments'}`,
+      `Pasted into Claude's input, not submitted${sent ? ` · ${sent} already sent, not included` : ''}`, sendTo);
   }
 
   async function sendTo(req) {

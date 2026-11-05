@@ -188,8 +188,8 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 	if code != 200 || len(got.Sections) != 2 || got.Sections[0].ID != "claude" || len(got.Sections[0].Fields) != 3 || len(got.Values) != 0 {
 		t.Fatalf("%d %+v", code, got)
 	}
-	// the phone gets only the on/off switch of the notifications, never the URLs
-	if n := got.Sections[1]; n.ID != "notifications" || len(n.Fields) != 1 || n.Fields[0].Key != "notifications.enabled" {
+	// the phone gets only the on/off switches of the notifications, never the URLs
+	if n := got.Sections[1]; n.ID != "notifications" || len(n.Fields) != 2 || n.Fields[0].Key != "notifications.enabled" || n.Fields[1].Key != "notifications.prs" {
 		t.Fatalf("web notifications: %+v", n)
 	}
 	if _, res, code := put(t, ts, "/api/settings", api.Settings{Values: map[string]string{"claude.model": "opus", "claude.effort": "huge"}}); code != 400 ||
@@ -240,7 +240,7 @@ func TestSettingsGetPutAndFlags(t *testing.T) {
 		t.Fatalf("web GET: %+v", web)
 	}
 	tui, _ := get[api.Settings](t, ts, "/api/settings?tui=1")
-	if len(tui.Sections) != 3 || tui.Sections[2].ID != "notifications" || len(tui.Sections[2].Fields) != 3 ||
+	if len(tui.Sections) != 3 || tui.Sections[2].ID != "notifications" || len(tui.Sections[2].Fields) != 4 ||
 		tui.Values["notifications.ntfy_url"] != secret || tui.Values["notifications.enabled"] != "off" {
 		t.Fatalf("tui GET: %+v", tui)
 	}

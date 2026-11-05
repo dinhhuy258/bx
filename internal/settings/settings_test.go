@@ -185,17 +185,17 @@ func TestNotificationsEnabled(t *testing.T) {
 func TestVisibleHidesTUIOnly(t *testing.T) {
 	values := map[string]string{"claude.model": "opus", "notifications.enabled": "off", "notifications.ntfy_url": "https://ntfy.sh/secret", "notifications.open_url": "https://bx.example"}
 	secs, got := Visible(false, values)
-	if len(secs) != 2 || secs[0].ID != "claude" || secs[1].ID != "notifications" || len(secs[1].Fields) != 1 || secs[1].Fields[0].Key != "notifications.enabled" {
+	if len(secs) != 2 || secs[0].ID != "claude" || secs[1].ID != "notifications" || len(secs[1].Fields) != 2 || secs[1].Fields[0].Key != "notifications.enabled" || secs[1].Fields[1].Key != "notifications.prs" {
 		t.Fatalf("web sections = %+v", secs)
 	}
 	if len(got) != 2 || got["claude.model"] != "opus" || got["notifications.enabled"] != "off" {
 		t.Fatalf("web values = %v", got)
 	}
-	if len(Sections[2].Fields) != 3 {
+	if len(Sections[2].Fields) != 4 {
 		t.Fatal("Visible changed Sections")
 	}
 	secs, got = Visible(true, values)
-	if len(secs) != 3 || len(secs[2].Fields) != 3 || len(got) != 4 || got["notifications.ntfy_url"] != "https://ntfy.sh/secret" {
+	if len(secs) != 3 || len(secs[2].Fields) != 4 || len(got) != 4 || got["notifications.ntfy_url"] != "https://ntfy.sh/secret" {
 		t.Fatalf("tui = %v %v", secs, got)
 	}
 }
@@ -242,7 +242,7 @@ func TestWebSeesOnlyItsFields(t *testing.T) {
 			keys = append(keys, f.Key)
 		}
 	}
-	want := []string{"claude.model", "claude.effort", "claude.permission_mode", "notifications.enabled"}
+	want := []string{"claude.model", "claude.effort", "claude.permission_mode", "notifications.enabled", "notifications.prs"}
 	if !slices.Equal(keys, want) || !slices.Equal(titles, []string{"Claude", "Notifications"}) {
 		t.Fatalf("web sees %v in %v, want %v in [Claude Notifications]", keys, titles, want)
 	}
@@ -311,5 +311,21 @@ func TestVisibleHidesClaudeSettings(t *testing.T) {
 		if !TUIOnlyKey(k) {
 			t.Errorf("%s is not TUI only", k)
 		}
+	}
+}
+
+func TestPRSettings(t *testing.T) {
+	for _, key := range []string{"claude.fix_ci", "claude.address"} {
+		f, ok := field(key)
+		if !ok || f.Kind != Line || !f.TUIOnly {
+			t.Errorf("%s = %+v %v, want a TUI-only line", key, f, ok)
+		}
+	}
+	f, ok := field("notifications.prs")
+	if !ok || f.Kind != Choice || f.Default != "on" || f.TUIOnly {
+		t.Errorf("notifications.prs = %+v %v", f, ok)
+	}
+	if err := Validate("claude.fix_ci", "Run make test."); err != nil {
+		t.Error(err)
 	}
 }

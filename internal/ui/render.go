@@ -216,7 +216,18 @@ func (m *Model) storyLine(r Row, width int, pal palette) string {
 			}
 		}
 	}
-	return fit(" "+pal.arrow.Render(arrow)+" "+pal.group.Render(name), right, width)
+	left := " " + pal.arrow.Render(arrow) + " " + pal.group.Render(name)
+	if r.Story != "" {
+		if b := m.Live.PR[r.Story]; b.Count > 0 {
+			full := left + "  " + prBadgeText(b, pal)
+			if lipgloss.Width(full)+lipgloss.Width(right) < width {
+				left = full
+			} else {
+				left += "  " + prBadgeShort(b, pal)
+			}
+		}
+	}
+	return fit(left, right, width)
 }
 
 // shellLine is the one line of a shell row: "$1  zsh", or "$2  dev server … npm" when the

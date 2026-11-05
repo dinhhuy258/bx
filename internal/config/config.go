@@ -82,7 +82,7 @@ func Default(root string) *Config {
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
 				"settings": {"M-p"}, "stop_session": {"M-s"}, "delete_session": {"M-d"}, "close_shell": {"M-d"}, "cleanup": {"M-c"}, "artifacts": {"M-v"},
-				"review": {"M-g"}, "sync": {"M-u"},
+				"review": {"M-g"}, "sync": {"M-u"}, "pr": {"M-m"},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto"},
@@ -176,6 +176,11 @@ func (c *Config) ReviewFile(project, story string) string {
 // ExplainFile is a story's review explanations: <root>/review/<project>/<story>.explain.json.
 func (c *Config) ExplainFile(project, story string) string {
 	return filepath.Join(c.Root, "review", project, story+".explain.json")
+}
+
+// PRFile is a story's pull requests as last seen: <root>/pr/<project>/<story>.json.
+func (c *Config) PRFile(project, story string) string {
+	return filepath.Join(c.Root, "pr", project, story+".json")
 }
 
 // StateFile is <root>/state/<project>.json.

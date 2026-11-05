@@ -9,6 +9,5 @@ bx settings                          dev
    Commit text   not set
    PR line       ◂ default           ▸
    PR text       not set
-
- For new sessions. A resumed one keeps
- its model, effort and permission mode.
+   Fix CI inst…  not set
+   Address ins…  not set

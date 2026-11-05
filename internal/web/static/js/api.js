@@ -63,6 +63,11 @@ export const api = {
   // ask Claude about diff lines (the review comes back with it running), or stop / dismiss one
   explain: (p, s, body) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/review/explain`, body),
   deleteExplain: (p, s, id) => call('DELETE', `/api/projects/${enc(p)}/stories/${enc(s)}/review/explain/${enc(id)}`),
+  // a story's pull requests as the poller last saw them; refresh looks at GitHub now; sendPR
+  // pastes and submits {kind: 'fix'|'address', repo, threads, session|new}
+  pr: (p, s) => call('GET', `/api/projects/${enc(p)}/stories/${enc(s)}/pr`),
+  refreshPR: (p, s) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/pr/refresh`, {}),
+  sendPR: (p, s, body) => call('POST', `/api/projects/${enc(p)}/stories/${enc(s)}/pr/send`, body),
   shellStreamURL: (p, story, k, cols, rows) =>
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/projects/${enc(p)}/shells/stream?story=${enc(story)}&k=${k}&cols=${cols}&rows=${rows}`,
 };

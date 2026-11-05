@@ -3,11 +3,11 @@ bx settings                                                                     
    Claude            │ Notifications
    Git               │ Push messages through ntfy when a session needs you. The URLs are not shown on the phone.
    MCP               │
- › Notifications     │  › Enabled   ◂ on  ▸
-                     │    ntfy URL  https://ntfy.sh/bx-topic
-                     │    Open URL  not set
+ › Notifications     │  › Enabled        ◂ on  ▸
+                     │    Pull requests  ◂ on  ▸
+                     │    ntfy URL       https://ntfy.sh/bx-topic
+                     │    Open URL       not set
                      │
                      │ Send notifications to ntfy. Turn off to pause them; the URLs stay set.
-
 
 

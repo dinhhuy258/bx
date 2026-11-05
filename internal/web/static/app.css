@@ -56,6 +56,11 @@ svg.chev { color: var(--dim); flex: none; }
 .tile-shell { background: rgba(95, 215, 215, .12); color: #5fd7d7; }
 .pill { flex: none; font-size: 12px; padding: 2px 8px; border-radius: 99px; margin-right: 4px; }
 .pill.busy { color: var(--wait); background: rgba(245, 166, 35, .14); }
+.pill.p-red { color: var(--gone); background: rgba(248, 81, 73, .14); }
+.pill.p-yel { color: var(--wait); background: rgba(245, 166, 35, .14); }
+.pill.p-grn { color: var(--run); background: rgba(63, 185, 80, .14); }
+.pill.p-dim { color: var(--dim); background: var(--line); }
+a.pill { text-decoration: none; }
 .ttl-meta .warn { color: var(--wait); }
 .ttl-meta svg.i { width: 13px; height: 13px; margin-right: 4px; }
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 24px; text-align: center; color: var(--dim); }
@@ -264,3 +269,30 @@ button.vio { background: none; border-color: #4a3d66; color: #bb9af7; }
 .dlg-extras { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .toast-act { margin-left: 12px; padding: 4px 10px; }
 dialog textarea { width: 100%; resize: vertical; }
+
+/* the PR page */
+.ttl-acts { display: flex; align-items: center; }
+.ttl-acts a.ib { text-decoration: none; color: var(--fg); font-size: 20px; }
+.seg { display: flex; gap: 4px; padding: 3px; background: #1a1a1a; border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.seg button { flex: 1 0 auto; border: 0; border-radius: 8px; background: transparent; color: var(--dim); font-size: 14px; padding: 7px 10px; white-space: nowrap; }
+.seg button.on { background: #2a2a2a; color: var(--fg); }
+.pr-sum { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.pr-title { font-size: 16px; overflow-wrap: anywhere; }
+.pr-sub { color: var(--dim); font-size: 13px; }
+.pr-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pr-pills .pill { margin-right: 0; }
+.pr-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; color: var(--fg); text-decoration: none; }
+.pr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-g { flex: none; width: 20px; text-align: center; color: var(--dim); }
+.pr-g.g-fail { color: var(--gone); }
+.pr-g.g-pending { color: var(--wait); }
+.pr-g.g-pass { color: var(--run); }
+.pr-thread.done { opacity: .6; }
+.pr-body { color: var(--fg); font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
+.pr-thread .item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+input.check { appearance: none; flex: none; width: 22px; height: 22px; padding: 0; border-radius: 6px; background: #1d1d1d; display: grid; place-items: center; }
+input.check:checked { background: var(--accent); border-color: var(--accent); }
+input.check:checked::after { content: '✓'; color: #fff; font-size: 14px; line-height: 1; }
+.btns { display: flex; gap: 10px; }
+.btns button { flex: 1; padding: 11px 12px; font-weight: 600; }
+.btns button[hidden] { display: none; }

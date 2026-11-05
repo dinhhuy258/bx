@@ -1,0 +1,19 @@
+pr #142 Shorter DHCP lease · guest-vlan…
+✗ 1 check failed  💬 2 open threads  ch…
+────────────────────────────────────────
+CHECKS
+>✗ test / go 1.24                       
+ ✓ lint                                 
+THREADS                         1 picked
+ [x] dhcp/lease.go:24               mai 
+ ⇢   README.md:12           sent 2h ago 
+ ✓   vlan/guest.go:8           resolved 
+
+
+
+
+
+
+
+
+

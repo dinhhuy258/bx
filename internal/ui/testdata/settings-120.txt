@@ -3,12 +3,12 @@ bx settings                                                                     
  › Claude            │ Claude
    Git               │ For new sessions. A resumed one keeps its model, effort and permission mode.
    MCP               │
-   Notifications     │  › Model            ◂ opus              ▸ •
-                     │    Effort           ◂ default           ▸
-                     │    Permission mode  ◂ acceptEdits       ▸
-                     │    Commit trailer   ◂ default           ▸
-                     │    Commit text      not set
-                     │    PR line          ◂ default           ▸
-                     │    PR text          not set
-                     │
-                     │ Model: --model. default = Claude's own
+   Notifications     │  › Model                 ◂ opus              ▸ •
+                     │    Effort                ◂ default           ▸
+                     │    Permission mode       ◂ acceptEdits       ▸
+                     │    Commit trailer        ◂ default           ▸
+                     │    Commit text           not set
+                     │    PR line               ◂ default           ▸
+                     │    PR text               not set
+                     │    Fix CI instructions   not set
+                     │    Address instructions  not set

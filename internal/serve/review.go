@@ -258,26 +258,12 @@ type sendPlan struct {
 	prompt string
 }
 
-// planSend picks the session, resuming or starting it, and builds the prompt of the unsent
-// comments.
-func (s *Server) planSend(r *http.Request, req api.ReviewSend) (sendPlan, error) {
-	s.write.Lock()
-	defer s.write.Unlock()
-	p, story, err := s.loadStory(r)
-	if err != nil {
-		return sendPlan{}, err
-	}
-	f, err := s.readReview(s.Cfg.ReviewFile(p.Name, story))
-	if err != nil {
-		return sendPlan{}, codeError{http.StatusInternalServerError, err}
-	}
-	unsent := review.Unsent(f.Comments)
-	if len(unsent) == 0 {
-		return sendPlan{}, codeError{http.StatusConflict, errors.New("nothing to send")}
-	}
+// pickSession settles the session a send goes to, under the write lock the caller holds:
+// req.Session (resumed when not running) or a new one titled title.
+func (s *Server) pickSession(p *state.Project, story string, req api.ReviewSend, title string) (sendPlan, error) {
 	pl := sendPlan{p: p}
 	if req.New {
-		num, err := s.App.NewSession(p, story, "Review comments")
+		num, err := s.App.NewSession(p, story, title)
 		if err != nil {
 			return sendPlan{}, codeError{http.StatusInternalServerError, err}
 		}
@@ -301,6 +287,30 @@ func (s *Server) planSend(r *http.Request, req api.ReviewSend) (sendPlan, error)
 		}
 	}
 	pl.uuid = p.Sessions[pl.num].UUID
+	return pl, nil
+}
+
+// planSend picks the session, resuming or starting it, and builds the prompt of the unsent
+// comments.
+func (s *Server) planSend(r *http.Request, req api.ReviewSend) (sendPlan, error) {
+	s.write.Lock()
+	defer s.write.Unlock()
+	p, story, err := s.loadStory(r)
+	if err != nil {
+		return sendPlan{}, err
+	}
+	f, err := s.readReview(s.Cfg.ReviewFile(p.Name, story))
+	if err != nil {
+		return sendPlan{}, codeError{http.StatusInternalServerError, err}
+	}
+	unsent := review.Unsent(f.Comments)
+	if len(unsent) == 0 {
+		return sendPlan{}, codeError{http.StatusConflict, errors.New("nothing to send")}
+	}
+	pl, err := s.pickSession(p, story, req, "Review comments")
+	if err != nil {
+		return sendPlan{}, err
+	}
 	pl.prompt = review.Prompt(story, reviewBase(s.reviewRepos(p, story)), unsent)
 	for _, c := range unsent {
 		pl.ids = append(pl.ids, c.ID)
@@ -317,40 +327,19 @@ func (s *Server) sendReview(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadRequest, fmt.Errorf("decode body: %w", err))
 		return
 	}
-	key := r.PathValue("name") + "/" + r.PathValue("story")
-	s.mu.Lock()
-	if s.sending[key] {
-		s.mu.Unlock()
+	done, ok := s.oneSend(r.PathValue("name") + "/" + r.PathValue("story"))
+	if !ok {
 		httpError(w, http.StatusConflict, errors.New("a send to this story is in progress"))
 		return
 	}
-	s.sending[key] = true
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		delete(s.sending, key)
-		s.mu.Unlock()
-	}()
+	defer done()
 
 	pl, err := s.planSend(r, req)
 	if err != nil {
 		httpError(w, reviewStatus(err), err)
 		return
 	}
-	if pl.verb != "" {
-		if err := s.waitReady(r.Context(), pl.uuid); err != nil {
-			writeStatus(w, http.StatusGatewayTimeout, api.Result{Num: pl.num,
-				Error: fmt.Sprintf("%s [%d], but %v. Comments not sent.", pl.verb, pl.num, err)})
-			return
-		}
-	}
-	sid, err := s.App.Target(pl.p, pl.num)
-	if err == nil {
-		err = s.App.Tmux.Paste(sid, pl.prompt)
-	}
-	if err != nil {
-		writeStatus(w, http.StatusBadGateway, api.Result{Num: pl.num,
-			Error: fmt.Sprintf("Couldn't paste into [%d]. Comments not sent: %v", pl.num, err)})
+	if !s.deliver(w, r, pl, false, "Comments") {
 		return
 	}
 	at := time.Now().Unix()
@@ -367,6 +356,47 @@ func (s *Server) sendReview(w http.ResponseWriter, r *http.Request) {
 		msg = fmt.Sprintf("%s [%d] and pasted %s", pl.verb, pl.num, what)
 	}
 	writeJSON(w, api.Result{Num: pl.num, Message: msg})
+}
+
+// deliver waits for a resumed or new Claude, then pastes pl.prompt (and presses Enter when
+// submit). On a failure it writes the reply itself and returns false.
+func (s *Server) deliver(w http.ResponseWriter, r *http.Request, pl sendPlan, submit bool, what string) bool {
+	if pl.verb != "" {
+		if err := s.waitReady(r.Context(), pl.uuid); err != nil {
+			writeStatus(w, http.StatusGatewayTimeout, api.Result{Num: pl.num,
+				Error: fmt.Sprintf("%s [%d], but %v. %s not sent.", pl.verb, pl.num, err, what)})
+			return false
+		}
+	}
+	sid, err := s.App.Target(pl.p, pl.num)
+	if err == nil {
+		if submit {
+			err = s.App.Tmux.Submit(sid, pl.prompt)
+		} else {
+			err = s.App.Tmux.Paste(sid, pl.prompt)
+		}
+	}
+	if err != nil {
+		writeStatus(w, http.StatusBadGateway, api.Result{Num: pl.num,
+			Error: fmt.Sprintf("Couldn't paste into [%d]. %s not sent: %v", pl.num, what, err)})
+		return false
+	}
+	return true
+}
+
+// oneSend marks key ("project/story") as sending; false when a send to it is in progress.
+func (s *Server) oneSend(key string) (done func(), ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sending[key] {
+		return nil, false
+	}
+	s.sending[key] = true
+	return func() {
+		s.mu.Lock()
+		delete(s.sending, key)
+		s.mu.Unlock()
+	}, true
 }
 
 // waitReady waits until the Claude of session uuid is idle: resumed or new, its input box is

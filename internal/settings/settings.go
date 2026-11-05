@@ -82,6 +82,10 @@ var Sections = []Section{{
 			Choices: []string{"", "none", "custom"}},
 		{Key: "claude.pr_text", Label: "PR text", Kind: Line, TUIOnly: true,
 			Help: "PR text: the line at the end of a pull request description when PR line is custom"},
+		{Key: "claude.fix_ci", Label: "Fix CI instructions", Kind: Line, TUIOnly: true,
+			Help: "Fix CI instructions: what Claude is told after a PR's failed checks. Empty = Find the cause, fix it, run the failing test locally, then commit and push."},
+		{Key: "claude.address", Label: "Address instructions", Kind: Line, TUIOnly: true,
+			Help: "Address instructions: what Claude is told after the picked review comments. Empty = Address each one, then commit and push. For each comment, tell me what you changed."},
 	},
 }, {
 	ID: "mcp", Title: "MCP", Help: "For new and resumed sessions. Running ones keep what they started with.",
@@ -95,6 +99,8 @@ var Sections = []Section{{
 	Help: "Push messages through ntfy when a session needs you. The URLs are not shown on the phone.",
 	Fields: []Field{
 		{Key: "notifications.enabled", Label: "Enabled", Kind: Choice, Help: "Send notifications to ntfy. Turn off to pause them; the URLs stay set.",
+			Choices: []string{"on", "off"}, Default: "on"},
+		{Key: "notifications.prs", Label: "Pull requests", Kind: Choice, Help: "Pull requests: CI failed or fixed, new comments, changes requested, approved, ready, conflicts, merged.",
 			Choices: []string{"on", "off"}, Default: "on"},
 		{Key: "notifications.ntfy_url", Label: "ntfy URL", Kind: Text, TUIOnly: true, Help: "ntfy URL: the topic bx posts to when a session needs you. Empty = notifications off"},
 		{Key: "notifications.open_url", Label: "Open URL", Kind: Text, TUIOnly: true, Help: "Open URL: the web client a notification's tap opens, e.g. https://bx.example.ts.net. Empty = the serve.listen address"},

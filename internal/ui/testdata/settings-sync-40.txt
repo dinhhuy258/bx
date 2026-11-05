@@ -9,6 +9,8 @@ bx settings                          dev
    Commit text   not set
    PR line       ◂ default           ▸
    PR text       not set
+   Fix CI inst…  not set
+   Address ins…  not set
 
  Sync to bx serve  Mac /Users/me/.claud…
    ▾ [-] skills         +1 ~2 −1
@@ -18,9 +20,7 @@ bx settings                          dev
        [x] plan         ~ changed
        [x] quick-build  ~ changed  ↪
        [ ] rails-cons…  not synced
-       [x] systematic…  = same  skipped…
-   ▾ [x] agents         up to date (2)
-     … 7 more
+     … 9 more
 
  3 server-only items kept
 

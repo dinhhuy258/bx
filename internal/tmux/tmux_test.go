@@ -260,6 +260,22 @@ func TestPasteLoadsAndPastesTheBuffer(t *testing.T) {
 	}
 }
 
+func TestSubmitPastesThenPressesEnter(t *testing.T) {
+	f := &Fake{}
+	old := submitDelay
+	submitDelay = 0
+	t.Cleanup(func() { submitDelay = old })
+	if err := New(f).Submit("$3", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Calls) != 3 {
+		t.Fatalf("calls = %v", f.Calls)
+	}
+	if got := strings.Join(f.Calls[len(f.Calls)-1], " "); got != "send-keys -t $3 Enter" {
+		t.Fatalf("last call = %q", got)
+	}
+}
+
 func TestPasteStopsWhenLoadFails(t *testing.T) {
 	f := &Fake{Errs: map[string]error{"load-buffer -b bx-review-5 -": errors.New("boom")}}
 	if err := New(f).Paste("$5", "x"); err == nil || len(f.Calls) != 0 {

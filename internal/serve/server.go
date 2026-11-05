@@ -47,6 +47,12 @@ type Server struct {
 	sending    map[string]bool               // "project/story" of a review send in progress
 	explaining map[string]context.CancelFunc // by explanation id, the ones running; see explain.go
 
+	prPoll   sync.Mutex                       // one PR look at a time: the poller and a refresh
+	prMu     sync.Mutex                       // guards prBadges and prNext
+	prBadges map[string]map[string]ui.PRBadge // by project, story: the last look, for Live.PR
+	prNext   map[string]time.Time             // "project/story": when the poller looks again
+	prKick   chan string                      // "project/story" to look at now (sync, refresh)
+
 	prepared func() // tests: called by newStory between PrepareStory and taking write; nil in production
 }
 
@@ -61,7 +67,8 @@ type diffCache struct {
 // New builds a Server.
 func New(a *app.App, cfg *config.Config, l claude.Lister, log func(string, ...any)) *Server {
 	return &Server{App: a, Cfg: cfg, Lister: l, Log: log, diffs: map[string]diffCache{}, streams: map[*stream]bool{},
-		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread(), sending: map[string]bool{}, explaining: map[string]context.CancelFunc{}, pages: newPages()}
+		seen: map[string]map[int]bool{}, started: map[string]map[int]bool{}, unread: newUnread(), sending: map[string]bool{}, explaining: map[string]context.CancelFunc{}, pages: newPages(),
+		prBadges: map[string]map[string]ui.PRBadge{}, prNext: map[string]time.Time{}, prKick: make(chan string, 16)}
 }
 
 // Handler routes the API.
@@ -139,6 +146,9 @@ func (s *Server) Handler() http.Handler {
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/stories/close", s.actionResult(func(p *state.Project, r api.Action) (api.Result, error) {
 		msg, err := s.App.CloseStory(p, r.Name, r.Force)
+		if err == nil {
+			s.forgetPR(p.Name, r.Name)
+		}
 		return api.Result{Message: msg}, err
 	}))
 	mux.HandleFunc("POST /api/projects/{name}/resume", s.action(func(p *state.Project, r api.Action) (int, error) {
@@ -162,6 +172,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/claude/sync/plan", s.claudeSyncPlan)
 	mux.HandleFunc("POST /api/claude/sync", s.claudeSyncApply)
 	s.reviewRoutes(mux)
+	s.prRoutes(mux)
 	mux.Handle("GET /", web.Handler()) // the mobile web client; every /api route is more specific
 	return sameOrigin(mux)
 }
@@ -768,6 +779,7 @@ func (s *Server) syncStory(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	delete(s.diffs, name) // the new diff and ↓N show in the next poll
 	s.mu.Unlock()
+	s.kickPR(name, req.Story) // a sync may push: look at the PR soon
 	writeJSON(w, api.Result{Story: req.Story, Message: msg})
 }
 
@@ -882,6 +894,7 @@ func (s *Server) collect(p *state.Project) ui.Live {
 	l.Diff = s.diff(p)
 	l.Unread = s.unreadSnapshot()
 	l.Review = s.reviewCounts(p)
+	l.PR = s.prBadgesOf(p.Name)
 	return l
 }
 

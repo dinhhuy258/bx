@@ -522,3 +522,76 @@ if (!ta || ta.value !== 'hi') fail('textarea');
 func TestReviewScreen(t *testing.T) {
 	runJS(t, reviewScript)
 }
+
+// pullRequestScript checks the pure helpers of the PR page, then draws it from a stubbed api:
+// the open unsent thread is ticked and Address counts it, and a failed check shows Fix CI.
+const pullRequestScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; this.hidden = false; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+  replaceChildren(...c) { this.children = c; }
+  set textContent(v) { this.children = []; this._t = v; }
+  get textContent() { return this._t; }
+}
+const made = [];
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => { const e = new El(t); made.push(e); return e; }, createElementNS: (_, t) => new El(t), body: new El('body'), querySelector: () => null };
+globalThis.location = { hash: '' };
+globalThis.window = globalThis;
+const fail = (m) => { console.error(m); process.exit(1); };
+const text = (e) => typeof e === 'string' ? e : (e.textContent ?? '') + (e.children || []).map(text).join('');
+
+const { api } = await import(process.argv[2] + '/api.js');
+const { prBadgeText, firstFocus, initialPicks, openThread, showPR } = await import(process.argv[2] + '/pr.js');
+
+for (const [b, want] of [
+  [{ count: 1, number: 142, fail: true, threads: 3 }, '#142 ✗ · 💬3'],
+  [{ count: 2, fail: true }, '2 PRs ✗'],
+  [{ count: 1, number: 131, merged: 1 }, 'merged #131'],
+  [{ count: 1, number: 120, closed: 1 }, 'closed #120'],
+  [{ count: 2, closed: 2 }, 'closed 2/2'],
+  [{ count: 2, merged: 1, closed: 1 }, 'merged 1/2'],
+  [{ count: 1, number: 137, pass: true, ready: true }, '#137 ✓ ready'],
+  [{ count: 1, number: 9, pending: true, changes: true, conflict: true }, '#9 ◌ · changes · conflict'],
+  [{ count: 0 }, ''],
+  [undefined, ''],
+]) {
+  if (prBadgeText(b) !== want) fail('prBadgeText(' + JSON.stringify(b) + ') = ' + JSON.stringify(prBadgeText(b)));
+}
+
+const data = {
+  me: 'huy', checked_at: 1,
+  prs: [
+    { repo: 'web', number: 88, title: 'Web', base: 'develop', state: 'OPEN', checks: [{ name: 'build', state: 'pass' }], threads: [] },
+    { repo: 'api', number: 142, title: 'Shorter DHCP lease', base: 'develop', state: 'OPEN', url: 'https://x/142',
+      checks: [{ name: 'lint', state: 'pass' }, { name: 'test', state: 'fail', url: 'https://x/run' }],
+      threads: [
+        { id: 'T1', path: 'a.go', line: 3, comments: [{ author: 'mai', body: 'Fix this' }] },
+        { id: 'T2', path: 'b.go', line: 4, sent_at: 5, comments: [{ author: 'mai', body: 'Sent' }] },
+        { id: 'T3', path: 'c.go', line: 5, comments: [{ author: 'mai', body: 'a' }, { author: 'huy', body: 'b' }] },
+        { id: 'T4', path: 'd.go', line: 6, resolved: true, comments: [{ author: 'kofi', body: 'ok' }] }] },
+    { repo: 'infra', missing: 'not pushed' }],
+};
+if (firstFocus(data, '') !== 'api' || firstFocus(data, 'web') !== 'web' || firstFocus(data, 'infra') !== 'api' || firstFocus({ prs: [{ missing: 'no PR' }] }, '') !== '') fail('firstFocus');
+if (initialPicks(data.prs[1], 'huy').join() !== 'T1') fail('initialPicks: ' + initialPicks(data.prs[1], 'huy'));
+if (!openThread(data.prs[1].threads[1], 'huy') || openThread(data.prs[1].threads[2], 'huy') || openThread(data.prs[1].threads[3], 'huy')) fail('openThread');
+
+api.pr = async () => data;
+const root = new El('div');
+showPR(root, 'home-network', 's1', '');
+await new Promise((r) => setTimeout(r, 0));
+const btn = (label) => made.filter((e) => e.tag === 'button' && text(e).startsWith(label)).pop();
+if (!btn('Address 1') || btn('Address 1').disabled) fail('Address 1: ' + made.filter((e) => e.tag === 'button').map(text));
+const fix = btn('Fix CI');
+if (!fix || fix.hidden) fail('Fix CI must show with a failed check');
+const page = text(root);
+if (!page.includes('Shorter DHCP lease') || !page.includes('Fix this') || !page.includes('api #142') || !page.includes('web #88')) fail('page: ' + page);
+if (page.includes('infra #')) fail('a repo without a PR must not be in the switcher');
+`
+
+func TestPullRequestPage(t *testing.T) {
+	runJS(t, pullRequestScript)
+}

@@ -84,6 +84,11 @@ func (g *Git) CurrentBranch(dir string) (string, error) {
 	return g.run(dir, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
+// RevParse is the commit ref names in dir.
+func (g *Git) RevParse(dir, ref string) (string, error) {
+	return g.run(dir, "rev-parse", ref)
+}
+
 var statRe = regexp.MustCompile(`(\d+) insertion|(\d+) deletion`)
 
 // ShortStat returns added and deleted lines of dir's branch since it left base (base...HEAD).

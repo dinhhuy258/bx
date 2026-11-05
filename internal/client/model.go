@@ -62,6 +62,9 @@ type Backend interface {
 	SaveReview(ctx context.Context, project, story string, c api.ReviewComments) (api.Review, error)
 	SendReview(ctx context.Context, project, story string, r api.ReviewSend) (api.Result, error)
 	ClearSent(ctx context.Context, project, story string) (api.Review, error)
+	PR(ctx context.Context, project, story string) (api.PRData, error)
+	RefreshPR(ctx context.Context, project, story string) (api.PRData, error)
+	SendPR(ctx context.Context, project, story string, r api.PRSend) (api.Result, error)
 	Explain(ctx context.Context, project, story string, req api.ExplainRequest) (api.Review, error)
 	DeleteExplain(ctx context.Context, project, story, id string) (api.Review, error)
 }
@@ -149,6 +152,18 @@ type (
 		res   api.Result
 		err   error
 	}
+	// prMsg is a load of the pull requests of story.
+	prMsg struct {
+		story string
+		d     api.PRData
+		err   error
+	}
+	// prSentMsg is the outcome of a Fix CI or Address send.
+	prSentMsg struct {
+		story string
+		res   api.Result
+		err   error
+	}
 	// attachedMsg is the end of an attach: the clipboard's file uploaded to session num as path.
 	attachedMsg struct {
 		project    string
@@ -177,6 +192,7 @@ const (
 	pickAccountProject           // settings › git: the project of a new account override
 	pickOverrideAccount          // settings › git: the account of a project override
 	pickReviewSend               // the session that gets a review's unsent comments
+	pickPRSend                   // the session that gets Fix CI or the picked review threads of a PR
 	pickNewWorkspace             // repo projects to link into a new workspace
 	pickEditWorkspace            // links of the current workspace
 )
@@ -234,6 +250,9 @@ type Model struct {
 	cleanIDs    []string          // the ticked ids; non-nil while the confirm box is open
 	cleanLabels []string          // their labels, shown in the box
 
+	pr          *ui.PRScreen   // the PR screen, nil when closed
+	prSend      map[string]int // the PR send picker's labels → session number (0 = a new session)
+	prSendReq   api.PRSend     // what the PR send picker sends, without the session
 	review      *ui.Review     // the review screen, nil when closed
 	reviewLine  ui.ReviewLine  // the line the open comment form is on
 	reviewSend  map[string]int // the send picker's labels → session number (0 = a new session)
@@ -505,6 +524,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case reviewSentMsg:
 		return m, m.gotReviewSent(msg)
+	case prMsg:
+		return m, m.gotPR(msg)
+	case prSentMsg:
+		return m, m.gotPRSent(msg)
 	case attachedMsg:
 		m.gotAttached(msg)
 		return m, nil
@@ -784,6 +807,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.review != nil {
 		return m, m.reviewKey(key)
 	}
+	if m.pr != nil {
+		return m, m.prKey(key)
+	}
 	if m.m == nil {
 		if cmd, used := m.quitKey(key); used {
 			return m, cmd
@@ -884,7 +910,7 @@ func (m *Model) claudeAction(key string) (tea.Model, tea.Cmd) {
 	}
 	if s := m.m.P.Sessions[m.target.Num]; s != nil {
 		switch action {
-		case "sync", "add_repo", "review":
+		case "sync", "add_repo", "review", "pr":
 			m.m.SelectStory(s.Story)
 		}
 	}
@@ -975,6 +1001,10 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 	case "review":
 		if row.Kind == ui.RowStory && row.Story != "" {
 			return m, m.openReview(row.Story)
+		}
+	case "pr":
+		if row.Kind == ui.RowStory && row.Story != "" {
+			return m, m.openPR(row.Story, "")
 		}
 	case "artifacts": // the page Claude just made in it, else the list of its pages
 		if sess != nil && num == m.target.Num && m.page != nil {
@@ -1120,7 +1150,7 @@ const wheelLines = 3
 
 // wheel scrolls the Claude pane when the pointer is over it.
 func (m *Model) wheel(msg tea.MouseWheelMsg) {
-	if m.m == nil || m.picker != nil || m.switcher != nil || m.settings != nil || m.review != nil || m.showKeys || msg.Y < paneHeader {
+	if m.m == nil || m.picker != nil || m.switcher != nil || m.settings != nil || m.review != nil || m.pr != nil || m.showKeys || msg.Y < paneHeader {
 		return
 	}
 	switch {
@@ -1406,6 +1436,8 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 			return m.pickOverrideAccount(choice)
 		case pickReviewSend:
 			return m.sendReview(m.reviewSend[choice])
+		case pickPRSend:
+			return m.sendPR(m.prSend[choice])
 		case pickMCPProject:
 			return m.editMCP(choice)
 		case pickCleanup:
@@ -2089,7 +2121,7 @@ func (m *Model) View() tea.View {
 	if !m.target.Zero() {
 		v.MouseMode = tea.MouseModeCellMotion // the wheel scrolls the Claude pane
 	}
-	if m.claudeFocused && m.picker == nil && m.settings == nil && m.review == nil && m.m != nil && !m.showKeys && !m.prompt.Active() && m.cleanIDs == nil && m.switcher == nil {
+	if m.claudeFocused && m.picker == nil && m.settings == nil && m.review == nil && m.pr == nil && m.m != nil && !m.showKeys && !m.prompt.Active() && m.cleanIDs == nil && m.switcher == nil {
 		if x, y := m.term.Cursor(); x >= 0 {
 			off := 0
 			if !m.focusMode && !m.narrow {
@@ -2126,6 +2158,8 @@ func (m *Model) screen() string {
 		return m.picker.Render(m.width, m.height-1) + "\n" + m.flash
 	case m.review != nil:
 		return m.review.Render(m.width, m.height-1, false, m.narrow) + "\n" + m.bar()
+	case m.pr != nil:
+		return m.pr.Render(m.width, m.height-1, false, m.narrow) + "\n" + m.bar()
 	case m.settings != nil:
 		return m.settings.Render(m.width, m.height-1, false, m.settingsNote) + "\n" + m.bar()
 	case m.showKeys:
@@ -2307,6 +2341,10 @@ func (m *Model) bar() string {
 		text = m.flash
 	case m.review != nil:
 		text = m.review.Bar(m.narrow)
+	case m.pr != nil && m.flash != "":
+		text = m.flash
+	case m.pr != nil:
+		text = m.pr.Bar(m.narrow)
 	case m.settings != nil && m.flash != "":
 		text = m.flash
 	case m.settings != nil && m.settingsOnMCPRow():

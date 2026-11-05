@@ -335,6 +335,16 @@ type (
 	ExplainRequest = ui.ExplainRequest
 )
 
+// The pull request types live in ui too, for the PR screen.
+type (
+	PRCheck   = ui.PRCheck
+	PRComment = ui.PRComment
+	PRThread  = ui.PRThread
+	PRInfo    = ui.PRInfo
+	PRData    = ui.PRData
+	PRBadge   = ui.PRBadge
+)
+
 // The states of an explanation, and the conversation that is no session.
 const (
 	ExplainRunning  = ui.ExplainRunning
@@ -347,4 +357,15 @@ const (
 type ReviewSend struct {
 	Session int  `json:"session,omitempty"`
 	New     bool `json:"new,omitempty"`
+}
+
+// PRSend is the body of POST …/stories/{story}/pr/send: Kind "fix" (the failed checks) or
+// "address" (Threads, by id) of the PR of Repo ("" in a repo project), into Session or a new
+// one. The prompt is submitted.
+type PRSend struct {
+	Kind    string   `json:"kind"`
+	Repo    string   `json:"repo,omitempty"`
+	Threads []string `json:"threads,omitempty"`
+	Session int      `json:"session,omitempty"`
+	New     bool     `json:"new,omitempty"`
 }

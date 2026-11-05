@@ -137,6 +137,9 @@ func rowPart(m *Model, cfg *config.Config, ctx BarContext) (string, []string) {
 		review = fmt.Sprintf("review ·%d", n)
 	}
 	parts := []string{fold, lk("sync", "sync"), lk("close_story", "close"), lk("review", review)}
+	if m.Live.PR[r.Story].Count > 0 {
+		parts = append(parts, lk("pr", "pr"))
+	}
 	if m.P.IsWorkspace() {
 		parts = append(parts, lk("add_repo", "add repo"))
 	}
