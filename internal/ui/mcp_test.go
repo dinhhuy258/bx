@@ -19,9 +19,7 @@ func mcpSettings() *Settings {
 		},
 	})
 	s.SetMCPTotal(34)
-	s.Key("Tab") // git
-	s.Key("Tab") // runs
-	s.Key("Tab") // mcp
+	openSection(s, mcpSection)
 	return s
 }
 
@@ -99,9 +97,7 @@ func TestSettingsMCPWindowsManyProjects(t *testing.T) {
 	}
 	s.SetMCP(MCP{Projects: ps})
 	s.SetMCPTotal(40)
-	s.Key("Tab")
-	s.Key("Tab")
-	s.Key("Tab")
+	openSection(s, mcpSection)
 	for range 16 {
 		s.Key("j")
 	}

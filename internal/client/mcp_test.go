@@ -38,7 +38,7 @@ func mcpHarness(t *testing.T, typed func(string) string) (*harness, *[]editCall)
 		}
 		return func() tea.Msg { return done(nil) }
 	}
-	h.press("M-p", "Tab", "Tab", "Tab")
+	h.press("M-p", "j", "j", "j", "Enter") // open MCP
 	return h, calls
 }
 
@@ -121,7 +121,7 @@ func TestSettingsMCPAddsAndRemoves(t *testing.T) {
 func TestSettingsCloseDropsMCPDrafts(t *testing.T) {
 	h, _ := mcpHarness(t, func(s string) string { return s + "x" })
 	h.be.mcpErr = &api.Result{Error: "bad"}
-	h.press("j", "j", "Enter", "Esc")
+	h.press("j", "j", "Enter", "Esc", "Esc") // back to the list, then close
 	if h.m.settings != nil || len(h.m.mcpDrafts) != 0 {
 		t.Fatalf("close keeps drafts: %v", h.m.mcpDrafts)
 	}

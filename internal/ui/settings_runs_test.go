@@ -12,9 +12,7 @@ func runsSettings(t *testing.T) *Settings {
 	t.Helper()
 	s := NewSettings("server dev")
 	s.Load([]settings.Section{{ID: "claude", Title: "Claude"}}, nil)
-	for !s.RunsShown() {
-		s.Key("Tab")
-	}
+	openSection(s, runsSection)
 	s.SetRunsProjects([]RunsProject{{Project: "home-network", Runs: []string{"web", "api"}}, {Project: "unem"}})
 	return s
 }

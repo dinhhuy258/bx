@@ -337,7 +337,7 @@ func TestSettingsSyncWindow(t *testing.T) {
 }
 
 func TestSettingsBar(t *testing.T) {
-	if got := SettingsBar(1, 4, false, false); got != "tab section · j/k move · h/l change · space select · s sync… · r refresh · ⏎ save · esc close    • 1 unsaved  • 4 to sync" {
+	if got := SettingsBar(1, 4, false, false); got != "j/k move · h/l change · space select · s sync… · r refresh · ⏎ save · esc back    • 1 unsaved  • 4 to sync" {
 		t.Fatal(got)
 	}
 	if got := SettingsBar(0, 2, true, false); got != "⏎ save · s sync · esc  • 2 to sync" {

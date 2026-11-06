@@ -1959,7 +1959,10 @@ func TestSettingsScreenEditsAndSaves(t *testing.T) {
 	if h.m.settings == nil || !strings.Contains(v, "bx settings") || !strings.Contains(v, "Permission mode") {
 		t.Fatalf("P should open the settings:\n%s", v)
 	}
-	h.press("l", "j", "j", "l")
+	if h.m.settings.InSection() || !strings.Contains(ansi.Strip(h.m.bar()), "j/k section · ⏎ open · esc close") {
+		t.Fatalf("the settings open on the section list: %q", h.m.bar())
+	}
+	h.press("Enter", "l", "j", "j", "l")
 	v = ansi.Strip(h.m.View().Content)
 	if !strings.Contains(v, "◂ opus") || !strings.Contains(v, "• 2 unsaved") {
 		t.Fatalf("two changes should be marked:\n%s", v)
@@ -1972,6 +1975,10 @@ func TestSettingsScreenEditsAndSaves(t *testing.T) {
 		t.Fatalf("after the save:\n%s", v)
 	}
 	h.press("Esc")
+	if h.m.settings == nil || h.m.settings.InSection() {
+		t.Fatal("Esc in a section goes back to the section list")
+	}
+	h.press("Esc")
 	if h.m.settings != nil {
 		t.Fatal("Esc with nothing unsaved closes")
 	}
@@ -1980,7 +1987,7 @@ func TestSettingsScreenEditsAndSaves(t *testing.T) {
 func TestSettingsEditsATextField(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.values = map[string]string{"notifications.ntfy_url": "https://ntfy.sh/a"}
-	h.press("M-p", "l", "Tab", "Tab", "Tab", "Tab", "j", "j") // an unsaved model change, then git, mcp, then the ntfy URL under Enabled and Pull requests
+	h.press("M-p", "Enter", "l", "Esc", "j", "j", "j", "j", "Enter", "j", "j") // an unsaved model change, then notifications, the ntfy URL under Enabled and Pull requests
 	if !strings.Contains(h.m.bar(), "⏎ edit") {
 		t.Fatalf("bar on a text field: %q", h.m.bar())
 	}
@@ -2026,7 +2033,7 @@ func TestSettingsEditsATextField(t *testing.T) {
 
 func TestSettingsEscAsksBeforeDiscarding(t *testing.T) {
 	h := start(t, 120, 30, "running")
-	h.press("M-p", "l", "Esc")
+	h.press("M-p", "Enter", "l", "Esc", "Esc")
 	if h.m.settings == nil || !strings.Contains(view(h), "Discard 1 change?") {
 		t.Fatalf("Esc with a change should ask:\n%s", ansi.Strip(h.m.View().Content))
 	}
@@ -2043,7 +2050,7 @@ func TestSettingsEscAsksBeforeDiscarding(t *testing.T) {
 func TestSettingsSaveErrorKeepsTheEdits(t *testing.T) {
 	h := start(t, 120, 30, "running")
 	h.be.saveErr = errors.New("bx serve unreachable")
-	h.press("M-p", "l", "Enter")
+	h.press("M-p", "Enter", "l", "Enter")
 	v := ansi.Strip(h.m.View().Content)
 	if h.m.settings == nil || len(h.m.settings.Changes()) != 1 || !strings.Contains(v, "bx serve unreachable") {
 		t.Fatalf("a failed save keeps the screen and its edits:\n%s", v)
@@ -2169,9 +2176,9 @@ func gitSettings(t *testing.T, list ...api.Branch) *harness {
 	h := start(t, 120, 30, "running", "running")
 	h.be.info.Detected = "origin/main"
 	h.be.branchList = api.BranchList{Branches: list}
-	h.press("M-p", "Tab")
+	h.press("M-p", "j", "Enter")
 	if h.m.settings == nil || !h.m.settings.GitShown() {
-		t.Fatalf("P, Tab should open settings › git:\n%s", ansi.Strip(h.m.View().Content))
+		t.Fatalf("P, j, Enter should open settings › git:\n%s", ansi.Strip(h.m.View().Content))
 	}
 	return h
 }
@@ -2180,7 +2187,7 @@ func TestSettingsGitAddsAnOverride(t *testing.T) {
 	// develop is checked out in the project folder: still a base to pick
 	h := gitSettings(t, api.Branch{Name: "develop", Local: true, Remote: true, CheckedOut: true}, api.Branch{Name: "main", Remote: true})
 	v := ansi.Strip(h.m.View().Content)
-	if !strings.Contains(v, "No overrides. New stories start from each repo's default branch.") || !strings.Contains(v, "j/k move · ⏎ add · r recheck gh · tab section · esc close") {
+	if !strings.Contains(v, "No overrides. New stories start from each repo's default branch.") || !strings.Contains(v, "j/k move · ⏎ add · r recheck gh · esc back") {
 		t.Fatalf("empty git section:\n%s", v)
 	}
 	h.press("Enter") // + add override
@@ -2219,7 +2226,7 @@ func TestSettingsGitChangesAndRemovesAnOverride(t *testing.T) {
 	h.be.projects[1].BaseOverride = "develop"
 	h.be.branchList = api.BranchList{Branches: []api.Branch{{Name: "main", Remote: true}, {Name: "develop", Remote: true}, {Name: "release/1.4", Local: true}}}
 	drain(h.m, h.m.loadProjects())
-	h.press("M-p", "Tab")
+	h.press("M-p", "j", "Enter")
 	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "› lab  develop") {
 		t.Fatalf("the override row:\n%s", v)
 	}

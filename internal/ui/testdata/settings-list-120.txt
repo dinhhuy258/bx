@@ -1,0 +1,13 @@
+bx settings                                                                                                          dev
+─────────────────────┐──────────────────────────────────────────────────────────────────────────────────────────────────
+   Claude            │ Notifications
+   Git               │ Push messages through ntfy when a session needs you. The URLs are not shown on the phone.
+   Runs              │
+   MCP               │    Enabled        ◂ on  ▸
+ › Notifications     │    Pull requests  ◂ on  ▸
+                     │    ntfy URL       not set
+                     │    Open URL       not set
+
+
+
+

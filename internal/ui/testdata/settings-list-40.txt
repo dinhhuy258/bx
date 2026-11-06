@@ -1,0 +1,13 @@
+bx settings                          dev
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Claude · Git · Runs · MCP · Notificati…
+
+   Enabled        ◂ on  ▸
+   Pull requests  ◂ on  ▸
+   ntfy URL       not set
+   Open URL       not set
+
+ Push messages through ntfy when a
+ session needs you. The URLs are not
+ shown on the phone.
+

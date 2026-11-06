@@ -152,18 +152,16 @@ func (s *Settings) GitRow() (GitRow, bool) {
 }
 
 // gitKey handles a key in the git section: j/k move, Enter chooses, Backspace removes the row
-// under the cursor, K/J move a rule up or down, r reloads the accounts, Tab goes to the next
-// section and Esc closes. The account form has its own keys.
+// under the cursor, K/J move a rule up or down, r reloads the accounts and Esc goes back to the
+// section list. The account form has its own keys.
 func (s *Settings) gitKey(key string) SettingsResult {
 	if s.form != nil {
 		return s.formKey(key)
 	}
 	row, _ := s.GitRow()
 	switch key {
-	case "Esc", "C-c":
-		return SettingsClose
-	case "Tab":
-		s.sec, s.fld = (s.sec+1)%len(s.sections), 0
+	case "Esc":
+		s.open = false
 	case "j", "Down", "C-j":
 		s.fld = min(s.fld+1, len(s.gitRows())-1)
 	case "k", "Up", "C-k":
@@ -208,7 +206,7 @@ func (s *Settings) gitLines(w, h int, narrow bool, pal palette) []string {
 	put := func(text string) { lines = append(lines, truncate(text, w)) }
 	item := func(cells ...string) {
 		cursor := " "
-		if row == s.fld {
+		if s.at(row) {
 			at = len(lines)
 			cursor = pal.blue.Render("›")
 			cells[0] = pal.bold.Render(cells[0])
@@ -217,7 +215,7 @@ func (s *Settings) gitLines(w, h int, narrow bool, pal palette) []string {
 		row++
 	}
 	add := func(label string) {
-		if row == s.fld {
+		if s.at(row) {
 			at = len(lines)
 			put(" " + pal.blue.Render("›") + " " + pal.bold.Render(label))
 		} else {
@@ -273,7 +271,7 @@ func (s *Settings) accountLines(lines []string, row, at, w int, pal palette) ([]
 	put := func(text string) { lines = append(lines, truncate(text, w)) }
 	line := func(text string, add bool) {
 		cursor := " "
-		if row == s.fld {
+		if s.at(row) {
 			at, cursor = len(lines), pal.blue.Render("›")
 			if add {
 				text = pal.bold.Render(text)
@@ -298,7 +296,7 @@ func (s *Settings) accountLines(lines []string, row, at, w int, pal palette) ([]
 	}
 	for _, a := range c.Accounts {
 		id := padTo(a.ID, idW)
-		if row == s.fld {
+		if s.at(row) {
 			id = pal.bold.Render(id)
 		}
 		state := pal.green.Render("✓")
@@ -323,7 +321,7 @@ func (s *Settings) accountLines(lines []string, row, at, w int, pal palette) ([]
 	}
 	for _, r := range c.Rules {
 		owner := padTo(r.Owner, ownerW)
-		if row == s.fld {
+		if s.at(row) {
 			owner = pal.bold.Render(owner)
 		}
 		line(owner+"  → "+r.Account, false)
@@ -338,7 +336,7 @@ func (s *Settings) accountLines(lines []string, row, at, w int, pal palette) ([]
 	}
 	for _, p := range over {
 		name := padTo(p, projW)
-		if row == s.fld {
+		if s.at(row) {
 			name = pal.bold.Render(name)
 		}
 		text := name + "  → " + c.Overrides[p]
@@ -438,7 +436,7 @@ func (s *Settings) SettingsGitBar(narrow bool) string {
 	case row.Kind == RowRule:
 		keys = append(keys, "K/J reorder")
 	}
-	return strings.Join(append(keys, "r recheck gh", "tab section", "esc close"), " · ")
+	return strings.Join(append(keys, "r recheck gh", "esc back"), " · ")
 }
 
 // accountForm is the account being edited in the git section, over its rows.
@@ -569,7 +567,7 @@ func (s *Settings) formLogins() []accounts.Login {
 func (s *Settings) formKey(key string) SettingsResult {
 	f := s.form
 	switch key {
-	case "Esc", "C-c":
+	case "Esc":
 		return SettingsAccountBack
 	case "C-s":
 		return SettingsAccountSave

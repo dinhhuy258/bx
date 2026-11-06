@@ -8,10 +8,67 @@ import (
 	"github.com/dinhhuy258/bx/internal/settings"
 )
 
+// sampleSettings is the screen with the Claude section open.
 func sampleSettings() *Settings {
 	s := NewSettings("dev")
 	s.Load(settings.Sections, map[string]string{"claude.permission_mode": "acceptEdits"})
+	s.Key("Enter")
 	return s
+}
+
+// openSection opens section id as the keys do: Esc back to the list, k to its top, j down to
+// id, Enter.
+func openSection(s *Settings, id string) {
+	if s.open {
+		s.Key("Esc")
+	}
+	for s.sec > 0 {
+		s.Key("k")
+	}
+	for i := 0; i < len(s.sections) && s.sections[s.sec].ID != id; i++ {
+		s.Key("j")
+	}
+	s.Key("Enter")
+}
+
+func TestSettingsSectionList(t *testing.T) {
+	s := NewSettings("dev")
+	s.Load(settings.Sections, nil)
+	if s.InSection() || s.Key("l") != SettingsKeep || len(s.Changes()) != 0 {
+		t.Fatal("the screen opens on the section list, where h/l change nothing")
+	}
+	s.Key("k")
+	if s.sec != 0 {
+		t.Fatal("k stops on the first section")
+	}
+	s.Key("j")
+	s.Key("Down")
+	if !s.RunsShown() {
+		t.Fatal("j moves down the list")
+	}
+	for range 10 {
+		s.Key("j")
+	}
+	if s.sections[s.sec].ID != "notifications" {
+		t.Fatal("j stops on the last section")
+	}
+	for _, k := range []string{"Tab", "C-c", "Space", "s"} {
+		if s.Key(k) != SettingsKeep || s.InSection() {
+			t.Fatalf("%s acts on the section list", k)
+		}
+	}
+	golden(t, "settings-list-120", s.Render(120, 14, true, ""), 120)
+	golden(t, "settings-list-40", s.Render(40, 14, true, ""), 40)
+	if s.Key("Enter") != SettingsKeep || !s.InSection() {
+		t.Fatal("Enter opens the section")
+	}
+	s.Key("j")
+	if s.Key("Esc") != SettingsKeep || s.InSection() || s.sections[s.sec].ID != "notifications" {
+		t.Fatal("Esc goes back to the list, on the same section")
+	}
+	if s.Key("Esc") != SettingsClose {
+		t.Fatal("Esc on the list closes")
+	}
 }
 
 func TestSettingsStepMarksAndUnmarksChanges(t *testing.T) {
@@ -41,8 +98,8 @@ func TestSettingsStepMarksAndUnmarksChanges(t *testing.T) {
 	if s.Changes()["claude.permission_mode"] != "auto" {
 		t.Fatalf("changes = %v", s.Changes())
 	}
-	if s.Key("Enter") != SettingsSave || s.Key("Esc") != SettingsClose {
-		t.Fatal("Enter saves, Esc closes")
+	if s.Key("Enter") != SettingsSave || s.Key("Esc") != SettingsKeep || s.Key("Esc") != SettingsClose {
+		t.Fatal("Enter saves, Esc goes back to the list, Esc again closes")
 	}
 	s.Load(nil, map[string]string{"claude.model": "fable", "claude.permission_mode": "auto"}) // the save's reply
 	if len(s.Changes()) != 0 || !s.Loaded() {
@@ -89,18 +146,16 @@ func TestSettingsBeforeLoad(t *testing.T) {
 func TestSettingsTextField(t *testing.T) {
 	s := NewSettings("dev")
 	s.Load(settings.Sections, map[string]string{"notifications.ntfy_url": "https://ntfy.sh/bx"})
+	s.Key("Enter") // open Claude
 	if s.Key("Enter") != SettingsSave {
 		t.Fatal("Enter on a choice saves")
 	}
 	if _, ok := s.TextField(); ok {
 		t.Fatal("a choice is not a text field")
 	}
-	s.Key("Tab") // git
-	s.Key("Tab") // runs
-	s.Key("Tab") // mcp
-	s.Key("Tab") // notifications
-	s.Key("j")   // past Enabled
-	s.Key("j")   // past Pull requests
+	openSection(s, "notifications")
+	s.Key("j") // past Enabled
+	s.Key("j") // past Pull requests
 	f, ok := s.TextField()
 	if !ok || f.Key != "notifications.ntfy_url" {
 		t.Fatalf("text field = %v %v", f, ok)
@@ -116,7 +171,7 @@ func TestSettingsTextField(t *testing.T) {
 	if s.Value("notifications.ntfy_url") != "https://ntfy.sh/bx" || s.Value("notifications.open_url") != "" {
 		t.Fatal("Value reads the saved values")
 	}
-	s.Key("Tab") // back to claude
+	openSection(s, "claude")
 	s.Key("l")
 	if s.Value("claude.model") != "opus" {
 		t.Fatal("Value reads the edits first")
@@ -126,10 +181,7 @@ func TestSettingsTextField(t *testing.T) {
 func TestSettingsNotificationsEnabled(t *testing.T) {
 	s := NewSettings("dev")
 	s.Load(settings.Sections, nil)
-	s.Key("Tab") // git
-	s.Key("Tab") // runs
-	s.Key("Tab") // mcp
-	s.Key("Tab") // notifications
+	openSection(s, "notifications")
 	if f, ok := s.field(); !ok || f.Key != "notifications.enabled" {
 		t.Fatalf("first field = %v %v", f, ok)
 	}
@@ -162,10 +214,7 @@ func TestSettingsNotificationsGolden(t *testing.T) {
 	const w = 120
 	s := NewSettings("dev")
 	s.Load(settings.Sections, map[string]string{"notifications.ntfy_url": "https://ntfy.sh/bx-topic"})
-	s.Key("Tab") // git
-	s.Key("Tab") // runs
-	s.Key("Tab") // mcp
-	s.Key("Tab") // notifications
+	openSection(s, "notifications")
 	got := s.Render(w, 14, true, "")
 	golden := "testdata/settings-notifications-120.txt"
 	if *update {
@@ -193,6 +242,7 @@ func TestSettingsNotificationsGolden(t *testing.T) {
 func TestSettingsLineField(t *testing.T) {
 	s := NewSettings("dev")
 	s.Load(settings.Sections, map[string]string{"claude.commit": "custom", "claude.commit_text": "Co-Authored-By: Huy"})
+	s.Key("Enter")
 	for range 3 { // model, effort, permission mode
 		s.Key("j")
 	}

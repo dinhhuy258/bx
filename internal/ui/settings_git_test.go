@@ -13,7 +13,7 @@ import (
 func gitSettings() *Settings {
 	s := sampleSettings()
 	s.SetGitOverrides([]GitOverride{{Project: "infra", Base: "release/1.4"}, {Project: "api-server", Base: "develop"}})
-	s.Key("Tab")
+	openSection(s, gitSection)
 	return s
 }
 
@@ -88,12 +88,12 @@ func TestSettingsGitRowsAndKeys(t *testing.T) {
 	if p, _ := baseRow(s); p != "api-server" {
 		t.Fatalf("k → %q", p)
 	}
-	if s.Key("Esc") != SettingsClose {
-		t.Fatal("Esc closes")
+	if s.Key("Esc") != SettingsKeep || s.InSection() {
+		t.Fatal("Esc goes back to the section list")
 	}
-	s.Key("Tab")
+	s.Key("k")
 	if s.GitShown() || s.fld != 0 {
-		t.Fatal("Tab goes back to Claude, on its first field")
+		t.Fatal("k goes up to Claude, on its first field")
 	}
 }
 
@@ -124,7 +124,7 @@ func TestSettingsGitCursorFollowsItsRow(t *testing.T) {
 
 func TestSettingsGitEmpty(t *testing.T) {
 	s := sampleSettings()
-	s.Key("Tab")
+	openSection(s, gitSection)
 	got := s.Render(120, 30, true, "")
 	for _, want := range []string{"Base branches", gitEmpty, "› + add override", "GitHub accounts", accountsEmpty} {
 		if !strings.Contains(got, want) {
@@ -175,7 +175,7 @@ func TestSettingsGitGolden(t *testing.T) {
 	golden(t, "settings-git-override-120", s.Render(120, 40, true, ""), 120)
 	golden(t, "settings-git-override-40", s.Render(40, 30, true, ""), 40)
 	e := sampleSettings()
-	e.Key("Tab")
+	openSection(e, gitSection)
 	golden(t, "settings-git-empty-40", e.Render(40, 30, true, ""), 40)
 }
 
@@ -230,7 +230,7 @@ func TestSettingsGitWindow(t *testing.T) {
 		list = append(list, GitOverride{Project: fmt.Sprintf("p%02d", i), Base: "develop"})
 	}
 	s.SetGitOverrides(list)
-	s.Key("Tab")
+	openSection(s, gitSection)
 	for range 20 {
 		s.Key("j")
 	}
@@ -249,7 +249,7 @@ func TestSettingsGitWindow(t *testing.T) {
 
 func TestSettingsGitBar(t *testing.T) {
 	s := gitSettings()
-	if got := s.SettingsGitBar(false); got != "j/k move · ⏎ choose · ⌫ remove · r recheck gh · tab section · esc close" {
+	if got := s.SettingsGitBar(false); got != "j/k move · ⏎ choose · ⌫ remove · r recheck gh · esc back" {
 		t.Fatal(got)
 	}
 	if got := s.SettingsGitBar(true); got != "⏎ choose · ⌫ remove · esc" {
@@ -257,7 +257,7 @@ func TestSettingsGitBar(t *testing.T) {
 	}
 	s.Key("j")
 	s.Key("j")
-	if got := s.SettingsGitBar(false); got != "j/k move · ⏎ add · r recheck gh · tab section · esc close" {
+	if got := s.SettingsGitBar(false); got != "j/k move · ⏎ add · r recheck gh · esc back" {
 		t.Fatal(got)
 	}
 }

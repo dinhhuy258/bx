@@ -58,10 +58,10 @@ func (s *Settings) SetRunsProjects(ps []RunsProject) {
 	}
 }
 
-// ShowRuns opens the runs section, on project's row.
+// ShowRuns opens the runs section, on project's row, with the focus in it.
 func (s *Settings) ShowRuns(project string) {
 	if i := slices.IndexFunc(s.sections, func(sec settings.Section) bool { return sec.ID == runsSection }); i >= 0 {
-		s.sec = i
+		s.sec, s.open = i, true
 	}
 	s.fld = max(slices.IndexFunc(s.runs.projects, func(p RunsProject) bool { return p.Project == project }), 0)
 }
@@ -160,20 +160,15 @@ func (s *Settings) runsKey(key string) SettingsResult {
 	}
 	rows := s.runsRows()
 	switch key {
-	case "C-c":
-		return SettingsClose
 	case "Esc":
 		if s.runs.page == "" {
-			return SettingsClose
+			s.open = false
+			return SettingsKeep
 		}
 		back := s.runs.page
 		s.runs.page, s.runs.cfg = "", RunsConfig{}
 		s.fld = max(slices.IndexFunc(s.runs.projects, func(p RunsProject) bool { return p.Project == back }), 0)
 		return SettingsKeep
-	case "Tab":
-		if s.runs.page == "" {
-			s.sec, s.fld = (s.sec+1)%len(s.sections), 0
-		}
 	case "j", "Down", "C-j":
 		s.fld = min(s.fld+1, max(len(rows)-1, 0))
 	case "k", "Up", "C-k":
@@ -256,7 +251,7 @@ func (s *Settings) runsLines(w, h int, narrow bool, pal palette) []string {
 	var lines []string
 	row := func(i int, left, right string) {
 		mark := "  "
-		if i == s.fld {
+		if s.at(i) {
 			mark = pal.arrow.Render("▸ ")
 			left = pal.bold.Render(left)
 		}
@@ -309,7 +304,7 @@ func (s *Settings) SettingsRunsBar(bool) string {
 	case s.runs.form != nil:
 		return s.runFormBar()
 	case s.runs.page == "":
-		return "⏎ open · tab section · esc close"
+		return "⏎ open · esc back"
 	case s.runs.cfg.Error != "":
 		return "⏎ edit the text · esc back"
 	}
@@ -561,8 +556,6 @@ func (s *Settings) runFormKey(key string) SettingsResult {
 	f := s.runs.form
 	v := f.visible()
 	switch key {
-	case "C-c":
-		return SettingsClose
 	case "Esc":
 		if f.changed() {
 			return SettingsRunsDiscard

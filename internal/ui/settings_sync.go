@@ -279,7 +279,7 @@ func (s *Settings) confirmKey(key string) SettingsResult {
 	case "y":
 		s.sync.confirm = false
 		return SettingsSyncApply
-	case "n", "Esc", "C-c":
+	case "n", "Esc":
 		s.sync.confirm = false
 	case "j", "Down", "C-j":
 		s.sync.top = min(s.sync.top+1, max(len(s.syncChangeItems())-s.sync.boxLines, 0))
@@ -361,7 +361,7 @@ func (s *Settings) syncRowLines(w int, pal palette) []string {
 		}
 	}
 	nameW = max(min(nameW, w-3-18), 10)
-	cur := s.fld - len(s.fields())
+	first := len(s.fields())
 	out := make([]string, 0, len(rows))
 	for i, r := range rows {
 		var left, right string
@@ -387,7 +387,7 @@ func (s *Settings) syncRowLines(w int, pal palette) []string {
 		}
 		left = truncate(left, nameW)
 		cursor := " "
-		if i == cur {
+		if s.at(first + i) {
 			cursor = pal.blue.Render("›")
 			left = pal.bold.Render(left)
 		}

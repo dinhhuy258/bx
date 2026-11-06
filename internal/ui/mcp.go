@@ -112,7 +112,7 @@ func (s *Settings) MCPChoice() (MCPRow, bool) {
 	return MCPRow{Add: true}, true
 }
 
-// mcpKey handles a key on an MCP row other than a move, Tab or Esc, which Key handles.
+// mcpKey handles a key on an MCP row other than a move or Esc, which Key handles.
 func (s *Settings) mcpKey(key string) SettingsResult {
 	row, _ := s.MCPChoice()
 	switch key {
@@ -142,7 +142,7 @@ func (s *Settings) mcpLines(w, h int, pal palette) []string {
 	line := func(i int, name, state string) string {
 		cursor, label := " ", truncate(name, nameW)
 		label += strings.Repeat(" ", max(nameW-runeWidth(label), 0))
-		if s.fld == first+i {
+		if s.at(first + i) {
 			cursor, label = pal.blue.Render("›"), pal.bold.Render(label)
 		}
 		return truncate(" "+cursor+" "+label+"  "+state, w)
@@ -157,7 +157,7 @@ func (s *Settings) mcpLines(w, h int, pal palette) []string {
 		rows = append(rows, line(i+1, p.Project, s.mcpState(p.Project, p.MCPSet, wide, pal)))
 	}
 	add := "   " + mcpAdd
-	if onRow && row.Add {
+	if s.open && onRow && row.Add {
 		add = " " + pal.blue.Render("›") + " " + pal.bold.Render(mcpAdd)
 	}
 	rows = append(rows, add)
@@ -296,5 +296,5 @@ func SettingsMCPBar(narrow bool) string {
 	if narrow {
 		return "⏎ edit · ⌫ remove · esc"
 	}
-	return "j/k move · ⏎ edit in $EDITOR · ⌫ remove · r reload · tab section · esc close"
+	return "j/k move · ⏎ edit in $EDITOR · ⌫ remove · r reload · esc back"
 }

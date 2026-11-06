@@ -2458,6 +2458,8 @@ func (m *Model) bar() string {
 		text = m.pr.Bar(m.narrow)
 	case m.settings != nil && m.flash != "":
 		text = m.flash
+	case m.settings != nil && !m.settings.InSection():
+		text = ui.SettingsListBar(m.narrow)
 	case m.settings != nil && m.settingsOnMCPRow():
 		text = ui.SettingsMCPBar(m.narrow)
 	case m.settings != nil && m.settings.RunsShown():

@@ -16,7 +16,7 @@ type SettingsResult int
 const (
 	SettingsKeep            SettingsResult = iota // still editing
 	SettingsSave                                  // Enter: send Changes
-	SettingsClose                                 // Esc or C-c: the caller asks first when Changes is not empty
+	SettingsClose                                 // Esc on the section list: the caller asks first when Changes is not empty
 	SettingsSelect                                // Space changed the sync selection: save SyncInclude
 	SettingsRescan                                // r: scan and plan again
 	SettingsUpToDate                              // s with nothing to sync
@@ -49,12 +49,14 @@ const (
 // fields the server sent. Edits stay here until they are saved. The Claude section also shows
 // the sync list below its fields; fld is the cursor over the fields, then the list's rows.
 // The Git section is the client's own (see settings_git.go); there fld is the cursor over its rows.
+// The focus starts on the section list; Enter moves it into the section, Esc back.
 type Settings struct {
 	Server   string // the server's host, for the header
 	sections []settings.Section
 	saved    map[string]string // what the server holds; a missing key is the default
 	edits    map[string]string // changed keys only
 	sec, fld int
+	open     bool // the focus is in the section, not on the section list
 	runs     runsState // the runs section (settings_runs.go)
 	sync     syncList
 	git      []GitOverride     // the git section's base overrides, by project
@@ -142,11 +144,15 @@ func (s *Settings) TextField() (settings.Field, bool) {
 	return f, true
 }
 
-// Key feeds one key: Tab next section, j/k field or sync row, h/l the value or a folder's
-// fold, Space a sync checkbox, s the sync confirmation, r a rescan, Enter save (on a text
-// field: edit it), Esc close. While the confirmation is open only y, n and Esc act. The git
-// section has its own keys (gitKey).
+// Key feeds one key. On the section list: j/k pick a section, Enter opens it, Esc closes.
+// In a section: j/k field or sync row, h/l the value or a folder's fold, Space a sync
+// checkbox, s the sync confirmation, r a rescan, Enter save (on a text field: edit it), Esc
+// back to the list. While the confirmation is open only y, n and Esc act. The git and runs
+// sections have their own keys (gitKey, runsKey).
 func (s *Settings) Key(key string) SettingsResult {
+	if !s.open {
+		return s.listKey(key)
+	}
 	if s.sync.confirm {
 		return s.confirmKey(key)
 	}
@@ -156,25 +162,21 @@ func (s *Settings) Key(key string) SettingsResult {
 	if s.RunsShown() {
 		return s.runsKey(key)
 	}
-	if _, ok := s.MCPChoice(); ok && key != "Tab" && key != "Esc" && key != "C-c" && !isMove(key) {
-		return s.mcpKey(key) // moves, Tab and Esc work as on any row
+	if _, ok := s.MCPChoice(); ok && key != "Esc" && !isMove(key) {
+		return s.mcpKey(key) // moves and Esc work as on any row
 	}
 	switch key {
-	case "Esc", "C-c":
-		return SettingsClose
+	case "Esc":
+		s.open = false
+		return SettingsKeep
 	case "Enter":
 		if _, ok := s.TextField(); ok {
 			return SettingsEdit
 		}
 		return SettingsSave
 	}
-	if !s.Loaded() {
-		return SettingsKeep
-	}
 	_, onField := s.field()
 	switch key {
-	case "Tab":
-		s.sec, s.fld = (s.sec+1)%len(s.sections), 0
 	case "j", "Down", "C-j":
 		s.fld = min(s.fld+1, max(s.rowCount()-1, 0))
 	case "k", "Up", "C-k":
@@ -213,6 +215,32 @@ func (s *Settings) Key(key string) SettingsResult {
 	return SettingsKeep
 }
 
+// listKey handles a key on the section list. Before the sections load, Enter asks to load
+// them again.
+func (s *Settings) listKey(key string) SettingsResult {
+	switch {
+	case key == "Esc":
+		return SettingsClose
+	case !s.Loaded():
+		if key == "Enter" {
+			return SettingsSave
+		}
+	case key == "Enter":
+		s.open = true
+	case key == "j" || key == "Down" || key == "C-j":
+		s.sec, s.fld = min(s.sec+1, len(s.sections)-1), 0
+	case key == "k" || key == "Up" || key == "C-k":
+		s.sec, s.fld = max(s.sec-1, 0), 0
+	}
+	return SettingsKeep
+}
+
+// InSection reports whether the focus is in the section rather than on the section list.
+func (s *Settings) InSection() bool { return s.open }
+
+// at reports whether the row cursor is on row i and drawn: not while the list has the focus.
+func (s *Settings) at(i int) bool { return s.open && i == s.fld }
+
 // step moves the selected choice field to the previous or next allowed value, wrapping. No
 // value is the field's Default.
 func (s *Settings) step(delta int) {
@@ -249,19 +277,36 @@ func shown(v string) string {
 
 // Render draws the screen at w x h: sections on the left and fields on the right, or, when
 // narrow, the sections as tabs on the top line. note replaces the fields until they load.
+// The section under the cursor is drawn blue while the list has the focus; on a wide screen
+// the rule's corner over the divider also opens toward the side that has it.
 func (s *Settings) Render(w, h int, plain bool, note string) string {
+	const left = 20
 	pal := newPalette(plain)
 	head := fit(pal.brand.Render("bx")+" "+pal.bold.Render("settings"), pal.dim.Render(s.Server), w)
-	lines := []string{head, rule(w, RenderOptions{Plain: plain, Focused: true})}
+	var second string
+	if IsNarrow(w) {
+		second = rule(w, RenderOptions{Plain: plain, Focused: true})
+	} else {
+		l, r, corner := pal.cyan.Render(strings.Repeat("─", left+1)), pal.dim.Render(strings.Repeat("─", max(w-left-2, 0))), "┐"
+		if s.open {
+			l, r, corner = pal.dim.Render(strings.Repeat("─", left+1)), pal.cyan.Render(strings.Repeat("─", max(w-left-2, 0))), "┌"
+		}
+		second = l + pal.cyan.Render(corner) + r
+	}
+	lines := []string{head, second}
 	if !s.Loaded() {
 		return pad(append(lines, "", "  "+note), h)
+	}
+	current := pal.bold.Inherit(pal.blue)
+	if s.open {
+		current = pal.bold
 	}
 	if IsNarrow(w) {
 		tabs := make([]string, len(s.sections))
 		for i, sec := range s.sections {
 			tabs[i] = pal.dim.Render(sec.Title)
 			if i == s.sec {
-				tabs[i] = pal.bold.Inherit(pal.blue).Render(sec.Title)
+				tabs[i] = current.Render(sec.Title)
 			}
 		}
 		lines = append(lines, truncate(" "+strings.Join(tabs, pal.dim.Render(" · ")), w), "")
@@ -288,13 +333,12 @@ func (s *Settings) Render(w, h int, plain bool, note string) string {
 		}
 		return pad(append(lines, help...), h)
 	}
-	const left = 20
 	right := w - left - 3
 	var l []string
 	for i, sec := range s.sections {
 		cursor, title := " ", sec.Title
 		if i == s.sec {
-			cursor, title = "›", pal.bold.Inherit(pal.blue).Render(title)
+			cursor, title = "›", current.Render(title)
 		}
 		l = append(l, truncate(" "+cursor+" "+title, left))
 	}
@@ -370,7 +414,7 @@ func (s *Settings) fieldLines(w int, pal palette) []string {
 			}
 			v = truncate(v, max(w-labelW-5, 1))
 			value = v
-			if i == s.fld {
+			if s.at(i) {
 				cursor, label = "›", pal.bold.Render(label)
 				value = pal.blue.Render(v)
 			}
@@ -378,7 +422,7 @@ func (s *Settings) fieldLines(w int, pal palette) []string {
 			v := shown(orDefault(f, s.value(f.Key)))
 			v += strings.Repeat(" ", max(valueW-runeWidth(v), 0))
 			value = pal.dim.Render("◂ ") + v + pal.dim.Render(" ▸")
-			if i == s.fld {
+			if s.at(i) {
 				cursor, label = "›", pal.bold.Render(label)
 				value = pal.blue.Render("◂ " + v + " ▸")
 			}
@@ -407,9 +451,10 @@ func (s *Settings) helpLines(w int, pal palette) []string {
 	return out
 }
 
-// cursorHelp is the help of the field under the cursor, or the keys of the sync list.
+// cursorHelp is the help of the field under the cursor, or the keys of the sync list; none
+// while the list has the focus.
 func (s *Settings) cursorHelp() string {
-	if _, ok := s.MCPChoice(); ok {
+	if _, ok := s.MCPChoice(); ok || !s.open {
 		return "" // the key bar has the row's keys; the rows show the rest
 	}
 	if f, ok := s.field(); ok {
@@ -450,6 +495,14 @@ func wrap(text string, w int, style lipgloss.Style) []string {
 	return out
 }
 
+// SettingsListBar is the key bar while the section list has the focus.
+func SettingsListBar(narrow bool) string {
+	if narrow {
+		return "j/k section · ⏎ open · esc"
+	}
+	return "j/k section · ⏎ open · esc close"
+}
+
 // SettingsBar is the key bar of the settings screen, with the count of unsaved changes and of
 // the items a sync would change. onText (the cursor is on a text field) reads ⏎ edit.
 func SettingsBar(changes, toSync int, narrow, onText bool) string {
@@ -457,7 +510,7 @@ func SettingsBar(changes, toSync int, narrow, onText bool) string {
 	if onText {
 		enter = "⏎ edit"
 	}
-	parts := []string{"tab section", "j/k move", "h/l change", "space select", "s sync…", "r refresh", enter, "esc close"}
+	parts := []string{"j/k move", "h/l change", "space select", "s sync…", "r refresh", enter, "esc back"}
 	if narrow {
 		parts = []string{enter, "s sync", "esc"}
 	}
