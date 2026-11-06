@@ -118,6 +118,25 @@ dialog.pick[open] { display: flex; flex-direction: column; gap: 8px; max-height:
 .pick-list button { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; flex: none; }
 dialog.pick .help { padding: 4px 0; }
 dialog.pick menu { margin-top: 4px; }
+/* clone picker: a search box, owner chips, then that owner's repositories */
+dialog.clone[open] { display: flex; flex-direction: column; gap: 10px; height: 85dvh; }
+dialog.clone h2 { margin: 0; }
+.clone-owners { display: flex; gap: 6px; overflow-x: auto; flex: none; scrollbar-width: none; }
+.clone-owners::-webkit-scrollbar { display: none; }
+.clone-owner { flex: none; font-size: 14px; padding: 5px 12px; border-radius: 99px; }
+.clone-owner[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.clone-list { flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.clone-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 10px 12px; text-align: left; background: none; border: 0; border-radius: 0; }
+.clone-row + .clone-row { border-top: 1px solid var(--line); }
+.clone-row:active { background: var(--line); }
+.clone-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.clone-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clone-org { color: var(--dim); font-weight: 400; }
+.clone-text small { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clone-meta { flex: none; color: var(--dim); font-size: 12px; padding-top: 2px; }
+.clone-direct { color: var(--accent); font-weight: 600; }
+dialog.clone .clone-note { padding: 0 2px; font-size: 13px; }
+dialog.clone menu { margin-top: 0; }
 .checks label { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
 .toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #333; padding: 10px 16px; border-radius: 8px; z-index: 10; max-width: 90vw; }
 

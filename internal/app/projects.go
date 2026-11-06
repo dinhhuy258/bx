@@ -1,7 +1,6 @@
 package app
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -178,52 +177,4 @@ func (a *App) cloneEnv(name string, o accounts.Origin) ([]string, error) {
 		return nil, nil
 	}
 	return a.envOf(context.Background(), acct)
-}
-
-// GitHubRepos lists up to 100 repositories of the gh user, as owner/repo. With GitHub accounts
-// set, it lists those of every github.com account, so a clone can pick any of them; an account
-// gh has no token for is skipped.
-func (a *App) GitHubRepos() ([]string, error) {
-	c, err := a.Accounts()
-	if err != nil {
-		return nil, err
-	}
-	envs := [][]string{nil}
-	if !c.Empty() {
-		envs = nil
-		for _, acct := range c.Accounts {
-			if acct.HostOrDefault() != accounts.DefaultHost {
-				continue
-			}
-			env, err := a.envOf(context.Background(), acct)
-			if err != nil {
-				a.logf("repos: %v", err)
-				continue
-			}
-			envs = append(envs, env)
-		}
-		if len(envs) == 0 {
-			envs = [][]string{nil}
-		}
-	}
-	seen := map[string]bool{}
-	var repos []string
-	var firstErr error
-	for _, env := range envs {
-		out, err := a.GH(withEnv(context.Background(), env), "", "repo", "list", "--limit", "100", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner")
-		if err != nil {
-			firstErr = cmp.Or(firstErr, err)
-			continue
-		}
-		for _, l := range strings.Split(out, "\n") {
-			if l = strings.TrimSpace(l); l != "" && !seen[l] {
-				seen[l] = true
-				repos = append(repos, l)
-			}
-		}
-	}
-	if len(repos) == 0 && firstErr != nil {
-		return nil, firstErr
-	}
-	return repos, nil
 }

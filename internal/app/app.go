@@ -50,8 +50,9 @@ type App struct {
 	Claude   func(ctx context.Context, dir string, env []string, stdin string, args ...string) ([]byte, error)
 	Settings *settings.Store
 	// Log records best-effort failures that do not fail the operation; nil is silent.
-	Log func(format string, args ...any)
-	tok tokens // gh tokens of the GitHub accounts, see accounts.go
+	Log    func(format string, args ...any)
+	tok    tokens   // gh tokens of the GitHub accounts, see accounts.go
+	owners ghOwners // the account that reaches each clone owner, see github.go
 }
 
 // logf calls Log when it is set.

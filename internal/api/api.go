@@ -105,6 +105,15 @@ type NewProject struct {
 	Projects []string `json:"projects,omitempty"` // workspace: the repo projects to link
 }
 
+// GitHubRepo is one repository of GET /api/github/repos: owner/repo, its description, and
+// when it was last pushed (unix seconds, 0 unknown).
+type GitHubRepo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Private     bool   `json:"private,omitempty"`
+	Pushed      int64  `json:"pushed,omitempty"`
+}
+
 // Result is the reply of every POST. Num is the new session (POST sessions), Story and K the
 // new shell (POST shells), Name the new project (POST /api/projects), Dirty the uncommitted
 // files when a close is refused (409).

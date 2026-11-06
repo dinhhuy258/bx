@@ -44,6 +44,7 @@ type fakeBackend struct {
 	dirty        int    // stories/close without force is refused with this many files
 	closeMsg     string // the Message of a stories/close that goes through
 	created      []api.NewProject
+	ghQueries    []string   // "owner q" of every GitHubRepos
 	links        []api.Link // the links of every workspace
 	createErr    error
 	values       map[string]string // the server's settings
@@ -391,8 +392,31 @@ func (f *fakeBackend) CreateProject(_ context.Context, p api.NewProject) (api.Re
 	return api.Result{Name: "lab"}, nil
 }
 
-func (f *fakeBackend) Repos(context.Context) ([]string, error) {
-	return []string{"me/lab", "me/other"}, nil
+func (f *fakeBackend) GitHubOwners(context.Context) ([]string, error) {
+	return []string{"me", "acme"}, nil
+}
+
+// GitHubRepos has a page for me and acme; a search also finds acme/deep-search, which is not
+// on acme's page.
+func (f *fakeBackend) GitHubRepos(_ context.Context, owner, q string) ([]api.GitHubRepo, error) {
+	f.ghQueries = append(f.ghQueries, owner+" "+q)
+	all := map[string][]api.GitHubRepo{
+		"me":   {{Name: "me/lab"}, {Name: "me/other"}},
+		"acme": {{Name: "acme/api", Description: "The API", Private: true}, {Name: "acme/web"}},
+	}[owner]
+	if q == "" {
+		return all, nil
+	}
+	if owner == "acme" {
+		all = append(all, api.GitHubRepo{Name: "acme/deep-search"})
+	}
+	var out []api.GitHubRepo
+	for _, r := range all {
+		if strings.Contains(r.Name, q) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeBackend) Settings(context.Context) (api.Settings, error) {
@@ -490,6 +514,7 @@ func startIn(t *testing.T, root, project string, w, h int, statuses ...string) *
 	hs := &harness{be: be}
 	hs.m = NewModel(config.Default(root), be, project)
 	hs.m.tick = func() tea.Cmd { return nil }
+	hs.m.cloneWait = func(seq int) tea.Cmd { return func() tea.Msg { return cloneSearchMsg{seq} } }
 	hs.m.SetStreamer(func(_ context.Context, project string, t Target, cols, rows int, term *Term, _ func(tea.Msg)) (Conn, error) {
 		if t.Shell() {
 			hs.opened = append(hs.opened, fmt.Sprintf("%s sh %s %d", project, t.Story, t.K))
@@ -1621,12 +1646,93 @@ func TestCloneFromThePicker(t *testing.T) {
 	h.press("M-o")
 	h.update(tea.PasteMsg{Content: "clone"}) // a paste filters the picker
 	h.press("Enter")
-	if !strings.Contains(h.m.View().Content, "me/other") {
-		t.Fatal(h.m.View().Content)
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "me/other") || !strings.Contains(v, " me   acme ") || strings.Contains(v, "acme/api") {
+		t.Fatal(v)
 	}
 	h.press("Down", "Enter")
 	if len(h.be.created) != 1 || !reflect.DeepEqual(h.be.created[0], api.NewProject{Kind: "clone", Repo: "me/other"}) {
 		t.Fatalf("%+v", h.be.created)
+	}
+}
+
+// openClone opens the clone picker from the project switcher.
+func (h *harness) openClone() {
+	h.press("M-o")
+	h.update(tea.PasteMsg{Content: "clone"})
+	h.press("Enter")
+}
+
+func TestClonePickerOwnersAndSearch(t *testing.T) {
+	h := start(t, 120, 30, "running", "running") // the fake clone makes lab
+	h.openClone()
+	h.press("Tab")
+	v := ansi.Strip(h.m.View().Content)
+	if !strings.Contains(v, "acme/api") || !strings.Contains(v, "🔒 The API") || strings.Contains(v, "me/lab") {
+		t.Fatalf("acme's tab:\n%s", v)
+	}
+	h.press("Tab") // wraps to me, already loaded
+	if h.m.picker.Tab != 0 || strings.Join(h.be.ghQueries, ",") != "me ,acme " {
+		t.Fatalf("tab %d, queries %q", h.m.picker.Tab, h.be.ghQueries)
+	}
+	h.press("S-Tab") // wraps back to acme
+	h.typeText("deep")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "acme/deep-search") {
+		t.Fatalf("search:\n%s", v)
+	}
+	if last := h.be.ghQueries[len(h.be.ghQueries)-1]; last != "acme deep" {
+		t.Fatal(h.be.ghQueries)
+	}
+	h.press("Enter")
+	if len(h.be.created) != 1 || h.be.created[0].Repo != "acme/deep-search" || h.m.picker != nil {
+		t.Fatalf("%+v", h.be.created)
+	}
+	// it opens on the owner last cloned from
+	h.openClone()
+	if h.m.picker == nil || h.m.picker.Tab != 1 {
+		t.Fatal("should open on acme")
+	}
+	// "me/" opens me's tab
+	h.typeText("me/")
+	if h.m.picker.Tab != 0 {
+		t.Fatal("me/ should open me's tab")
+	}
+	h.press("Esc")
+	if h.m.picker != nil || h.m.clone != nil {
+		t.Fatal("Esc should close the picker")
+	}
+}
+
+func TestClonePickerTypedRepo(t *testing.T) {
+	h := start(t, 120, 30, "running", "running")
+	h.openClone()
+	h.typeText("someone/thing")
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "⏎ clone someone/thing") {
+		t.Fatal(v)
+	}
+	for _, q := range h.be.ghQueries {
+		if strings.HasSuffix(q, " thing") {
+			t.Fatalf("someone/thing searched the open owner: %q", h.be.ghQueries)
+		}
+	}
+	h.press("Enter")
+	h.openClone()
+	h.update(tea.PasteMsg{Content: "https://github.com/Org/Repo.git"})
+	h.press("Enter")
+	if len(h.be.created) != 2 || h.be.created[0].Repo != "someone/thing" || h.be.created[1].Repo != "Org/Repo" {
+		t.Fatalf("%+v", h.be.created)
+	}
+}
+
+func TestTypedRepo(t *testing.T) {
+	for in, want := range map[string]string{
+		"a/b": "a/b", " acme/api.v2 ": "acme/api.v2", "github.com/a/b": "a/b",
+		"https://github.com/a/b.git": "a/b", "https://github.com/a/b/": "a/b",
+		"a": "", "a/b/c": "", "-x/y": "", "https://gitlab.com/a/b": "",
+	} {
+		if got := typedRepo(in); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
 	}
 }
 
