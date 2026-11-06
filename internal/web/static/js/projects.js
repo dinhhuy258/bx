@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { cloneFrom } from './clone.js';
+import { askCloneName, cloneFrom } from './clone.js';
 import { h, icon, topBar, dotted, tile, poll, toast, ask, sheet } from './ui.js';
 
 // Every project by name; those with a session that needs you (waiting for an answer, or unread:
@@ -61,7 +61,9 @@ function newProject() {
     } },
     { label: 'Clone from GitHub', run: async () => {
       const repo = await cloneFrom();
-      if (repo) create({ kind: 'clone', repo });
+      if (!repo) return;
+      const name = await askCloneName(repo);
+      if (name) create({ kind: 'clone', repo, name });
     } },
     { label: 'New empty project', run: async () => {
       const v = await ask('New project', [{ name: 'name', label: 'Name' }], 'Create');

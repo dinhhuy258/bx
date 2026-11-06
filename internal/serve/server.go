@@ -486,7 +486,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	case "folder":
 		name, err = s.App.AddFolder(req.Path)
 	case "clone":
-		name, err = s.App.CloneProject(req.Repo)
+		name, err = s.App.CloneProject(req.Repo, req.Name)
 	case "new":
 		name, err = s.App.NewProject(req.Name)
 	case "workspace":

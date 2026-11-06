@@ -48,6 +48,7 @@ const (
 	PromptRunText               // a text field of the run form (Target is its field number)
 	PromptDiscardRun            // y/n: drop the edits of the run form
 	PromptExplain               // a question about diff lines; Types are the conversations
+	PromptCloneName             // the project name of a clone (Target is owner/repo)
 )
 
 // PromptResult is what a key did to the prompt.
@@ -77,7 +78,7 @@ type Prompt struct {
 	Type  int
 	Focus int
 	Base  string
-	Note  string
+	Note  string // an amber line in the form (also why a one-field form asks again)
 }
 
 // OpenStory starts the new story form: a name, the branch type (typ chosen) and a preview of
@@ -272,6 +273,7 @@ func (p *Prompt) Line() string {
 var titles = map[PromptKind]string{
 	PromptNewStory: "New story", PromptRename: "Rename session", PromptRenameShell: "Rename shell",
 	PromptAddFolder: "Add existing folder", PromptNewProject: "New empty project", PromptNewWorkspace: "New workspace", PromptSettingText: "Edit setting",
+	PromptCloneName:   "Clone from GitHub",
 	PromptAccountText: "Edit account", PromptRuleOwner: "Account rule · owner/*, host/* or host/owner/*",
 }
 
@@ -304,7 +306,7 @@ func (p *Prompt) Dialog() Dialog {
 			title = p.Title
 		}
 		return Dialog{
-			Title: title, Tone: ToneForm, Body: p.Body,
+			Title: title, Tone: ToneForm, Body: p.Body, Note: p.Note,
 			Fields:  []Field{{Label: p.Label, Value: p.Input, Back: p.Back}},
 			Buttons: []Button{{Key: "esc", Label: "Cancel"}, {Key: "⏎", Label: verb, Default: true}},
 		}
@@ -348,6 +350,8 @@ func (p *Prompt) verb() string {
 		return "close"
 	case PromptNewStory, PromptNewProject:
 		return "create"
+	case PromptCloneName:
+		return "clone"
 	case PromptRename, PromptRenameShell:
 		return "rename"
 	case PromptSettingText, PromptAccountText, PromptComment:

@@ -655,7 +655,11 @@ const fail = (m) => { console.error(m); process.exit(1); };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const text = (e) => typeof e === 'string' ? e : (e.textContent || '') + e.children.map(text).join('');
 
-const { cloneFrom, typedRepo, searchQuery } = await import(process.argv[2] + '/clone.js');
+const { cloneFrom, typedRepo, searchQuery, projectName, nameProblem } = await import(process.argv[2] + '/clone.js');
+for (const [repo, want] of [['Unemio/Unem-FE', 'unem-fe'], ['owner/MyApp Web', 'myapp-web'], ['a/.dot', 'dot'], ['a/repo.git', 'repo']]) {
+  if (projectName(repo) !== want) fail('projectName(' + repo + ') = ' + projectName(repo));
+}
+if (nameProblem('unem-be', ['unem-fe']) || !nameProblem('unem-fe', ['unem-fe']).includes('already exists') || !nameProblem('Unem', []) || !nameProblem('-x', [])) fail('nameProblem');
 for (const [q, want] of [['a/b', 'a/b'], ['https://github.com/a/b.git', 'a/b'], ['github.com/a/b/', 'a/b'], ['a', ''], ['a/b/c', ''], ['https://gitlab.com/a/b', '']]) {
   if (typedRepo(q) !== want) fail('typedRepo(' + q + ') = ' + typedRepo(q));
 }

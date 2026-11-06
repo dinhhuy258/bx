@@ -99,7 +99,7 @@ type Action struct {
 // NewProject is the body of POST /api/projects.
 type NewProject struct {
 	Kind     string   `json:"kind"`               // "folder", "clone", "new" or "workspace"
-	Name     string   `json:"name,omitempty"`     // new, workspace
+	Name     string   `json:"name,omitempty"`     // new, workspace; clone: "" = the repository's name
 	Path     string   `json:"path,omitempty"`     // folder: absolute path on the server
 	Repo     string   `json:"repo,omitempty"`     // clone: owner/repo
 	Projects []string `json:"projects,omitempty"` // workspace: the repo projects to link

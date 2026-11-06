@@ -75,10 +75,10 @@ func TestCloneProjectUsesGH(t *testing.T) {
 		got = args
 		return "", a.Git.Init(args[3])
 	}
-	if _, err := a.CloneProject("not a repo"); err == nil || got != nil {
+	if _, err := a.CloneProject("not a repo", ""); err == nil || got != nil {
 		t.Fatal("bad repo accepted")
 	}
-	name, err := a.CloneProject("dinhhuy258/dotfiles")
+	name, err := a.CloneProject("dinhhuy258/dotfiles", "")
 	if err != nil || name != "dotfiles" {
 		t.Fatal(name, err)
 	}
@@ -87,6 +87,20 @@ func TestCloneProjectUsesGH(t *testing.T) {
 	}
 	if _, err := os.Stat(a.Cfg.StateFile("dotfiles")); err != nil {
 		t.Fatal(err)
+	}
+	// under another name: the folder and the project take it
+	name, err = a.CloneProject("Unemio/unem", " unem-be ")
+	if err != nil || name != "unem-be" {
+		t.Fatal(name, err)
+	}
+	if strings.Join(got, " ") != "repo clone Unemio/unem "+a.Cfg.ProjectDir("unem-be") {
+		t.Fatalf("gh %q", got)
+	}
+	got = nil
+	for _, bad := range []string{"dotfiles", "Unem BE", "-x"} {
+		if _, err := a.CloneProject("Unemio/unem", bad); err == nil || got != nil {
+			t.Fatalf("name %q accepted", bad)
+		}
 	}
 }
 

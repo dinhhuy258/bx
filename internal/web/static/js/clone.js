@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { h, ago, toast } from './ui.js';
+import { h, ago, ask, toast } from './ui.js';
 
 // The clone picker lists one owner at a time: the gh login, then its organizations, as chips.
 // A chip shows the owner's latest pushed repositories (one page, fetched the first time it is
@@ -30,6 +30,43 @@ export function searchQuery(q, owner) {
     t = t.slice(i + 1);
   }
   return t.trim();
+}
+
+// projectName is naming.ProjectName: the repository's name, lowercased, with anything outside
+// [a-z0-9._-] turned into "-" and leading - . _ dropped.
+export function projectName(repo) {
+  const base = repo.split('/').pop().toLowerCase().replace(/\.git$/, '');
+  return base.replace(/[^a-z0-9._-]/g, '-').replace(/^[-._]+/, '');
+}
+
+// nameProblem says why name cannot name a new project, or '' when it can.
+export function nameProblem(name, taken) {
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(name)) return 'Use lowercase letters, digits, . _ - (not first)';
+  if (taken.includes(name)) return `Project ${name} already exists`;
+  return '';
+}
+
+// askCloneName asks for the project name of a clone of repo, the repository's by default, and
+// resolves to it, or null on Cancel. A name that cannot be used asks again.
+export async function askCloneName(repo) {
+  let taken = [];
+  try { taken = (await api.projects()).map((p) => p.name); } catch { /* the server checks too */ }
+  const fallback = projectName(repo);
+  let value = fallback;
+  for (;;) {
+    const v = await ask(`Clone ${repo}`, [{ name: 'name', label: 'Project name', value,
+      hint: (x) => {
+        const n = x.name || fallback, problem = nameProblem(n, taken);
+        if (problem) return `⚠ ${problem}`;
+        return n === fallback ? 'Pre-filled with the repository name' : `The repository name is ${fallback}`;
+      } }], 'Clone');
+    if (!v) return null;
+    const name = v.name || fallback;
+    const problem = nameProblem(name, taken);
+    if (!problem) return name;
+    toast(problem);
+    value = name;
+  }
 }
 
 function lastOwner() {

@@ -62,3 +62,16 @@ func TestBranchAndDefaultType(t *testing.T) {
 		t.Fatalf("types = %v", Types)
 	}
 }
+
+func TestProjectName(t *testing.T) {
+	for in, want := range map[string]string{"Unemio/Unem-FE": "unem-fe", "owner/MyApp Web": "myapp-web", "/x/repo.git": "repo"} {
+		if got := ProjectName(in); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
+	}
+	for name, want := range map[string]bool{"unem-be": true, "a.b_c": true, "": false, "-x": false, "Unem": false, "a b": false} {
+		if ValidProjectName(name) != want {
+			t.Errorf("ValidProjectName(%q) = %v", name, !want)
+		}
+	}
+}
