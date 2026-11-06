@@ -2,7 +2,11 @@
 // shared by bx serve (which decides) and the TUI (which previews).
 package naming
 
-import "strings"
+import (
+	"path/filepath"
+	"regexp"
+	"strings"
+)
 
 // Types are the branch types offered when a story is created, in picker order. "none" makes a
 // branch without a type prefix.
@@ -70,4 +74,26 @@ func DefaultType(last string) string {
 		return last
 	}
 	return "feat"
+}
+
+// projectNameRe is a valid project name: lowercase letters, digits, . _ -, not starting with
+// . _ or -.
+var projectNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+
+// ValidProjectName reports whether name can name a project.
+func ValidProjectName(name string) bool { return projectNameRe.MatchString(name) }
+
+// ProjectName derives a project name from a folder path or owner/repo: the last element,
+// lowercased, with anything outside [a-z0-9._-] turned into "-".
+func ProjectName(s string) string {
+	s = strings.ToLower(strings.TrimSuffix(filepath.Base(s), ".git"))
+	var b strings.Builder
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+	}
+	return strings.TrimLeft(b.String(), "-._")
 }

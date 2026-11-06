@@ -1831,6 +1831,8 @@ func (m *Model) submit(kind ui.PromptKind, text, target string) tea.Cmd {
 			return nil
 		}
 		return m.create(api.NewProject{Kind: "new", Name: text})
+	case ui.PromptCloneName:
+		return m.cloneAs(target, text)
 	case ui.PromptNewWorkspace:
 		if text == "" {
 			return nil

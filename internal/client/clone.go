@@ -3,12 +3,14 @@ package client
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dinhhuy258/bx/internal/api"
+	"github.com/dinhhuy258/bx/internal/naming"
 	"github.com/dinhhuy258/bx/internal/ui"
 )
 
@@ -321,12 +323,38 @@ func (m *Model) cloneTyped() tea.Cmd {
 	return nil
 }
 
-// cloneRepo closes the picker and clones repo, remembering its owner for next time.
+// cloneRepo closes the picker and asks for the project name, the repository's by default.
 func (m *Model) cloneRepo(repo string) tea.Cmd {
 	m.picker, m.clone = nil, nil
 	m.cloneOwner, _, _ = strings.Cut(repo, "/")
-	m.setFlash("cloning " + repo + "…")
-	return m.create(api.NewProject{Kind: "clone", Repo: repo})
+	m.openPrompt(ui.PromptCloneName, repo, "Project name for "+repo, naming.ProjectName(repo))
+	return nil
+}
+
+// cloneAs clones repo as project name ("" = the repository's). A name that is not valid or
+// already taken asks again, with what was typed.
+func (m *Model) cloneAs(repo, name string) tea.Cmd {
+	if name == "" {
+		name = naming.ProjectName(repo)
+	}
+	bad := ""
+	switch {
+	case !naming.ValidProjectName(name):
+		bad = "project name: use lowercase letters, digits, . _ - (not first)"
+	case slices.ContainsFunc(m.projects, func(p api.ProjectSummary) bool { return p.Name == name }):
+		bad = "project " + name + " already exists"
+	}
+	if bad != "" {
+		m.openPrompt(ui.PromptCloneName, repo, "Project name for "+repo, name)
+		m.prompt.Note = bad
+		return nil
+	}
+	if name == naming.ProjectName(repo) {
+		m.setFlash("cloning " + repo + "…")
+	} else {
+		m.setFlash("cloning " + repo + " as " + name + "…")
+	}
+	return m.create(api.NewProject{Kind: "clone", Repo: repo, Name: name})
 }
 
 // cloneQuery is the name to search owner for in what was typed: the part after "owner/", and

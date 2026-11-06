@@ -10,25 +10,14 @@ import (
 	"strings"
 
 	"github.com/dinhhuy258/bx/internal/accounts"
+	"github.com/dinhhuy258/bx/internal/naming"
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
 var repoRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
-// ProjectName derives a project name from a folder path or owner/repo: the last element,
-// lowercased, with anything outside [a-z0-9._-] turned into "-".
-func ProjectName(s string) string {
-	s = strings.ToLower(strings.TrimSuffix(filepath.Base(s), ".git"))
-	var b strings.Builder
-	for _, r := range s {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-' {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('-')
-		}
-	}
-	return strings.TrimLeft(b.String(), "-._")
-}
+// ProjectName derives a project name from a folder path or owner/repo (naming.ProjectName).
+func ProjectName(s string) string { return naming.ProjectName(s) }
 
 // checkNew validates a new project name before anything is created.
 func (a *App) checkNew(name string) error {
@@ -68,12 +57,15 @@ func (a *App) AddFolder(path string) (string, error) {
 	return name, a.register(name, path, kind)
 }
 
-// CloneProject clones owner/repo with gh into the projects folder.
-func (a *App) CloneProject(repo string) (string, error) {
+// CloneProject clones owner/repo with gh into the projects folder as project name, "" = the
+// repository's name.
+func (a *App) CloneProject(repo, name string) (string, error) {
 	if !repoRe.MatchString(repo) {
 		return "", fmt.Errorf("%q is not owner/repo", repo)
 	}
-	name := ProjectName(repo)
+	if name = strings.TrimSpace(name); name == "" {
+		name = ProjectName(repo)
+	}
 	if err := a.checkNew(name); err != nil {
 		return "", err
 	}

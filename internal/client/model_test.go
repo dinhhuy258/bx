@@ -1651,7 +1651,11 @@ func TestCloneFromThePicker(t *testing.T) {
 		t.Fatal(v)
 	}
 	h.press("Down", "Enter")
-	if len(h.be.created) != 1 || !reflect.DeepEqual(h.be.created[0], api.NewProject{Kind: "clone", Repo: "me/other"}) {
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "Project name for me/other") || !strings.Contains(v, "other") {
+		t.Fatalf("name prompt:\n%s", v)
+	}
+	h.press("Enter") // the repository's name
+	if len(h.be.created) != 1 || !reflect.DeepEqual(h.be.created[0], api.NewProject{Kind: "clone", Repo: "me/other", Name: "other"}) {
 		t.Fatalf("%+v", h.be.created)
 	}
 }
@@ -1683,7 +1687,7 @@ func TestClonePickerOwnersAndSearch(t *testing.T) {
 	if last := h.be.ghQueries[len(h.be.ghQueries)-1]; last != "acme deep" {
 		t.Fatal(h.be.ghQueries)
 	}
-	h.press("Enter")
+	h.press("Enter", "Enter")
 	if len(h.be.created) != 1 || h.be.created[0].Repo != "acme/deep-search" || h.m.picker != nil {
 		t.Fatalf("%+v", h.be.created)
 	}
@@ -1715,11 +1719,42 @@ func TestClonePickerTypedRepo(t *testing.T) {
 			t.Fatalf("someone/thing searched the open owner: %q", h.be.ghQueries)
 		}
 	}
-	h.press("Enter")
+	h.press("Enter", "Enter")
 	h.openClone()
 	h.update(tea.PasteMsg{Content: "https://github.com/Org/Repo.git"})
-	h.press("Enter")
+	h.press("Enter", "Enter")
 	if len(h.be.created) != 2 || h.be.created[0].Repo != "someone/thing" || h.be.created[1].Repo != "Org/Repo" {
+		t.Fatalf("%+v", h.be.created)
+	}
+}
+
+func TestCloneUnderAnotherName(t *testing.T) {
+	h := start(t, 120, 30, "running", "running")
+	h.openClone()
+	h.press("Down", "Enter") // me/other
+	for range "other" {
+		h.press("BSpace")
+	}
+	h.typeText("Lab") // not lowercase
+	h.press("Enter")
+	if !h.m.prompt.Active() || h.m.prompt.Input != "Lab" || !strings.Contains(h.m.View().Content, "lowercase letters") {
+		t.Fatalf("a bad name should ask again: active=%v %q\n%s", h.m.prompt.Active(), h.m.prompt.Input, h.m.View().Content)
+	}
+	h.press("BSpace", "BSpace", "BSpace")
+	h.typeText("lab") // taken
+	h.press("Enter")
+	if !h.m.prompt.Active() || !strings.Contains(h.m.View().Content, "project lab already exists") {
+		t.Fatalf("a taken name should ask again:\n%s", h.m.View().Content)
+	}
+	h.typeText("-be")
+	h.press("Enter")
+	if len(h.be.created) != 1 || !reflect.DeepEqual(h.be.created[0], api.NewProject{Kind: "clone", Repo: "me/other", Name: "lab-be"}) {
+		t.Fatalf("%+v", h.be.created)
+	}
+	// Esc in the name prompt clones nothing
+	h.openClone()
+	h.press("Enter", "Esc")
+	if len(h.be.created) != 1 || h.m.prompt.Active() {
 		t.Fatalf("%+v", h.be.created)
 	}
 }
