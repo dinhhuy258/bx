@@ -273,7 +273,7 @@ func (p *Prompt) Line() string {
 var titles = map[PromptKind]string{
 	PromptNewStory: "New story", PromptRename: "Rename session", PromptRenameShell: "Rename shell",
 	PromptAddFolder: "Add existing folder", PromptNewProject: "New empty project", PromptNewWorkspace: "New workspace", PromptSettingText: "Edit setting",
-	PromptCloneName:   "Clone from GitHub",
+	PromptCloneName:   "Project name",
 	PromptAccountText: "Edit account", PromptRuleOwner: "Account rule · owner/*, host/* or host/owner/*",
 }
 

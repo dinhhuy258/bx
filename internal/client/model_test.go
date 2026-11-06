@@ -1651,7 +1651,7 @@ func TestCloneFromThePicker(t *testing.T) {
 		t.Fatal(v)
 	}
 	h.press("Down", "Enter")
-	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "Project name for me/other") || !strings.Contains(v, "other") {
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "Cloning me/other as") || !strings.Contains(v, "other") {
 		t.Fatalf("name prompt:\n%s", v)
 	}
 	h.press("Enter") // the repository's name
@@ -1711,7 +1711,7 @@ func TestClonePickerTypedRepo(t *testing.T) {
 	h := start(t, 120, 30, "running", "running")
 	h.openClone()
 	h.typeText("someone/thing")
-	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "⏎ clone someone/thing") {
+	if v := ansi.Strip(h.m.View().Content); !strings.Contains(v, "⏎ use someone/thing") {
 		t.Fatal(v)
 	}
 	for _, q := range h.be.ghQueries {
