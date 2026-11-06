@@ -104,9 +104,11 @@ func runExec(project, story, name string, stop, again bool, out io.Writer) error
 		return execStep(stepT{Argv: []string{shell, "-lc", runcfg.Expand(r.Stop, v)}, Dir: dir})
 	}
 	steps := runcfg.Plan(r, o)
-	if r.Docker() {
+	// Any step in a container mounts these: made here, as the user, or docker makes a missing
+	// one as root and the container (run as the user) cannot write its own home.
+	if r.Docker() || r.Setup.Image != "" {
 		for _, c := range append([]string{"home"}, cacheDirs(r)...) {
-			if err := os.MkdirAll(filepath.Join(o.Cache, c), 0o755); err != nil {
+			if err := ownDir(filepath.Join(o.Cache, c)); err != nil {
 				return err
 			}
 		}
@@ -142,6 +144,23 @@ func setupDue(r runcfg.Run, dir, mark string) bool {
 	}
 	_, err := os.Stat(mark)
 	return errors.Is(err, os.ErrNotExist)
+}
+
+// ownDir makes dir and checks the user can write it: one docker made before (as root) is
+// refused with the fix, not left to fail inside the container.
+func ownDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".bx-write-")
+	if err != nil {
+		return fmt.Errorf("%s is not writable (docker made it as root?): sudo chown -R %d:%d %s", dir, os.Getuid(), os.Getgid(), filepath.Dir(dir))
+	}
+	name := f.Name()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Remove(name)
 }
 
 func cacheDirs(r runcfg.Run) []string {

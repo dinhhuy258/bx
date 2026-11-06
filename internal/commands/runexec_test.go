@@ -78,3 +78,37 @@ func TestRunExecStopAndErrors(t *testing.T) {
 		t.Errorf("missing run: %d %q", code, errOut.String())
 	}
 }
+
+// A host run whose setup runs in an image mounts the cache home too: run-exec makes it, as
+// the user, before docker would make it as root.
+func TestRunExecSetupImageMakesHome(t *testing.T) {
+	root, _, ran, _ := runExecEnv(t, "[[run]]\nname = \"api\"\ncmd = \"sail up\"\nsetup = { cmd = \"composer install\", image = \"composer:2\" }\n")
+	var out, errOut bytes.Buffer
+	if code := runRunExec([]string{"web", "s1", "api"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if len(*ran) != 1 || !strings.Contains((*ran)[0], "composer:2") {
+		t.Errorf("setup: %v", *ran)
+	}
+	if fi, err := os.Stat(filepath.Join(root, "cache", "web", "home")); err != nil || !fi.IsDir() {
+		t.Errorf("no home: %v", err)
+	}
+}
+
+func TestRunExecUnwritableHome(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root writes anywhere")
+	}
+	root, _, _, execd := runExecEnv(t, "[[run]]\nname = \"web\"\nimage = \"node:20\"\ncmd = \"yarn start\"\n")
+	home := filepath.Join(root, "cache", "web", "home")
+	os.MkdirAll(home, 0o755)
+	os.Chmod(home, 0o555) // as docker leaves it: someone else's
+	t.Cleanup(func() { os.Chmod(home, 0o755) })
+	var out, errOut bytes.Buffer
+	if code := runRunExec([]string{"web", "s1", "web"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "not writable") || !strings.Contains(errOut.String(), "chown") {
+		t.Errorf("exit %d: %q", code, errOut.String())
+	}
+	if len(*execd) != 0 {
+		t.Errorf("ran anyway: %v", *execd)
+	}
+}
