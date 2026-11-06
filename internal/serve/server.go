@@ -85,6 +85,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/projects", s.listProjects)
 	mux.HandleFunc("POST /api/projects", s.createProject)
+	mux.HandleFunc("GET /api/github/owners", s.githubOwners)
 	mux.HandleFunc("GET /api/github/repos", s.githubRepos)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
@@ -501,14 +502,30 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, api.Result{Name: name})
 }
 
-func (s *Server) githubRepos(w http.ResponseWriter, r *http.Request) {
-	repos, err := s.App.GitHubRepos()
+// githubOwners lists the owners of the clone picker: the account logins, then their orgs.
+func (s *Server) githubOwners(w http.ResponseWriter, r *http.Request) {
+	owners, err := s.App.GitHubOwners(r.Context())
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err)
 		return
 	}
-	if repos == nil {
-		repos = []string{}
+	if owners == nil {
+		owners = []string{}
+	}
+	writeJSON(w, owners)
+}
+
+// githubRepos lists a page of ?owner='s repositories: the latest pushed, or a search for ?q=.
+func (s *Server) githubRepos(w http.ResponseWriter, r *http.Request) {
+	owner := r.URL.Query().Get("owner")
+	if owner == "" {
+		httpError(w, http.StatusBadRequest, errors.New("owner is required"))
+		return
+	}
+	repos, err := s.App.GitHubRepos(r.Context(), owner, r.URL.Query().Get("q"))
+	if err != nil {
+		httpError(w, http.StatusBadGateway, err)
+		return
 	}
 	writeJSON(w, repos)
 }

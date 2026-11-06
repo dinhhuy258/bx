@@ -116,10 +116,18 @@ func (c *API) CreateProject(ctx context.Context, p api.NewProject) (api.Result, 
 	return res, err
 }
 
-// Repos is GET /api/github/repos: owner/name of the repositories gh can see on the server.
-func (c *API) Repos(ctx context.Context) ([]string, error) {
+// GitHubOwners is GET /api/github/owners: the owners a clone can pick from.
+func (c *API) GitHubOwners(ctx context.Context) ([]string, error) {
 	var out []string
-	return out, c.call(ctx, reposTimeout, http.MethodGet, "/api/github/repos", nil, &out)
+	return out, c.call(ctx, reposTimeout, http.MethodGet, "/api/github/owners", nil, &out)
+}
+
+// GitHubRepos is GET /api/github/repos: a page of owner's latest pushed repositories, or the
+// ones whose name matches q.
+func (c *API) GitHubRepos(ctx context.Context, owner, q string) ([]api.GitHubRepo, error) {
+	var out []api.GitHubRepo
+	path := "/api/github/repos?owner=" + url.QueryEscape(owner) + "&q=" + url.QueryEscape(q)
+	return out, c.call(ctx, reposTimeout, http.MethodGet, path, nil, &out)
 }
 
 // ProjectRepos is GET /api/projects/{name}/repos: the repositories of a workspace, relative to it.

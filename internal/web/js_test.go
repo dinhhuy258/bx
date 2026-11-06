@@ -618,3 +618,85 @@ if (page.includes('infra #')) fail('a repo without a PR must not be in the switc
 func TestPullRequestPage(t *testing.T) {
 	runJS(t, pullRequestScript)
 }
+
+// cloneScript runs cloneFrom on a fake DOM and fetch: it opens on the remembered owner, a chip
+// loads that owner's page once, typing searches it after the pause, and Enter on a typed
+// owner/repo nothing lists clones that.
+const cloneScript = `
+class Node {}
+class El extends Node {
+  constructor(tag) { super(); this.tag = tag; this.children = []; this.on = {}; this.value = ''; this.hidden = false; this.open = false; this.textContent = ''; }
+  addEventListener(k, f) { (this.on[k] ||= []).push(f); }
+  fire(k, e = {}) { for (const f of this.on[k] || []) f(e); }
+  setAttribute(k, v) { this[k] = v; }
+  append(...c) { this.children.push(...c); }
+  replaceChildren(...c) { this.children = c; }
+  showModal() { this.open = true; }
+  close() { this.open = false; this.fire('close'); }
+  remove() {}
+}
+const made = [];
+globalThis.Node = Node;
+globalThis.document = { createElement: (t) => { const e = new El(t); made.push(e); return e; }, body: new El('body'), querySelector: () => null };
+const store = { 'bx.cloneOwner': 'acme' };
+globalThis.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
+const asked = [];
+const pages = { me: [{ name: 'me/lab' }], acme: [{ name: 'acme/api', private: true, description: 'The API' }] };
+globalThis.fetch = async (path) => {
+  asked.push(path);
+  const u = new URL(path, 'http://x');
+  let data = [];
+  if (u.pathname === '/api/github/owners') data = ['me', 'acme'];
+  else if (!u.searchParams.get('q')) data = pages[u.searchParams.get('owner')] || [];
+  else data = [{ name: u.searchParams.get('owner') + '/deep-' + u.searchParams.get('q') }];
+  return { ok: true, json: async () => data };
+};
+const fail = (m) => { console.error(m); process.exit(1); };
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const text = (e) => typeof e === 'string' ? e : (e.textContent || '') + e.children.map(text).join('');
+
+const { cloneFrom, typedRepo, searchQuery } = await import(process.argv[2] + '/clone.js');
+for (const [q, want] of [['a/b', 'a/b'], ['https://github.com/a/b.git', 'a/b'], ['github.com/a/b/', 'a/b'], ['a', ''], ['a/b/c', ''], ['https://gitlab.com/a/b', '']]) {
+  if (typedRepo(q) !== want) fail('typedRepo(' + q + ') = ' + typedRepo(q));
+}
+if (searchQuery('acme/api ', 'Acme') !== 'api' || searchQuery('someone/thing', 'acme') !== '' || searchQuery('https://github.com/a/b', 'a') !== '' || searchQuery(' web ', 'acme') !== 'web') fail('searchQuery');
+
+async function open() {
+  made.length = 0;
+  const p = cloneFrom();
+  await tick(); await tick();
+  const dlg = made.find((e) => e.tag === 'dialog');
+  const input = made.find((e) => e.tag === 'input');
+  const list = made.find((e) => e.className === 'clone-list');
+  const chips = made.find((e) => e.className === 'clone-owners');
+  return { p, dlg, input, list, chips };
+}
+let ui = await open();
+await tick(); await tick();
+if (!text(ui.list).includes('acme/api') || !text(ui.list).includes('The API')) fail('opens on acme: ' + text(ui.list));
+const me = ui.chips.children.find((c) => text(c) === 'me');
+me.fire('click'); await tick(); await tick();
+if (!text(ui.list).includes('me/lab')) fail('me chip: ' + text(ui.list));
+ui.chips.children.find((c) => text(c) === 'acme').fire('click'); await tick();
+if (asked.filter((a) => a.endsWith('owner=acme&q=')).length !== 1) fail('acme fetched twice: ' + asked);
+ui.input.value = 'x';
+ui.input.fire('input');
+await new Promise((r) => setTimeout(r, 350)); await tick(); await tick();
+if (!asked.some((a) => a.endsWith('owner=acme&q=x'))) fail('no search: ' + asked);
+if (!text(ui.list).includes('acme/deep-x')) fail('results: ' + text(ui.list));
+ui.input.fire('keydown', { key: 'Enter', preventDefault() {} });
+if (await ui.p !== 'acme/deep-x') fail('enter picks the first row');
+
+ui = await open();
+ui.input.value = 'someone/thing';
+ui.input.fire('input');
+await new Promise((r) => setTimeout(r, 350));
+if (asked.some((a) => a.endsWith('q=thing'))) fail('someone/thing searched the open owner');
+ui.input.fire('keydown', { key: 'Enter', preventDefault() {} });
+if (await ui.p !== 'someone/thing') fail('typed repo');
+if (store['bx.cloneOwner'] !== 'someone') fail('owner not remembered: ' + store['bx.cloneOwner']);
+`
+
+func TestClonePicker(t *testing.T) {
+	runJS(t, cloneScript)
+}

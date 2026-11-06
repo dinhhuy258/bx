@@ -304,10 +304,27 @@ func TestCreateProjectsAndRepos(t *testing.T) {
 	if len(list) != 3 {
 		t.Fatalf("%+v", list)
 	}
-	s.App.GH = func(context.Context, string, ...string) (string, error) { return "a/b\nc/d\n", nil }
-	repos, code := get[[]string](t, ts, "/api/github/repos")
-	if code != 200 || strings.Join(repos, ",") != "a/b,c/d" {
-		t.Fatalf("%d %q", code, repos)
+	s.App.GH = func(_ context.Context, _ string, args ...string) (string, error) {
+		switch strings.Join(args[:2], " ") {
+		case "api user":
+			return "me", nil
+		case "api user/orgs":
+			return "acme", nil
+		case "repo list":
+			return `[{"nameWithOwner":"acme/b"},{"nameWithOwner":"acme/d"}]`, nil
+		}
+		return "", fmt.Errorf("gh %v", args)
+	}
+	owners, code := get[[]string](t, ts, "/api/github/owners")
+	if code != 200 || strings.Join(owners, ",") != "me,acme" {
+		t.Fatalf("%d %q", code, owners)
+	}
+	repos, code := get[[]api.GitHubRepo](t, ts, "/api/github/repos?owner=acme")
+	if code != 200 || len(repos) != 2 || repos[1].Name != "acme/d" {
+		t.Fatalf("%d %+v", code, repos)
+	}
+	if _, code := get[[]api.GitHubRepo](t, ts, "/api/github/repos"); code != http.StatusBadRequest {
+		t.Fatalf("no owner: %d", code)
 	}
 }
 

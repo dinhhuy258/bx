@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -22,7 +23,17 @@ const (
 // Picker is a filterable single-choice list (projects, GitHub repositories). Typed text
 // filters; arrows, C-j and C-k move. As a checklist Space ticks the highlighted item.
 type Picker struct {
-	Title   string
+	Title string
+	// Tabs, when set, are drawn as a strip under the title with Tab highlighted (the owners of
+	// the clone picker). The picker does not switch them: its owner reads Tab and S-Tab.
+	Tabs []string
+	Tab  int
+	// Details are dim text drawn after an item, in a column (a repository's description).
+	Details map[string]string
+	// Note is a dim line under the items ("searching…"); it replaces "no match" when set.
+	Note string
+	// Help replaces the key help line when set.
+	Help    string
 	items   []string
 	filter  string
 	cursor  int
@@ -138,6 +149,14 @@ func (p *Picker) SetItems(items []string) {
 	p.items, p.filter, p.cursor = items, "", 0
 }
 
+// Replace replaces the items and keeps the filter (the results of a search as you type). The
+// highlighted item stays highlighted when it is still visible.
+func (p *Picker) Replace(items []string) {
+	cur := p.Choice()
+	p.items, p.cursor = items, 0
+	p.Select(cur)
+}
+
 // Paste adds pasted text to the filter.
 func (p *Picker) Paste(text string) {
 	p.filter += oneLine(text)
@@ -153,16 +172,28 @@ func (p *Picker) Choice() string {
 	return v[max(0, min(p.cursor, len(v)-1))]
 }
 
-// Render draws the picker in w x h: title, filter line, then the items around the cursor.
+// Render draws the picker in w x h: title, tabs, filter line, then the items around the cursor.
 func (p *Picker) Render(w, h int) string {
 	sel := lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b26")).Background(lipgloss.Color("#7aa2f7"))
-	lines := []string{
-		lipgloss.NewStyle().Bold(true).Render(p.Title),
-		fmt.Sprintf("> %s▏", p.filter),
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#565f89"))
+	lines := []string{lipgloss.NewStyle().Bold(true).Render(p.Title)}
+	if len(p.Tabs) > 0 {
+		lines = append(lines, p.renderTabs(w, sel))
 	}
+	lines = append(lines, fmt.Sprintf("> %s▏", p.filter))
 	v := p.visible()
 	rows := max(h-len(lines)-1, 1)
+	if p.Note != "" {
+		rows = max(rows-1, 1)
+	}
 	start := max(0, min(p.cursor-rows/2, len(v)-rows))
+	col := 0 // the width of the item column when there are details
+	if len(p.Details) > 0 {
+		for _, it := range v {
+			col = max(col, ansi.StringWidth(it))
+		}
+		col = min(col, w*3/5)
+	}
 	for i := start; i < len(v) && i < start+rows; i++ {
 		item := v[i]
 		if p.checked != nil {
@@ -172,19 +203,56 @@ func (p *Picker) Render(w, h int) string {
 			}
 			item = box + item
 		}
-		line := ansi.Truncate("  "+item, w, "…")
+		detail := ""
+		if d := p.Details[v[i]]; d != "" {
+			item = ansi.Truncate(item, col, "…")
+			item += strings.Repeat(" ", col-ansi.StringWidth(item))
+			detail = "  " + d
+		}
 		if i == p.cursor {
-			line = sel.Width(w).Render(ansi.Truncate("▸ "+item, w, "…"))
+			lines = append(lines, sel.Width(w).Render(ansi.Truncate("▸ "+item+detail, w, "…")))
+			continue
+		}
+		line := ansi.Truncate("  "+item, w, "…")
+		if detail != "" {
+			if room := w - ansi.StringWidth(line); room > 3 {
+				line += dim.Render(ansi.Truncate(detail, room, "…"))
+			}
 		}
 		lines = append(lines, line)
 	}
-	if len(v) == 0 {
+	switch {
+	case p.Note != "":
+		lines = append(lines, dim.Render(ansi.Truncate("  "+p.Note, w, "…")))
+	case len(v) == 0:
 		lines = append(lines, "  no match")
 	}
 	help := "type to filter · ↑↓ move · ⏎ choose · esc cancel"
 	if p.checked != nil {
 		help = "type to filter · ↑↓ move · space tick · ⏎ done · esc cancel"
 	}
-	lines = append(lines, "", help)
+	lines = append(lines, "", cmp.Or(p.Help, help))
 	return strings.Join(lines, "\n")
+}
+
+// renderTabs draws the tab strip, scrolled so the selected tab shows.
+func (p *Picker) renderTabs(w int, sel lipgloss.Style) string {
+	parts := make([]string, len(p.Tabs))
+	for i, t := range p.Tabs {
+		if i == p.Tab {
+			parts[i] = sel.Render(" " + t + " ")
+		} else {
+			parts[i] = " " + t + " "
+		}
+	}
+	// drop tabs from the left until the selected one fits
+	from := 0
+	for from < p.Tab && ansi.StringWidth(strings.Join(parts[from:p.Tab+1], " ")) > w-2 {
+		from++
+	}
+	line := strings.Join(parts[from:], " ")
+	if from > 0 {
+		line = "‹" + line
+	}
+	return ansi.Truncate(line, w, "›")
 }

@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dinhhuy258/bx/internal/api"
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
@@ -87,12 +90,50 @@ func TestCloneProjectUsesGH(t *testing.T) {
 	}
 }
 
-func TestGitHubRepos(t *testing.T) {
+func TestGitHubOwnersAndRepos(t *testing.T) {
 	a, _, _ := newApp(t)
-	a.GH = func(_ context.Context, _ string, args ...string) (string, error) { return "a/b\nc/d\n", nil }
-	repos, err := a.GitHubRepos()
-	if err != nil || strings.Join(repos, ",") != "a/b,c/d" {
-		t.Fatal(repos, err)
+	var calls []string
+	a.GH = func(_ context.Context, _ string, args ...string) (string, error) {
+		calls = append(calls, strings.Join(args, " "))
+		switch {
+		case args[0] == "api" && args[1] == "user":
+			return "me\n", nil
+		case args[0] == "api" && args[1] == "user/orgs":
+			return "Acme\nme\n", nil
+		case args[0] == "repo":
+			return `[{"nameWithOwner":"Acme/api","description":"The API","isPrivate":true,"pushedAt":"2026-11-05T10:00:00Z"}]`, nil
+		case args[0] == "search":
+			return `[{"fullName":"Acme/web","pushedAt":"2026-11-04T10:00:00Z"}]`, nil
+		}
+		return "", fmt.Errorf("unexpected gh %v", args)
+	}
+	owners, err := a.GitHubOwners(context.Background())
+	if err != nil || strings.Join(owners, ",") != "me,Acme" {
+		t.Fatal(owners, err)
+	}
+	repos, err := a.GitHubRepos(context.Background(), "Acme", "")
+	if err != nil || len(repos) != 1 || repos[0] != (api.GitHubRepo{Name: "Acme/api", Description: "The API", Private: true, Pushed: 1793872800}) {
+		t.Fatalf("%+v %v", repos, err)
+	}
+	if last := calls[len(calls)-1]; last != "repo list Acme --limit 30 --json nameWithOwner,description,isPrivate,pushedAt" {
+		t.Fatal(last)
+	}
+	repos, err = a.GitHubRepos(context.Background(), "Acme", " -web ")
+	if err != nil || len(repos) != 1 || repos[0].Name != "Acme/web" {
+		t.Fatalf("%+v %v", repos, err)
+	}
+	// the query comes after --, so gh never reads it as a flag
+	if last := calls[len(calls)-1]; !strings.HasSuffix(last, "--match name --limit 30 --json fullName,description,isPrivate,pushedAt -- -web") {
+		t.Fatal(last)
+	}
+	a.GH = func(context.Context, string, ...string) (string, error) {
+		return "", errors.New("gh: Access to the requested organization (Acme) is blocked by SAML single sign-on")
+	}
+	if _, err := a.GitHubRepos(context.Background(), "Acme", "x"); err == nil || !strings.HasPrefix(err.Error(), "Acme needs SAML single sign-on") {
+		t.Fatal(err)
+	}
+	if _, err := a.GitHubRepos(context.Background(), "--web", ""); err == nil {
+		t.Fatal("a flag as owner")
 	}
 }
 

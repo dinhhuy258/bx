@@ -42,7 +42,8 @@ type Backend interface {
 	Branches(ctx context.Context, project string, fetch bool) (api.BranchList, error)
 	PullRequests(ctx context.Context, project, q string) (api.PRList, error)
 	CreateProject(ctx context.Context, p api.NewProject) (api.Result, error)
-	Repos(ctx context.Context) ([]string, error)
+	GitHubOwners(ctx context.Context) ([]string, error)
+	GitHubRepos(ctx context.Context, owner, q string) ([]api.GitHubRepo, error)
 	ProjectRepos(ctx context.Context, project string) ([]string, error)
 	WorkspaceLinks(ctx context.Context, project string) ([]api.Link, error)
 	Settings(ctx context.Context) (api.Settings, error)
@@ -103,10 +104,6 @@ type (
 		gen  int
 		conn Conn
 		err  error
-	}
-	reposMsg struct {
-		repos []string
-		err   error
 	}
 	// storyReposMsg is the repositories of a workspace, for the checklist of a new story or,
 	// with add, of the repositories to add to story.
@@ -282,19 +279,24 @@ type Model struct {
 	// wait, nil = tea.Tick. Tests replace it.
 	reviewPolling bool
 	reviewTick    func(story string) tea.Cmd
-	settings      *ui.Settings // the settings screen, full screen while open
-	settingsNote  string       // shown in its place until the server's sections arrive
-	syncSeq       int          // bumped on every sync scan or apply; older replies are dropped
-	syncMac       claudesync.MacScan
-	syncPlan      api.SyncPlan
-	syncDone      bool                                                          // a sync succeeded since the screen opened or the last r
-	override      overrideDraft                                                 // the base override being picked in settings › git; see story.go
-	edit          func(path string, line int, done func(error) tea.Msg) tea.Cmd // runs the editor on path; tests replace it
-	clipboard     func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
-	mcpDrafts     map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
-	accDraft      accountDraft                                                  // settings › git: the rule or override being picked; see accounts.go
-	login         *loginWait                                                    // settings › git: the gh auth login shell bx waits on; see accounts.go
-	accSave       accountSave                                                   // settings › git: the save in flight and the one waiting; see accounts.go
+	clone         *cloneState // the clone picker's owners and repositories, nil when closed
+	cloneOwner    string      // the owner last cloned from: the clone picker opens on it
+	// cloneWait waits for a pause in typing before the clone picker searches GitHub, nil =
+	// tea.Tick. Tests replace it.
+	cloneWait    func(seq int) tea.Cmd
+	settings     *ui.Settings // the settings screen, full screen while open
+	settingsNote string       // shown in its place until the server's sections arrive
+	syncSeq      int          // bumped on every sync scan or apply; older replies are dropped
+	syncMac      claudesync.MacScan
+	syncPlan     api.SyncPlan
+	syncDone     bool                                                          // a sync succeeded since the screen opened or the last r
+	override     overrideDraft                                                 // the base override being picked in settings › git; see story.go
+	edit         func(path string, line int, done func(error) tea.Msg) tea.Cmd // runs the editor on path; tests replace it
+	clipboard    func() (clipFile, error)                                      // reads this machine's clipboard for attach; tests replace it
+	mcpDrafts    map[string]mcpDraft                                           // settings › mcp: refused saves by scope, see mcp.go
+	accDraft     accountDraft                                                  // settings › git: the rule or override being picked; see accounts.go
+	login        *loginWait                                                    // settings › git: the gh auth login shell bx waits on; see accounts.go
+	accSave      accountSave                                                   // settings › git: the save in flight and the one waiting; see accounts.go
 
 	activity bool        // the list pane shows the inbox: what needs you in every project
 	act      ui.Activity // its cursor
@@ -475,13 +477,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setFlash("stream closed · reconnecting")
 		return m, nil
-	case reposMsg:
-		if msg.err != nil {
-			m.setFlash("github: " + msg.err.Error())
-			return m, nil
-		}
-		m.picker, m.pickKind = ui.NewPicker("clone from GitHub", msg.repos), pickRepos
+	case cloneOwnersMsg:
+		return m, m.gotCloneOwners(msg)
+	case cloneReposMsg:
+		m.gotCloneRepos(msg)
 		return m, nil
+	case cloneSearchMsg:
+		return m, m.cloneSearch(msg)
 	case storyReposMsg:
 		m.gotStoryRepos(msg)
 		return m, nil
@@ -621,6 +623,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switcher.Paste(msg.Content)
 		case m.picker != nil:
 			m.picker.Paste(msg.Content)
+			if m.pickKind == pickRepos {
+				return m, m.cloneFiltered()
+			}
 		case m.claudeFocused && m.conn != nil && !m.scrolling:
 			m.term.Paste(msg.Content)
 		}
@@ -1412,12 +1417,7 @@ func (m *Model) switcherKey(key, text string) tea.Cmd {
 		case ui.SwitchWorkspace:
 			m.openPrompt(ui.PromptNewWorkspace, "", "Workspace name", "")
 		case ui.SwitchClone:
-			m.setFlash("loading repositories…")
-			be, ctx := m.be, m.ctx
-			return func() tea.Msg {
-				repos, err := be.Repos(ctx)
-				return reposMsg{repos, err}
-			}
+			return m.openClone()
 		}
 	}
 	return nil
@@ -1440,12 +1440,20 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 	if key == "Enter" && m.pickKind == pickStoryPR && directPR(m.picker.Filter()) && m.picker.Cursor() == 0 {
 		return m.searchPRs(m.picker.Filter())
 	}
+	if m.pickKind == pickRepos {
+		if cmd, done := m.cloneKey(key, text); done {
+			return cmd
+		}
+	}
 	switch m.picker.Key(key, text) {
 	case ui.PickCancel:
-		m.picker = nil
+		m.picker, m.clone = nil, nil
 	case ui.PickNoMatch:
 		if m.pickKind == pickStoryPR {
 			return m.searchPRs(m.picker.Filter())
+		}
+		if m.pickKind == pickRepos {
+			return m.cloneTyped()
 		}
 	case ui.PickChoose:
 		choice, checked, kind := m.picker.Choice(), m.picker.Checked(), m.pickKind
@@ -1462,8 +1470,7 @@ func (m *Model) pickerKey(key, text string) tea.Cmd {
 		case pickEditWorkspace:
 			return m.editWorkspace(ticked)
 		case pickRepos:
-			m.setFlash("cloning " + choice + "…")
-			return m.create(api.NewProject{Kind: "clone", Repo: choice})
+			return m.cloneRepo(choice)
 		case pickStorySource:
 			return m.pickStorySource(choice)
 		case pickStoryBranch:

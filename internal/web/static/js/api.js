@@ -24,7 +24,11 @@ export const api = {
   projects: () => call('GET', '/api/projects'),
   snapshot: (p) => call('GET', `/api/projects/${enc(p)}`),
   createProject: (body) => call('POST', '/api/projects', body),
-  githubRepos: () => call('GET', '/api/github/repos'),
+  // the owners a clone can pick from: the gh logins, then their organizations
+  githubOwners: () => call('GET', '/api/github/owners'),
+  // a page of owner's repositories [{name, description, private, pushed}]: the latest pushed,
+  // or those whose name matches q
+  githubRepos: (owner, q) => call('GET', `/api/github/repos?owner=${enc(owner)}&q=${enc(q || '')}`),
   projectRepos: (p) => call('GET', `/api/projects/${enc(p)}/repos`),
   // the links at the top of a workspace folder: [{ name, missing }]
   workspaceLinks: (p) => call('GET', `/api/projects/${enc(p)}/links`),

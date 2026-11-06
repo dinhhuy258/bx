@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { cloneFrom } from './clone.js';
 import { h, icon, topBar, dotted, tile, poll, toast, ask, sheet } from './ui.js';
 
 // Every project by name; those with a session that needs you (waiting for an answer, or unread:
@@ -59,10 +60,8 @@ function newProject() {
       if (v && v.path) create({ kind: 'folder', path: v.path });
     } },
     { label: 'Clone from GitHub', run: async () => {
-      let repos = [];
-      try { repos = await api.githubRepos(); } catch (e) { toast(`GitHub: ${e.message}`); }
-      const v = await ask('Clone', [{ name: 'repo', label: 'owner/repo', list: repos }], 'Clone');
-      if (v && v.repo) create({ kind: 'clone', repo: v.repo });
+      const repo = await cloneFrom();
+      if (repo) create({ kind: 'clone', repo });
     } },
     { label: 'New empty project', run: async () => {
       const v = await ask('New project', [{ name: 'name', label: 'Name' }], 'Create');
