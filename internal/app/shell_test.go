@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dinhhuy258/bx/internal/ports"
 	"github.com/dinhhuy258/bx/internal/state"
 )
 
@@ -165,5 +166,58 @@ func TestShellsCarryRun(t *testing.T) {
 	sh, err := a.Shells(p)
 	if err != nil || len(sh) != 1 || sh[0].Run != "web" {
 		t.Fatalf("%+v %v", sh, err)
+	}
+}
+
+// A run whose command is a script shows as its interpreter in tmux ("bash" for sail); /proc
+// tells it from the shell at its prompt, so it is busy and named after the script.
+func TestShellsSeeAScriptRunning(t *testing.T) {
+	a, f, p := newApp(t)
+	f.Replies[listShells] = "$1\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tbash\tapi\t10\n" +
+		"$2\tbxsh-home-network-s1-2\thome-network\ts1\t2\t\tbash\tweb\t20\n" +
+		"$3\tbxsh-home-network-s1-3\thome-network\ts1\t3\t\t-zsh\t\t30\n" +
+		"$4\tbxsh-home-network-s1-4\thome-network\ts1\t4\t\tbash\t\t40\n" +
+		"$5\tbxsh-home-network-s1-5\thome-network\ts1\t5\t\tnode\t\t50\n" +
+		"$6\tbxsh-home-network-s1-6\thome-network\ts1\t6\t\tbash\t\t60\n"
+	a.Proc = ports.Fake{Files: map[string]string{
+		"/proc/10/stat":    "10 (bash) S 1 10 10 34816 15 0", // runs sail
+		"/proc/15/cmdline": "bash\x00./vendor/bin/sail\x00up\x00",
+		"/proc/20/stat":    "20 (bash) S 1 20 20 34817 20 0", // back at its prompt
+		"/proc/30/stat":    "30 (zsh) S 1 30 30 34818 35 0",  // a nested interactive shell
+		"/proc/35/cmdline": "-bash\x00",
+		"/proc/40/stat":    "40 (bash) S 1 40 40 34819 45 0", // the job's leader exited
+		"/proc/60/stat":    "60 (bash) S 1 60 60 34820 65 0", // sh -c with a command string
+		"/proc/65/cmdline": "sh\x00-c\x00npm run dev\x00",
+	}}
+	sh, err := a.Shells(p)
+	if err != nil || len(sh) != 6 {
+		t.Fatalf("%+v %v", sh, err)
+	}
+	want := []string{"sail", "bash", "-zsh", "job", "node", "npm"}
+	for i, w := range want {
+		if sh[i].Command != w {
+			t.Errorf("shell %d: %q, want %q", sh[i].K, sh[i].Command, w)
+		}
+	}
+}
+
+func TestJobName(t *testing.T) {
+	for _, c := range []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"bash", "./vendor/bin/sail", "up"}, "sail"},
+		{[]string{"/bin/bash", "-e", "/home/u/start.sh"}, "start.sh"},
+		{[]string{"bash", "-lc", "./vendor/bin/sail up"}, "sail"},
+		{[]string{"sh", "-c", "npm run dev"}, "npm"},
+		{[]string{"/usr/bin/env", "PORT=3000", "node", "a.js"}, "node"},
+		{[]string{"docker", "compose", "up"}, "docker"},
+		{[]string{"-bash"}, ""},
+		{[]string{"zsh", "-l"}, ""},
+		{[]string{"bash", "-c", "  "}, ""},
+	} {
+		if got := jobName(c.argv); got != c.want {
+			t.Errorf("jobName(%q) = %q, want %q", c.argv, got, c.want)
+		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/git"
+	"github.com/dinhhuy258/bx/internal/ports"
 	"github.com/dinhhuy258/bx/internal/settings"
 	"github.com/dinhhuy258/bx/internal/state"
 	"github.com/dinhhuy258/bx/internal/tmux"
@@ -49,6 +50,9 @@ type App struct {
 	// when ctx is done. Tests replace it.
 	Claude   func(ctx context.Context, dir string, env []string, stdin string, args ...string) ([]byte, error)
 	Settings *settings.Store
+	// Proc is /proc, where Shells sees what a pane runs when tmux names only its shell; nil reads
+	// the machine's.
+	Proc ports.Proc
 	// Log records best-effort failures that do not fail the operation; nil is silent.
 	Log    func(format string, args ...any)
 	tok    tokens   // gh tokens of the GitHub accounts, see accounts.go
