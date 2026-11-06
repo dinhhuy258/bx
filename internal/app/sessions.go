@@ -293,12 +293,14 @@ func (a *App) Rename(p *state.Project, num int, title string) error {
 	if s == nil {
 		return fmt.Errorf("no session [%d]", num)
 	}
-	s.Title = title
+	s.Title, s.TitleAuto = title, false
 	return a.SaveProject(p)
 }
 
-// Titles finds a title for every running session still called "New session": the start of
-// the first prompt in its transcript. It only reads; SetTitles stores them.
+// Titles finds a title for every running session bx may still name: one called "New session"
+// or one bx titled itself. Claude's own title of the session wins; until Claude writes one,
+// the start of the first prompt stands in. Only changed titles are returned. It only reads;
+// SetTitles stores them.
 func (a *App) Titles(p *state.Project, agents map[string]claude.Agent) map[int]string {
 	if a.Transcripts == "" {
 		return nil
@@ -306,26 +308,31 @@ func (a *App) Titles(p *state.Project, agents map[string]claude.Agent) map[int]s
 	var out map[int]string
 	for n, s := range p.Sessions {
 		ag, live := agents[s.UUID]
-		if s.Title != defaultTitle || !live || ag.Cwd == "" {
+		if !autoTitled(s) || !live || ag.Cwd == "" {
 			continue
 		}
-		if t := claude.FirstPrompt(claude.TranscriptPath(a.Transcripts, ag.Cwd, s.UUID)); t != "" {
+		path := claude.TranscriptPath(a.Transcripts, ag.Cwd, s.UUID)
+		t := claude.AITitle(path)
+		if t == "" {
+			t = claude.FirstPrompt(path)
+		}
+		if t = shorten(t, titleLen); t != "" && t != s.Title {
 			if out == nil {
 				out = map[int]string{}
 			}
-			out[n] = shorten(t, titleLen)
+			out[n] = t
 		}
 	}
 	return out
 }
 
-// SetTitles stores titles from Titles on the sessions that are still unnamed, so a rename in
+// SetTitles stores titles from Titles on the sessions bx may still name, so a rename in
 // between wins. Reports whether anything changed.
 func (a *App) SetTitles(p *state.Project, titles map[int]string) (bool, error) {
 	changed := false
 	for n, t := range titles {
-		if s := p.Sessions[n]; s != nil && s.Title == defaultTitle {
-			s.Title, changed = t, true
+		if s := p.Sessions[n]; s != nil && autoTitled(s) && s.Title != t {
+			s.Title, s.TitleAuto, changed = t, true, true
 		}
 	}
 	if !changed {
@@ -333,6 +340,9 @@ func (a *App) SetTitles(p *state.Project, titles map[int]string) (bool, error) {
 	}
 	return true, a.SaveProject(p)
 }
+
+// autoTitled reports whether bx may name the session: nobody has given it a title.
+func autoTitled(s *state.Session) bool { return s.Title == defaultTitle || s.TitleAuto }
 
 func shorten(s string, n int) string {
 	r := []rune(s)

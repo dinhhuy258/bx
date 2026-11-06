@@ -2,6 +2,7 @@ package claude
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,8 +10,8 @@ import (
 	"strings"
 )
 
-// promptLines is how far into a transcript FirstPrompt looks. The first prompt is near the
-// top, after a few queue and command lines.
+// promptLines is how far into a transcript FirstPrompt and AITitle look. The first prompt is
+// near the top, after a few queue and command lines, and Claude's title follows it.
 const promptLines = 100
 
 var unsafeRe = regexp.MustCompile(`[^a-zA-Z0-9]`)
@@ -29,7 +30,14 @@ var (
 // FirstPrompt returns the first thing the user typed in the transcript at path, or "" when
 // there is none yet. A slash command counts only with arguments; Claude's own lines (meta,
 // command output, tool results) are skipped.
-func FirstPrompt(path string) string {
+func FirstPrompt(path string) string { return scan(path, userText) }
+
+// AITitle returns the title Claude wrote for the session in the transcript at path (its
+// "ai-title" line), or "" when there is none yet.
+func AITitle(path string) string { return scan(path, aiTitle) }
+
+// scan returns the first non-empty pick of the first promptLines lines of the file at path.
+func scan(path string, pick func([]byte) string) string {
 	f, err := os.Open(path)
 	if err != nil {
 		return ""
@@ -38,7 +46,7 @@ func FirstPrompt(path string) string {
 	r := bufio.NewReader(f)
 	for range promptLines {
 		line, err := r.ReadBytes('\n')
-		if text := userText(line); text != "" {
+		if text := pick(line); text != "" {
 			return text
 		}
 		if err != nil {
@@ -46,6 +54,22 @@ func FirstPrompt(path string) string {
 		}
 	}
 	return ""
+}
+
+var aiTitleType = []byte(`"ai-title"`)
+
+func aiTitle(line []byte) string {
+	if !bytes.Contains(line, aiTitleType) { // most lines are large and not it: skip the decode
+		return ""
+	}
+	var l struct {
+		Type    string `json:"type"`
+		AITitle string `json:"aiTitle"`
+	}
+	if json.Unmarshal(line, &l) != nil || l.Type != "ai-title" {
+		return ""
+	}
+	return strings.Join(strings.Fields(l.AITitle), " ")
 }
 
 func userText(line []byte) string {

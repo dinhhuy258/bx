@@ -69,10 +69,12 @@ func (s *Story) RepoNames() []string {
 
 // Session is one Claude Code process. Story "" means the chats group. Model, Effort and
 // PermissionMode are the settings it started with ("" = Claude's default); resume reuses them.
+// TitleAuto marks a Title bx picked from the transcript, which a better one may replace.
 type Session struct {
 	Story          string    `json:"-"`
 	UUID           string    `json:"uuid"`
 	Title          string    `json:"title"`
+	TitleAuto      bool      `json:"-"`
 	Done           bool      `json:"done"`
 	Created        time.Time `json:"created"`
 	Model          string    `json:"model,omitempty"`
@@ -113,6 +115,7 @@ type sessionWire struct {
 	Story          *string   `json:"story"`
 	UUID           string    `json:"uuid"`
 	Title          string    `json:"title"`
+	TitleAuto      bool      `json:"title_auto,omitempty"`
 	Done           bool      `json:"done"`
 	Created        time.Time `json:"created"`
 	Model          string    `json:"model,omitempty"`
@@ -147,7 +150,7 @@ func (p *Project) MarshalJSON() ([]byte, error) {
 			st := s.Story
 			story = &st
 		}
-		w.Sessions[strconv.Itoa(n)] = &sessionWire{Story: story, UUID: s.UUID, Title: s.Title, Done: s.Done, Created: s.Created,
+		w.Sessions[strconv.Itoa(n)] = &sessionWire{Story: story, UUID: s.UUID, Title: s.Title, TitleAuto: s.TitleAuto, Done: s.Done, Created: s.Created,
 			Model: s.Model, Effort: s.Effort, PermissionMode: s.PermissionMode}
 	}
 	return json.Marshal(w)
@@ -172,7 +175,7 @@ func (p *Project) UnmarshalJSON(b []byte) error {
 		if err != nil {
 			return err
 		}
-		s := &Session{UUID: sw.UUID, Title: sw.Title, Done: sw.Done, Created: sw.Created,
+		s := &Session{UUID: sw.UUID, Title: sw.Title, TitleAuto: sw.TitleAuto, Done: sw.Done, Created: sw.Created,
 			Model: sw.Model, Effort: sw.Effort, PermissionMode: sw.PermissionMode}
 		if sw.Story != nil {
 			s.Story = *sw.Story
