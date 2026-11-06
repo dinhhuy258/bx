@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/dinhhuy258/bx/internal/ports"
 	"github.com/dinhhuy258/bx/internal/state"
+	"github.com/dinhhuy258/bx/internal/tmux"
 )
 
 // ShellName is the tmux session of shell k of a story ("" = the project root). It uses the
@@ -39,7 +42,7 @@ func (a *App) Shells(p *state.Project) ([]Shell, error) {
 	var out []Shell
 	for _, sh := range all {
 		if sh.Project == p.Name {
-			out = append(out, Shell{ID: sh.ID, Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command, Run: sh.Run})
+			out = append(out, Shell{ID: sh.ID, Story: sh.Story, K: sh.K, Title: sh.Title, Command: a.paneCommand(sh), Run: sh.Run})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -161,4 +164,59 @@ func shellGroup(story string) string {
 		return "chats"
 	}
 	return story
+}
+
+// paneCommand is what the pane of sh runs. tmux names a pane by its foreground process, and a
+// script runs as its interpreter: ./vendor/bin/sail shows as "bash", the same as the shell at
+// its prompt. When tmux names a bare shell, /proc tells the two apart: another process group
+// in the terminal's foreground is a job, named after its script or program ("sail"), or "job"
+// when its leader already exited. A nested interactive shell still counts as the prompt.
+func (a *App) paneCommand(sh tmux.Shell) string {
+	if sh.PID <= 0 || !plainShell(sh.Command) {
+		return sh.Command
+	}
+	proc := a.Proc
+	if proc == nil {
+		proc = ports.OS
+	}
+	argv, busy, ok := ports.Job(proc, sh.PID)
+	switch {
+	case !ok || !busy:
+		return sh.Command
+	case argv == nil:
+		return "job"
+	}
+	if name := jobName(argv); name != "" && !plainShell(name) {
+		return name
+	}
+	return sh.Command
+}
+
+// jobName is the program argv runs, past the interpreters in front of it: "sail" for
+// [bash ./vendor/bin/sail up], "npm" for [sh -c "npm run dev"], "node" for [env PORT=1 node a.js].
+// It is "" when argv is only a shell.
+func jobName(argv []string) string {
+	for i := 0; i < len(argv); i++ {
+		arg := argv[i]
+		if i > 0 && strings.HasPrefix(arg, "-") {
+			if commandFlag(arg) && i+1 < len(argv) {
+				if f := strings.Fields(argv[i+1]); len(f) > 0 {
+					return filepath.Base(f[0])
+				}
+				return ""
+			}
+			continue
+		}
+		base := filepath.Base(strings.TrimPrefix(arg, "-"))
+		if base == "env" || plainShell(base) || base == "dash" || (i > 0 && strings.Contains(arg, "=")) {
+			continue
+		}
+		return base
+	}
+	return ""
+}
+
+// commandFlag reports whether a shell flag takes a command string: -c, or -lc and the like.
+func commandFlag(f string) bool {
+	return !strings.HasPrefix(f, "--") && strings.Contains(f[1:], "c")
 }

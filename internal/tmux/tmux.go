@@ -119,17 +119,19 @@ func (t *Tmux) List() ([]Session, bool, error) {
 	return ss, true, nil
 }
 
-// ShellFormat is the list-sessions format Shells reads. @bx_run is last so a line written by
-// an older bx (7 fields) still reads.
-const ShellFormat = "#{session_id}\t#{session_name}\t#{@bx_project}\t#{@bx_story}\t#{@bx_shell}\t#{@bx_title}\t#{pane_current_command}\t#{@bx_run}"
+// ShellFormat is the list-sessions format Shells reads. @bx_run and pane_pid come last so a
+// shorter line (7 or 8 fields, as older fakes write) still reads.
+const ShellFormat = "#{session_id}\t#{session_name}\t#{@bx_project}\t#{@bx_story}\t#{@bx_shell}\t#{@bx_title}\t#{pane_current_command}\t#{@bx_run}\t#{pane_pid}"
 
 // Shell is one shell session: a session with the @bx_shell option. Project, Story, K and Title
-// are its @bx_project, @bx_story, @bx_shell and @bx_title options; Command is what its pane runs.
-// Run is the run of a run shell, from @bx_run; "" for a plain shell.
+// are its @bx_project, @bx_story, @bx_shell and @bx_title options; Command is what its pane runs,
+// as tmux names it. Run is the run of a run shell, from @bx_run; "" for a plain shell. PID is the
+// pane's shell process; 0 when unknown.
 type Shell struct {
 	ID, Name, Project, Story string
 	K                        int
 	Title, Command, Run      string
+	PID                      int
 }
 
 // NewShell creates a detached session named name running cmd ("" = the default shell) in dir
@@ -173,7 +175,7 @@ func (t *Tmux) Shells() ([]Shell, error) {
 	}
 	var sh []Shell
 	for _, line := range strings.Split(out, "\n") {
-		f := strings.SplitN(line, "\t", 8)
+		f := strings.SplitN(line, "\t", 9)
 		if len(f) < 7 {
 			continue
 		}
@@ -182,8 +184,11 @@ func (t *Tmux) Shells() ([]Shell, error) {
 			continue
 		}
 		s := Shell{ID: f[0], Name: f[1], Project: f[2], Story: f[3], K: k, Title: f[5], Command: f[6]}
-		if len(f) == 8 {
+		if len(f) >= 8 {
 			s.Run = f[7]
+		}
+		if len(f) == 9 {
+			s.PID, _ = strconv.Atoi(f[8])
 		}
 		sh = append(sh, s)
 	}

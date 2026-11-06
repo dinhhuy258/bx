@@ -285,13 +285,15 @@ func TestPasteStopsWhenLoadFails(t *testing.T) {
 
 func TestShellsRunSendKeysPanes(t *testing.T) {
 	f := &Fake{Replies: map[string]string{
-		"list-sessions -F " + ShellFormat: "$7\tbxsh-p-s1-1\tp\ts1\t1\t\tnode\tweb\n" +
-			"$8\tbxsh-p-s1-2\tp\ts1\t2\t\tzsh\n", // a line from before @bx_run: 7 fields
+		"list-sessions -F " + ShellFormat: "$7\tbxsh-p-s1-1\tp\ts1\t1\t\tnode\tweb\t123\n" +
+			"$8\tbxsh-p-s1-2\tp\ts1\t2\t\tzsh\n" + // a line from before @bx_run: 7 fields
+			"$9\tbxsh-p-s1-3\tp\ts1\t3\t\tbash\tapi\n", // before pane_pid: 8 fields
 		"list-panes -a -F #{pane_pid}\t#{session_id}": "123\t$7\n456\t$8\nbad\n",
 	}}
 	tm := New(f)
 	sh, err := tm.Shells()
-	if err != nil || len(sh) != 2 || sh[0].Run != "web" || sh[1].Run != "" || sh[1].Command != "zsh" {
+	if err != nil || len(sh) != 3 || sh[0].Run != "web" || sh[0].PID != 123 || sh[1].Run != "" || sh[1].Command != "zsh" || sh[1].PID != 0 ||
+		sh[2].Run != "api" || sh[2].PID != 0 {
 		t.Fatalf("%+v %v", sh, err)
 	}
 	if err := tm.SendKeys("$7", "C-c"); err != nil {
