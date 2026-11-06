@@ -369,7 +369,7 @@ func TestCloseStoryRemovesUploads(t *testing.T) {
 	}
 }
 
-func TestTitlesFromTheFirstPrompt(t *testing.T) {
+func TestTitlesFromTheTranscript(t *testing.T) {
 	a, f, p := newApp(t)
 	a.Transcripts = t.TempDir()
 	f.Replies[listSessions] = ""
@@ -398,9 +398,36 @@ func TestTitlesFromTheFirstPrompt(t *testing.T) {
 	if len(a.Titles(got, agents)) != 0 {
 		t.Fatal("a named session is not read again")
 	}
-	got.Sessions[num].Title = "mine" // a rename between Titles and SetTitles wins
-	if changed, _ := a.SetTitles(got, titles); changed {
+	if !got.Sessions[num].TitleAuto || got.Sessions[named].TitleAuto {
+		t.Fatal("only the title bx picked is marked auto")
+	}
+
+	// Claude's title replaces the prompt bx stood in with
+	os.WriteFile(path, []byte(`{"type":"user","message":{"content":"make the guest network use a shorter DHCP lease please"}}
+{"type":"ai-title","aiTitle":"Shorter guest DHCP lease","sessionId":"fixed-uuid"}`+"\n"), 0o644)
+	titles = a.Titles(got, agents)
+	if len(titles) != 1 || titles[num] != "Shorter guest DHCP lease" {
+		t.Fatalf("titles = %v", titles)
+	}
+	if changed, err := a.SetTitles(got, titles); !changed || err != nil {
+		t.Fatal(changed, err)
+	}
+	if len(a.Titles(got, agents)) != 0 {
+		t.Fatal("an unchanged title is not offered again")
+	}
+
+	if err := a.Rename(got, num, "mine"); err != nil { // a rename between Titles and SetTitles wins
+		t.Fatal(err)
+	}
+	if changed, _ := a.SetTitles(got, map[int]string{num: "other"}); changed {
 		t.Fatal("the rename was overwritten")
+	}
+	if len(a.Titles(got, agents)) != 0 {
+		t.Fatal("a renamed session is not read again")
+	}
+	got, _ = a.LoadProject("home-network")
+	if got.Sessions[num].Title != "mine" || got.Sessions[num].TitleAuto {
+		t.Fatalf("saved %q auto=%v", got.Sessions[num].Title, got.Sessions[num].TitleAuto)
 	}
 }
 

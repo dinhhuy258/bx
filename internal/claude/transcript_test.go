@@ -44,3 +44,25 @@ func TestFirstPrompt(t *testing.T) {
 		t.Error("looked past promptLines")
 	}
 }
+
+func TestAITitle(t *testing.T) {
+	for name, c := range map[string]struct{ lines, want string }{
+		"after the prompt": {`{"type":"user","message":{"content":"the ai-title is not the prompt"}}
+{"type":"ai-title","aiTitle":"Guest  network\nDHCP lease","sessionId":"u1"}
+{"type":"ai-title","aiTitle":"later","sessionId":"u1"}`, "Guest network DHCP lease"},
+		"none yet":    {`{"type":"user","message":{"content":"mentions \"ai-title\" only"}}`, ""},
+		"broken line": {`{"type":"ai-title","aiTitle":`, ""},
+		"empty title": {`{"type":"ai-title","aiTitle":"  "}`, ""},
+	} {
+		path := filepath.Join(t.TempDir(), "t.jsonl")
+		if err := os.WriteFile(path, []byte(c.lines+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := AITitle(path); got != c.want {
+			t.Errorf("%s: got %q, want %q", name, got, c.want)
+		}
+	}
+	if AITitle(filepath.Join(t.TempDir(), "missing.jsonl")) != "" {
+		t.Error("a missing transcript has no title")
+	}
+}
