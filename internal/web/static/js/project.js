@@ -132,15 +132,25 @@ export function showProject(root, name) {
   }
 
   // shellRow is [$k][ label / command or "shell" ][busy][⋯]: the command shows after a rename,
-  // and busy while something other than the shell itself runs in it
+  // and busy while something other than the shell itself runs in it. A run's meta is its state,
+  // as the TUI shows it: its ports, else "starting…" while busy with a port declared, "running"
+  // while busy without, "exited" back at its prompt (where ports mean sail up -d still serves).
   function shellRow(sh) {
+    const meta = sh.run ? runState(sh) : sh.title && sh.command ? h('span', { class: 'cmd' }, sh.command) : 'shell';
     return h('div', { class: 'item' },
       h('a', { class: 'item-link', href: shellHref(name, sh.story, sh.k) },
         tile(`$${sh.k}`, 'shell'),
         h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, sh.run && !sh.title ? sh.run : shellLabel(sh)),
-          h('span', { class: 'item-meta' }, sh.title && sh.command ? h('span', { class: 'cmd' }, sh.command) : 'shell'))),
+          h('span', { class: 'item-meta' }, meta))),
       sh.command && !plainShell(sh.command) ? h('span', { class: 'pill busy' }, 'busy') : null,
       h('button', { class: 'ib', 'aria-label': 'Shell actions', onclick: () => shellMenu({ project: name, sh, refresh, onClosed: refresh }) }, icon('more')));
+  }
+
+  function runState(sh) {
+    const own = (((snap.live && snap.live.ports) || {})[sh.story || ''] || []).filter((p) => p.shell === sh.k);
+    if (own.length) return own.map((p) => `:${p.port}`).join(' ');
+    if (!sh.command || plainShell(sh.command)) return 'exited';
+    return (sh.expect || []).length ? 'starting…' : 'running';
   }
 
   // sessionRow is [tile][ title / ● state ][⋯], the tile and dot coloured by the state

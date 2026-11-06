@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -68,13 +69,26 @@ type ShellRef struct {
 	Run   string
 }
 
+// RunRef is a live run of a story: a shell with @bx_run, busy or back at its prompt. K is its
+// shell, Dir its folder (the story folder and the run's dir; "" when its config is gone) and
+// Ports the ports its config declares.
+type RunRef struct {
+	Name  string
+	K     int
+	Dir   string
+	Ports []int
+}
+
 // Want is one project for Match: the folder of each story ("" is the project folder, where
-// the chats run), its shells and sessions by tmux id, and its hide and show lists.
+// the chats run), its shells and sessions by tmux id, its live runs by story, and its hide
+// and show lists. Only a live run can own a port: a run that is only in the config has no
+// shell to show it on or to stop.
 type Want struct {
 	Project    string
 	Dirs       map[string]string
 	Shells     map[string]ShellRef
 	Sessions   map[string]int
+	Runs       map[string][]RunRef
 	Hide, Show []int
 }
 
@@ -93,6 +107,12 @@ type Found struct {
 // folder holds its cwd (the longest one); a container is in the story of its bx labels or of
 // its compose working_dir. parent gives a pid's parent, for the walk to a tmux pane. A port
 // listed twice (0.0.0.0 and ::) is one; it is Loopback only when every socket is.
+//
+// The owner of a port, first answer wins: (1) the shell or session of the tmux pane a host
+// process runs under; (2) a container's bx.run label; (3) the live run of the story that
+// declares the port; (4) for a compose container, the live run whose folder holds its
+// working_dir, the deepest; (5) else the story alone. A container is owned as a whole, so its
+// other ports follow a declared one. A port with a run but no shell gets the run's shell.
 func Match(s Scan, cs []Container, panes []Pane, parent func(int) int, w Want) []Found {
 	byContainer := map[string]Container{}
 	for _, c := range cs {
@@ -102,6 +122,27 @@ func Match(s Scan, cs []Container, panes []Pane, parent func(int) int, w Want) [
 	for _, p := range panes {
 		paneOf[p.PID] = p.Session
 	}
+	// the ports each container holds: published, and its sockets on the host network
+	held := map[string][]int{}
+	for _, c := range cs {
+		held[c.ID] = append(held[c.ID], c.Ports...)
+	}
+	for _, l := range s.Listeners {
+		if pr, ok := s.Procs[s.Owners[l.Inode]]; ok && pr.Container != "" {
+			if c, ok := containerOf(byContainer, pr.Container); ok && !slices.Contains(held[c.ID], l.Port) {
+				held[c.ID] = append(held[c.ID], l.Port)
+			}
+		}
+	}
+	owners := map[string]owner{}
+	ownerOf := func(c Container) owner {
+		o, ok := owners[c.ID]
+		if !ok {
+			o = w.ownContainer(c, held[c.ID])
+			owners[c.ID] = o
+		}
+		return o
+	}
 	type key struct {
 		story string
 		port  int
@@ -110,6 +151,9 @@ func Match(s Scan, cs []Container, panes []Pane, parent func(int) int, w Want) [
 	add := func(f Found) {
 		if f.Story == "\x00" || !w.shown(f.Port) {
 			return
+		}
+		if f.Run != "" && f.Shell == 0 && f.Session == 0 {
+			f.Shell = w.shellOf(f.Story, f.Run)
 		}
 		k := key{f.Story, f.Port}
 		if old, ok := found[k]; ok {
@@ -129,9 +173,11 @@ func Match(s Scan, cs []Container, panes []Pane, parent func(int) int, w Want) [
 			continue
 		}
 		f := Found{Port: l.Port, Loopback: l.Loopback, Story: "\x00"}
-		if pr.Container != "" {
+		inContainer := pr.Container != ""
+		if inContainer {
 			if c, ok := containerOf(byContainer, pr.Container); ok {
-				f.Story, f.Run = w.storyOfContainer(c)
+				o := ownerOf(c)
+				f.Story, f.Run = o.story, o.run(l.Port)
 			}
 		} else {
 			f.Story = w.storyOf(pr.Cwd)
@@ -152,12 +198,15 @@ func Match(s Scan, cs []Container, panes []Pane, parent func(int) int, w Want) [
 				break
 			}
 		}
+		if !inContainer && f.Shell == 0 && f.Session == 0 {
+			f.Run = w.declared(f.Story, l.Port) // a host process under no pane
+		}
 		add(f)
 	}
 	for _, c := range cs { // published ports: docker-proxy holds them, so the cwd says nothing
-		story, run := w.storyOfContainer(c)
+		o := ownerOf(c)
 		for _, port := range c.Ports {
-			add(Found{Story: story, Port: port, Run: run})
+			add(Found{Story: o.story, Port: port, Run: o.run(port)})
 		}
 	}
 	out := make([]Found, 0, len(found))
@@ -168,6 +217,109 @@ func Match(s Scan, cs []Container, panes []Pane, parent func(int) int, w Want) [
 		return cmp.Or(strings.Compare(a.Story, b.Story), a.Port-b.Port)
 	})
 	return out
+}
+
+// owner is who owns a container: its story ("\x00" = none of the project's), the run that
+// owns it whole ("" = none), and runs that own single ports when no one run owns it whole.
+type owner struct {
+	story  string
+	all    string
+	byPort map[int]string
+}
+
+func (o owner) run(port int) string {
+	if o.all != "" {
+		return o.all
+	}
+	return o.byPort[port]
+}
+
+// ownContainer finds the story and run of container c, which holds ports: its bx labels, else
+// the ports the story's live runs declare, else the live run whose folder holds its compose
+// working_dir. When live runs declare its ports, the folder is not asked: one run declaring
+// them owns it whole, otherwise each port that one run alone declares is that run's.
+func (w Want) ownContainer(c Container, ports []int) owner {
+	if c.Labels["bx.project"] == w.Project {
+		if _, ok := w.Dirs[c.Labels["bx.story"]]; ok {
+			return owner{story: c.Labels["bx.story"], all: c.Labels["bx.run"]}
+		}
+	}
+	wd := c.Labels["com.docker.compose.project.working_dir"]
+	if wd == "" {
+		return owner{story: "\x00"}
+	}
+	wd = filepath.Clean(wd)
+	o := owner{story: w.storyOf(wd), byPort: map[int]string{}}
+	declared, tied := false, false
+	for _, port := range ports {
+		names := w.declaring(o.story, port)
+		switch {
+		case len(names) == 1:
+			o.byPort[port] = names[0]
+		case len(names) > 1:
+			tied = true
+		}
+		declared = declared || len(names) > 0
+	}
+	if declared {
+		runs := slices.Compact(slices.Sorted(maps.Values(o.byPort)))
+		if !tied && len(runs) == 1 {
+			o.all = runs[0]
+		}
+		return o
+	}
+	o.all = w.runIn(o.story, wd)
+	return o
+}
+
+// declaring are the live runs of story that declare port.
+func (w Want) declaring(story string, port int) []string {
+	var names []string
+	for _, r := range w.Runs[story] {
+		if slices.Contains(r.Ports, port) {
+			names = append(names, r.Name)
+		}
+	}
+	return names
+}
+
+// declared is the one live run of story that declares port; "" when none or several do.
+func (w Want) declared(story string, port int) string {
+	if names := w.declaring(story, port); len(names) == 1 {
+		return names[0]
+	}
+	return ""
+}
+
+// runIn is the live run of story whose folder holds dir, the deepest; "" when none does or two
+// runs share the deepest folder.
+func (w Want) runIn(story, dir string) string {
+	best, bestLen, tie := "", -1, false
+	for _, r := range w.Runs[story] {
+		if r.Dir == "" || dir != r.Dir && !strings.HasPrefix(dir, r.Dir+string(filepath.Separator)) {
+			continue
+		}
+		switch {
+		case len(r.Dir) > bestLen:
+			best, bestLen, tie = r.Name, len(r.Dir), false
+		case len(r.Dir) == bestLen:
+			tie = true
+		}
+	}
+	if tie {
+		return ""
+	}
+	return best
+}
+
+// shellOf is the shell of the live run name of story; 0 when it has none.
+func (w Want) shellOf(story, name string) int {
+	for _, r := range w.Runs[story] {
+		if r.Name == name {
+			return r.K
+		}
+	}
+	return 0
 }
 
 func containerOf(m map[string]Container, full string) (Container, bool) {
@@ -200,16 +352,4 @@ func (w Want) storyOf(dir string) string {
 		}
 	}
 	return best
-}
-
-func (w Want) storyOfContainer(c Container) (story, run string) {
-	if c.Labels["bx.project"] == w.Project {
-		if _, ok := w.Dirs[c.Labels["bx.story"]]; ok {
-			return c.Labels["bx.story"], c.Labels["bx.run"]
-		}
-	}
-	if d := c.Labels["com.docker.compose.project.working_dir"]; d != "" {
-		return w.storyOf(filepath.Clean(d)), ""
-	}
-	return "\x00", ""
 }

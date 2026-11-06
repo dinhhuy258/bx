@@ -393,13 +393,16 @@ type PRSend struct {
 
 // RunConfig is GET and PUT /api/projects/{name}/runconfig: the project's runs and port lists
 // for Settings › Runs. GET adds Repos (a workspace's repositories, for the dir choice; nil in
-// a repo project), HasComments (a form save would drop the file's comments) and Error (the
-// file does not parse: edit it as text). A refused PUT is a 400 with Errors.
+// a repo project), Compose (the folders, relative to the project's and cleaned, among ".", the
+// repositories and the runs' dirs, that hold a compose file), HasComments (a form save would
+// drop the file's comments) and Error (the file does not parse: edit it as text). A refused PUT
+// is a 400 with Errors.
 type RunConfig struct {
 	Runs        []runcfg.Run        `json:"runs"`
 	Hide        []int               `json:"hide,omitempty"`
 	Show        []int               `json:"show,omitempty"`
 	Repos       []string            `json:"repos,omitempty"`
+	Compose     []string            `json:"compose,omitempty"`
 	HasComments bool                `json:"has_comments,omitempty"`
 	Error       string              `json:"error,omitempty"`
 	Errors      []runcfg.FieldError `json:"errors,omitempty"`

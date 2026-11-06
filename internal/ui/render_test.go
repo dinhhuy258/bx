@@ -317,6 +317,7 @@ func TestRenderRunRows(t *testing.T) {
 		{Port: 5173, URL: "http://dev:5173", Forwarded: true, Shell: 1, Run: "web"},
 		{Port: 8000, Error: "taken", Shell: 2, Run: "api"},
 		{Port: 4000, URL: "http://dev:4000", Shell: 5},
+		{Port: 9000, URL: "http://dev:9000", Shell: 7, Run: "stack"},
 	}}
 	live.Running = story
 	m.SetLive(live)
@@ -326,16 +327,45 @@ func TestRenderRunRows(t *testing.T) {
 		{Story: story, K: 3, Command: "python", Run: "worker"},
 		{Story: story, K: 4, Command: "zsh", Run: "queue"},
 		{Story: story, K: 5, Command: "go"},
+		{Story: story, K: 6, Command: "bash", Run: "sail", Expect: []int{8080}},
+		{Story: story, K: 7, Command: "bash", Run: "stack"},
+	}, nil)
+	sh, _ := m.Shell(story, 6)
+	sh.Command = "sail" // busy: tmux shows bash at the prompt, bx names the job
+	m.SetShells([]Shell{
+		{Story: story, K: 1, Command: "node", Run: "web"},
+		{Story: story, K: 2, Command: "php", Run: "api"},
+		{Story: story, K: 3, Command: "python", Run: "worker"},
+		{Story: story, K: 4, Command: "zsh", Run: "queue"},
+		{Story: story, K: 5, Command: "go"},
+		sh,
+		{Story: story, K: 7, Command: "bash", Run: "stack"},
 	}, nil)
 	out := Render(m, 60, 40, RenderOptions{Plain: true})
-	for _, want := range []string{"▶ web", ":3000 :5173 ⇄", "▶ api", "taken", "▶ worker", "starting…", "■ queue", "exited", "$5 go", ":4000"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("missing %q in\n%s", want, out)
+	lineOf := func(name string) string {
+		for _, l := range strings.Split(out, "\n") {
+			if strings.Contains(l, name) {
+				return strings.TrimRight(l, " ")
+			}
+		}
+		return ""
+	}
+	for name, want := range map[string]string{
+		"▶ web":    ":3000 :5173 ⇄",
+		"▶ api":    "taken",
+		"▶ worker": "running",   // no port declared, none seen
+		"▶ sail":   "starting…", // declares 8080, not seen yet
+		"■ queue":  "exited",
+		"■ stack":  ":9000", // back at its prompt, its containers still serve (up -d)
+		"$5 go":    ":4000",
+	} {
+		if l := lineOf(name); !strings.HasSuffix(l, want) {
+			t.Errorf("%s: %q, want it to end in %q\n%s", name, l, want, out)
 		}
 	}
 	m.SetFolded(story, true)
 	out = Render(m, 60, 40, RenderOptions{Plain: true})
-	if !strings.Contains(out, "▶ :3000 +3") {
+	if !strings.Contains(out, "▶ :3000 +4") {
 		t.Errorf("folded summary:\n%s", out)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -84,13 +85,21 @@ func (s *Server) scanPorts() {
 		}
 		cfg, _ := s.App.RunConfig(p) // a broken config: no hide list, no open paths
 		w := ports.Want{Project: p.Name, Dirs: map[string]string{"": p.Path},
-			Shells: map[string]ports.ShellRef{}, Sessions: map[string]int{}, Hide: cfg.Hide, Show: cfg.Show}
+			Shells: map[string]ports.ShellRef{}, Sessions: map[string]int{}, Runs: map[string][]ports.RunRef{},
+			Hide: cfg.Hide, Show: cfg.Show}
 		for story := range p.Stories {
 			w.Dirs[story] = s.App.Dir(p, story)
 		}
 		if shells, err := s.App.Shells(p); err == nil {
 			for _, sh := range shells {
 				w.Shells[sh.ID] = ports.ShellRef{Story: sh.Story, K: sh.K, Run: sh.Run}
+				if sh.Run != "" { // a live run: only these can own a port by its config
+					ref := ports.RunRef{Name: sh.Run, K: sh.K}
+					if r, ok := cfg.Find(sh.Run); ok {
+						ref.Dir, ref.Ports = filepath.Join(s.App.Dir(p, sh.Story), r.Dir), r.Port
+					}
+					w.Runs[sh.Story] = append(w.Runs[sh.Story], ref)
+				}
 			}
 		}
 		if live, err := s.App.Live(p); err == nil {
@@ -232,7 +241,40 @@ func (s *Server) getRunConfig(w http.ResponseWriter, r *http.Request) {
 	} else {
 		out.Runs, out.Hide, out.Show = slices.Clip(append(out.Runs, f.Runs...)), f.Hide, f.Show
 	}
+	out.Compose = composeDirs(p.Path, out.Repos, out.Runs)
 	writeJSON(w, out)
+}
+
+// composeFiles are the names docker compose looks for in a folder.
+var composeFiles = []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
+
+// composeDirs are the folders under root, among ".", the repos and the runs' dirs (cleaned),
+// that hold a compose file: Settings asks a run there for a stop command, since Stop only runs
+// docker stop on containers bx labelled.
+func composeDirs(root string, repos []string, runs []runcfg.Run) []string {
+	var out []string
+	seen := map[string]bool{}
+	check := func(dir string) {
+		dir = filepath.Clean(dir)
+		if seen[dir] || !filepath.IsLocal(dir) && dir != "." {
+			return
+		}
+		seen[dir] = true
+		for _, name := range composeFiles {
+			if _, err := os.Stat(filepath.Join(root, dir, name)); err == nil {
+				out = append(out, dir)
+				return
+			}
+		}
+	}
+	check(".")
+	for _, r := range repos {
+		check(r)
+	}
+	for _, r := range runs {
+		check(r.Dir)
+	}
+	return out
 }
 
 func (s *Server) putRunConfig(w http.ResponseWriter, r *http.Request) {

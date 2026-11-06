@@ -83,6 +83,9 @@ type Shell struct {
 	Title   string `json:"title,omitempty"`   // the rename; "" = use Command
 	Command string `json:"command,omitempty"` // what the pane runs now
 	Run     string `json:"run,omitempty"`     // the run of a run shell; "" for a plain shell
+	// Expect is the port list of the run in the run config: "starting…" waits for one of
+	// them. nil for a plain shell or a run without port.
+	Expect []int `json:"expect,omitempty"`
 }
 
 // Label is what the shell is called: its title, else its command, else "shell".

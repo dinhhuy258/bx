@@ -237,8 +237,10 @@ func (m *Model) storyLine(r Row, width int, pal palette) string {
 
 // shellLine is the one line of a shell row: "$1  zsh", or "$2  dev server … npm" when the
 // shell has a title, with the command dim on the right. A run shell is "▶ web" with its ports
-// on the right, "starting…" before it listens, "■ queue … exited" once it is back at the
-// prompt. A plain shell that listens shows its ports in place of the command.
+// on the right; before it has one, "starting…" when its config declares a port, else
+// "running". Back at the prompt it is "■ queue … exited", or "■ api … :8000" while what it
+// started still serves (sail up -d). A plain shell that listens shows its ports in place of
+// the command.
 func (m *Model) shellLine(r Row, guide string, width int, pal palette, selected bool) string {
 	sh, _ := m.Shell(r.Story, r.K)
 	ports := portsText(m.RunPorts(r.Story, r.K), pal)
@@ -248,11 +250,19 @@ func (m *Model) shellLine(r Row, guide string, width int, pal palette, selected 
 			name = pal.bold.Render(name)
 		}
 		if PlainShell(sh.Command) {
-			return fit(" "+guide+pal.dim.Render("■")+" "+name, pal.dim.Render("exited"), width)
+			right := ports
+			if right == "" {
+				right = pal.dim.Render("exited")
+			}
+			return fit(" "+guide+pal.dim.Render("■")+" "+name, right, width)
 		}
 		right := ports
-		if right == "" {
+		switch {
+		case right != "":
+		case len(sh.Expect) > 0:
 			right = pal.dim.Render("starting…")
+		default:
+			right = pal.dim.Render("running")
 		}
 		return fit(" "+guide+pal.green.Render("▶")+" "+name, right, width)
 	}

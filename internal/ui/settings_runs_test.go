@@ -121,3 +121,36 @@ func TestRunForm(t *testing.T) {
 		t.Errorf("esc with edits: %v", r)
 	}
 }
+
+func TestRunFormHints(t *testing.T) {
+	s := runsSettings(t)
+	s.Key("Enter")
+	s.SetRunsPage("unem", RunsConfig{
+		Runs: []runcfg.Run{
+			{Name: "api", Cmd: "./vendor/bin/sail up", Dir: "unem-be"},
+			{Name: "queue", Cmd: "./vendor/bin/sail artisan queue:work", Dir: "unem-be/"},
+			{Name: "web", Cmd: "npm run dev", Dir: "unem-fe"},
+		},
+		Repos:   []string{"unem-be", "unem-fe"},
+		Compose: []string{"unem-be"},
+	})
+	lines := func() string { return strings.Join(s.runsLines(100, 40, false, newPalette(true)), "\n") }
+
+	s.openRunForm(s.runs.cfg.Runs[0], 0)
+	out := lines()
+	for _, want := range []string{"queue also runs in unem-be. Set the port api serves", "unem-be has a compose file. Set a stop command"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("api: missing %q in\n%s", want, out)
+		}
+	}
+	// a port and a stop settle both
+	s.runs.form.run.Port, s.runs.form.run.Stop = runcfg.Ports{8000}, "./vendor/bin/sail down"
+	if out := lines(); strings.Contains(out, "also runs in") || strings.Contains(out, "compose file") {
+		t.Errorf("api settled: hints in\n%s", out)
+	}
+	// web has its folder to itself, and no compose file there
+	s.openRunForm(s.runs.cfg.Runs[2], 2)
+	if out := lines(); strings.Contains(out, "also runs in") || strings.Contains(out, "compose file") {
+		t.Errorf("web: hints in\n%s", out)
+	}
+}

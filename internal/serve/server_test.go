@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -977,7 +978,7 @@ func TestShellRoutes(t *testing.T) {
 	}
 	f.Replies[listShells] = "$9\tbxsh-home-network-s1-1\thome-network\ts1\t1\tdev\tnpm\n"
 	snap, code := get[api.Snapshot](t, ts, "/api/projects/home-network")
-	if code != 200 || len(snap.Shells) != 1 || snap.Shells[0] != (api.Shell{Story: "s1", K: 1, Title: "dev", Command: "npm"}) {
+	if code != 200 || len(snap.Shells) != 1 || !reflect.DeepEqual(snap.Shells[0], api.Shell{Story: "s1", K: 1, Title: "dev", Command: "npm"}) {
 		t.Fatalf("%d %+v", code, snap.Shells)
 	}
 	if snap.Dirs[""] != repo || snap.Dirs["s1"] != wt {

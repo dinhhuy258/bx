@@ -610,8 +610,13 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 	if all, err := s.App.Shells(p); err != nil {
 		s.Log("tmux shells: %v", err)
 	} else {
+		cfg, _ := s.App.RunConfig(p) // a broken config: no expected ports
 		for _, sh := range all {
-			shells = append(shells, api.Shell{Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command, Run: sh.Run})
+			out := api.Shell{Story: sh.Story, K: sh.K, Title: sh.Title, Command: sh.Command, Run: sh.Run}
+			if r, ok := cfg.Find(sh.Run); ok && sh.Run != "" && len(r.Port) > 0 {
+				out.Expect = r.Port
+			}
+			shells = append(shells, out)
 		}
 	}
 	dirs := map[string]string{"": s.App.Dir(p, "")}

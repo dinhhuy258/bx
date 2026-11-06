@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -28,7 +29,11 @@ func TestScanPorts(t *testing.T) {
 	p, _ := s.App.LoadProject("home-network")
 	wt := s.Cfg.WorktreeDir("home-network", "s1")
 	os.MkdirAll(s.Cfg.RunsDir(), 0o755)
-	os.WriteFile(s.Cfg.RunFile("home-network"), []byte("[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\nopen = \"/login\"\n"), 0o644)
+	os.WriteFile(s.Cfg.RunFile("home-network"), []byte("[[run]]\nname = \"web\"\ncmd = \"npm run dev\"\nopen = \"/login\"\nport = [3000, 4000]\n"), 0o644)
+	// sail's compose project: its port is published by root's docker-proxy, under no pane
+	s.App.Docker = func(context.Context, ...string) (string, error) {
+		return `{"ID":"fedcba987654","Labels":"com.docker.compose.project.working_dir=` + wt + `","Ports":"0.0.0.0:8000->80/tcp"}` + "\n", nil
+	}
 	f.Replies[listShells] = "$7\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tnode\tweb\n"
 	f.Replies[listPanes] = "10\t$7\n20\t$5\n"
 	s.Proc = ports.Fake{
@@ -53,7 +58,8 @@ func TestScanPorts(t *testing.T) {
 	l := s.collect(p)
 	want := []ui.Port{
 		{Port: 3000, URL: "http://dev:3000/login", Forwarded: true, Shell: 1, Run: "web"},
-	} // 4000 is a chat's (an MCP server): not a run, neither listed nor forwarded
+		{Port: 8000, URL: "http://dev:8000/login", Shell: 1, Run: "web"}, // the live run's folder holds the compose project; published on all addresses, no forward
+	} // 4000 is a chat's (an MCP server): not a run even though web declares it, neither listed nor forwarded
 	if !reflect.DeepEqual(l.Ports["s1"], want) {
 		t.Errorf("ports: %+v", l.Ports)
 	}
@@ -119,6 +125,21 @@ func TestRunConfigRoutes(t *testing.T) {
 	if _, code = putAs[api.RunConfig](t, ts, "/api/projects/home-network/runconfig", good); code != 200 {
 		t.Fatalf("save: %d", code)
 	}
+	// a compose file in the project's folder, and in a run's dir
+	os.WriteFile(filepath.Join(s.Cfg.ProjectDir("home-network"), "compose.yaml"), nil, 0o644)
+	os.MkdirAll(filepath.Join(s.Cfg.ProjectDir("home-network"), "be"), 0o755)
+	os.WriteFile(filepath.Join(s.Cfg.ProjectDir("home-network"), "be", "docker-compose.yml"), nil, 0o644)
+	good.Runs = append(good.Runs, runcfg.Run{Name: "api", Cmd: "sail up", Dir: "be/"}, runcfg.Run{Name: "fe", Cmd: "npm run dev", Dir: "fe"})
+	if _, code = putAs[api.RunConfig](t, ts, "/api/projects/home-network/runconfig", good); code != 200 {
+		t.Fatalf("save: %d", code)
+	}
+	if rc, _ := get[api.RunConfig](t, ts, "/api/projects/home-network/runconfig"); !slices.Equal(rc.Compose, []string{".", "be"}) {
+		t.Errorf("compose: %q", rc.Compose)
+	}
+	good.Runs = good.Runs[:1]
+	if _, code = putAs[api.RunConfig](t, ts, "/api/projects/home-network/runconfig", good); code != 200 {
+		t.Fatalf("save: %d", code)
+	}
 	list, _ := get[[]api.RunConfigs](t, ts, "/api/runconfigs")
 	if len(list) != 1 || list[0].Project != "home-network" || !slices.Equal(list[0].Runs, []string{"web"}) {
 		t.Errorf("list: %+v", list)
@@ -169,4 +190,19 @@ func del(t *testing.T, ts *httptest.Server, path string) int {
 	}
 	r.Body.Close()
 	return r.StatusCode
+}
+
+func TestSnapshotRunExpect(t *testing.T) {
+	s, f, ts := newServer(t)
+	os.MkdirAll(s.Cfg.RunsDir(), 0o755)
+	os.WriteFile(s.Cfg.RunFile("home-network"), []byte("[[run]]\nname = \"api\"\ncmd = \"./vendor/bin/sail up\"\nport = 8000\n"), 0o644)
+	f.Replies[listShells] = "$7\tbxsh-home-network-s1-1\thome-network\ts1\t1\t\tbash\tapi\n" +
+		"$8\tbxsh-home-network-s1-2\thome-network\ts1\t2\t\tzsh\t\n"
+	snap, code := get[api.Snapshot](t, ts, "/api/projects/home-network")
+	if code != 200 || len(snap.Shells) != 2 {
+		t.Fatalf("%d %+v", code, snap.Shells)
+	}
+	if !slices.Equal(snap.Shells[0].Expect, []int{8000}) || snap.Shells[1].Expect != nil {
+		t.Errorf("expect: %+v", snap.Shells)
+	}
 }

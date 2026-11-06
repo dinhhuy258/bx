@@ -103,7 +103,7 @@ func (m *Model) gotRunsPage(msg runsPageMsg) {
 }
 
 func runsConfig(rc api.RunConfig) ui.RunsConfig {
-	return ui.RunsConfig{Runs: rc.Runs, Hide: rc.Hide, Show: rc.Show, Repos: rc.Repos, HasComments: rc.HasComments, Error: rc.Error, Errors: rc.Errors}
+	return ui.RunsConfig{Runs: rc.Runs, Hide: rc.Hide, Show: rc.Show, Repos: rc.Repos, Compose: rc.Compose, HasComments: rc.HasComments, Error: rc.Error, Errors: rc.Errors}
 }
 
 // saveRuns sends the page's config.

@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -26,6 +27,7 @@ type RunsConfig struct {
 	Runs        []runcfg.Run
 	Hide, Show  []int
 	Repos       []string
+	Compose     []string // the folders that hold a compose file, cleaned, "." for the project's
 	HasComments bool
 	Error       string              // the file does not parse
 	Errors      []runcfg.FieldError // why the last save was refused
@@ -631,6 +633,9 @@ func (s *Settings) runFormLines(w, h int, pal palette) []string {
 			mark, label = pal.arrow.Render("▸ "), pal.bold.Render(label)
 		}
 		lines = append(lines, truncate(" "+mark+label+val, w))
+		for _, hint := range s.runFormHint(k) {
+			lines = append(lines, truncate(strings.Repeat(" ", 15)+pal.amber.Render(hint), w))
+		}
 	}
 	lines = append(lines, " "+pal.dim.Render(strings.Repeat("─", min(w-2, 40))))
 	lines = append(lines, truncate(" "+pal.dim.Render("$ "+preview(f.finish())), w))
@@ -642,6 +647,35 @@ func (s *Settings) runFormLines(w, h int, pal palette) []string {
 		lines = append(lines, " "+pal.red.Render("✗ "+label+": "+e.Message))
 	}
 	return lines[:min(len(lines), h)]
+}
+
+// runFormHint is what the form asks of field k of a run whose containers bx cannot place:
+// under Ports, a port when another run shares the run's folder (a compose container there goes
+// to the run that declares its port); under Stop, a stop command when the folder holds a compose
+// file (Stop only runs docker stop on containers bx labelled).
+func (s *Settings) runFormHint(k int) []string {
+	f := s.runs.form
+	r, dir := f.run, filepath.Clean(f.run.Dir)
+	name := r.Name
+	if name == "" {
+		name = "this run"
+	}
+	switch k {
+	case rfPort:
+		if len(r.Port) > 0 {
+			return nil
+		}
+		for i, o := range s.runs.cfg.Runs {
+			if i != f.index && filepath.Clean(o.Dir) == dir {
+				return []string{o.Name + " also runs in " + dir + ". Set the port " + name + " serves", "so its links land on its row."}
+			}
+		}
+	case rfStop:
+		if r.Stop == "" && slices.Contains(s.runs.cfg.Compose, dir) {
+			return []string{dir + " has a compose file. Set a stop command", "(docker compose down) so Stop also stops its containers."}
+		}
+	}
+	return nil
 }
 
 // preview is the command line a run types, for the form: env, then the command, in the dir.
