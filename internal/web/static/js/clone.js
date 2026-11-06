@@ -54,7 +54,7 @@ export async function askCloneName(repo) {
   const fallback = projectName(repo);
   let value = fallback;
   for (;;) {
-    const v = await ask(`Clone ${repo}`, [{ name: 'name', label: 'Project name', value,
+    const v = await ask('Project name', [{ name: 'name', label: `Cloning ${repo} as`, value,
       hint: (x) => {
         const n = x.name || fallback, problem = nameProblem(n, taken);
         if (problem) return `⚠ ${problem}`;
@@ -124,7 +124,7 @@ export async function cloneFrom() {
       shown = rows().filter((r) => words.every((w) => r.name.toLowerCase().includes(w)));
       const typed = typedRepo(text);
       const direct = typed && !shown.some((r) => r.name.toLowerCase() === typed.toLowerCase())
-        ? h('button', { type: 'button', class: 'clone-row clone-direct', onclick: () => pick(typed) }, `Clone ${typed}`) : null;
+        ? h('button', { type: 'button', class: 'clone-row clone-direct', onclick: () => pick(typed) }, `Use ${typed}`) : null;
       list.replaceChildren(...[direct, ...shown.map(row)].filter(Boolean));
       note.textContent = error || (loading ? `Loading ${owner}…`
         : searching ? `Searching ${owner} for “${searching}”…`

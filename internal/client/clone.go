@@ -22,7 +22,7 @@ import (
 // cloneSearchDelay is the pause in typing before the clone picker searches GitHub.
 const cloneSearchDelay = 300 * time.Millisecond
 
-const cloneHelp = "type to search · tab/S-tab owner · ↑↓ move · ⏎ clone · esc cancel"
+const cloneHelp = "type to search · tab/S-tab owner · ↑↓ move · ⏎ next: project name · esc cancel"
 
 type (
 	cloneOwnersMsg struct {
@@ -304,7 +304,7 @@ func (m *Model) cloneRefresh() {
 	case p.Filter() == "":
 		p.Note = fmt.Sprintf("latest %d pushed · type to search %s", len(items), owner)
 	case p.Choice() == "" && typedRepo(p.Filter()) != "":
-		p.Note = "⏎ clone " + typedRepo(p.Filter())
+		p.Note = "⏎ use " + typedRepo(p.Filter()) + " · next: project name"
 	case p.Choice() == "":
 		p.Note = "no match in " + owner
 	default:
@@ -327,7 +327,7 @@ func (m *Model) cloneTyped() tea.Cmd {
 func (m *Model) cloneRepo(repo string) tea.Cmd {
 	m.picker, m.clone = nil, nil
 	m.cloneOwner, _, _ = strings.Cut(repo, "/")
-	m.openPrompt(ui.PromptCloneName, repo, "Project name for "+repo, naming.ProjectName(repo))
+	m.openPrompt(ui.PromptCloneName, repo, "Cloning "+repo+" as", naming.ProjectName(repo))
 	return nil
 }
 
@@ -345,7 +345,7 @@ func (m *Model) cloneAs(repo, name string) tea.Cmd {
 		bad = "project " + name + " already exists"
 	}
 	if bad != "" {
-		m.openPrompt(ui.PromptCloneName, repo, "Project name for "+repo, name)
+		m.openPrompt(ui.PromptCloneName, repo, "Cloning "+repo+" as", name)
 		m.prompt.Note = bad
 		return nil
 	}
