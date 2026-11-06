@@ -91,10 +91,12 @@ export function showProject(root, name) {
         : null);
   }
 
-  // runCard is a story's running runs: its links (new tab), then its run shells, with Stop and
-  // Restart. Nothing while the story runs no app.
+  // runCard is a story's running runs: their links (new tab), then the run shells, with Stop and
+  // Restart. Only ports a run owns (by name or by its shell): a plain shell's or an unowned one
+  // has nothing Stop could end. Nothing while the story runs no app.
   function runCard(story, runs) {
-    const ports = ((snap.live && snap.live.ports) || {})[story || ''] || [];
+    const ks = new Set(runs.map((sh) => sh.k));
+    const ports = (((snap.live && snap.live.ports) || {})[story || ''] || []).filter((p) => p.run || ks.has(p.shell));
     if (!runs.length && !ports.length) return null;
     const link = (p) => p.error
       ? h('div', { class: 'item' }, h('span', { class: 'item-text' }, h('span', { class: 'item-title' }, `:${p.port}`), h('span', { class: 'item-meta' }, p.error)))

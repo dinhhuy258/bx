@@ -99,6 +99,9 @@ func (s *Server) scanPorts() {
 			}
 		}
 		for _, f := range ports.Match(scan, cs, panes, parent, w) {
+			if f.Session != 0 && f.Shell == 0 && f.Run == "" {
+				continue // a chat's own process (an MCP server, a sidecar): no run, not to list or forward
+			}
 			open := ""
 			if r, ok := cfg.Find(f.Run); ok {
 				open = r.Open

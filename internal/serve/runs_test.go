@@ -35,7 +35,7 @@ func TestScanPorts(t *testing.T) {
 		Files: map[string]string{
 			"/proc/net/tcp": "  sl local rem st\n" +
 				"   0: 0100007F:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000 0 111 1\n" + // 3000 loopback, run web
-				"   1: 00000000:0FA0 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000 0 222 1\n", // 4000, session 1
+				"   1: 0100007F:0FA0 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000 0 222 1\n", // 4000 loopback, held by chat 1
 			"/proc/42/stat": "42 (node) S 10 0",
 			"/proc/43/stat": "43 (go) S 20 0",
 		},
@@ -53,8 +53,7 @@ func TestScanPorts(t *testing.T) {
 	l := s.collect(p)
 	want := []ui.Port{
 		{Port: 3000, URL: "http://dev:3000/login", Forwarded: true, Shell: 1, Run: "web"},
-		{Port: 4000, URL: "http://dev:4000", Session: 1},
-	}
+	} // 4000 is a chat's (an MCP server): not a run, neither listed nor forwarded
 	if !reflect.DeepEqual(l.Ports["s1"], want) {
 		t.Errorf("ports: %+v", l.Ports)
 	}
