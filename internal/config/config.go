@@ -89,7 +89,7 @@ func Default(root string) *Config {
 				"project_1": {"1"}, "project_2": {"2"}, "project_3": {"3"}, "project_4": {"4"}, "project_5": {"5"},
 				"project_6": {"6"}, "project_7": {"7"}, "project_8": {"8"}, "project_9": {"9"},
 				"settings": {"M-p"}, "stop_session": {"M-s"}, "delete_session": {"M-d"}, "close_shell": {"M-d"}, "cleanup": {"M-c"}, "artifacts": {"M-v"},
-				"review": {"M-g"}, "sync": {"M-u"}, "pr": {"M-m"}, "run": {"M-b"},
+				"review": {"M-g"}, "sync": {"M-u"}, "pr": {"M-m"}, "run": {"M-b"}, "jump_prompt": {"M-."},
 			},
 		},
 		Serve:  Serve{Listen: "auto", FilesListen: "auto", DocPages: []string{"docs/*.md", "docs/*/*.md"}},

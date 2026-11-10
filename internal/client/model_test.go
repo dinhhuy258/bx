@@ -2573,7 +2573,7 @@ func TestPromptStrip(t *testing.T) {
 	snap := snapshot("home-network", "running")
 	snap.SessionStates = map[int]api.SessionState{1: {State: "running", Prompt: "fix the   login\nredirect too"}}
 	h.update(snapshotMsg{project: "home-network", snap: snap})
-	if got := strip(); !strings.HasPrefix(got, " ❯ fix the login …") || !strings.HasSuffix(got, "click to jump ") {
+	if got := strip(); !strings.HasPrefix(got, " ❯ fix the login …") || !strings.HasSuffix(got, config.Pretty("M-.")+" jump ") {
 		t.Fatalf("strip %q", got)
 	}
 	if !strings.Contains(ansi.Strip(h.m.View().Content), "❯ fix the login") {
@@ -2603,11 +2603,14 @@ func TestPromptStrip(t *testing.T) {
 	if h.m.scrolling {
 		t.Fatal("a reply from another stream")
 	}
-	// no key by default; one bound in config works from Claude and names itself on the strip
-	h.m.cfg.Keys.List["jump_prompt"] = []string{"M-y"}
-	h.update(tea.KeyPressMsg{Code: 'y', Mod: tea.ModAlt})
-	if len(c.found) != 2 || !strings.Contains(strip(), config.Pretty("M-y")+" jump") {
-		t.Fatalf("bound key: sent %q, strip %q", c.found, strip())
+	// M-. works from Claude; with no key bound the strip says to click
+	h.update(tea.KeyPressMsg{Code: '.', Mod: tea.ModAlt})
+	if len(c.found) != 2 {
+		t.Fatalf("M-. sent %q", c.found)
+	}
+	delete(h.m.cfg.Keys.List, "jump_prompt")
+	if !strings.HasSuffix(strip(), "click to jump ") {
+		t.Fatalf("no key: strip %q", strip())
 	}
 	// it always fits the pane
 	for _, w := range []int{120, 70, 40} {
