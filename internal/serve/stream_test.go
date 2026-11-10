@@ -444,3 +444,60 @@ func TestLeftModeEndsOnceWhenThePaneIsLive(t *testing.T) {
 		t.Fatalf("ends = %d copying = %v, want one copy_end", ends, copying.Load())
 	}
 }
+
+// findFake is attachFake whose search finds its text 30 lines back, with the cursor on row 8.
+type findFake struct{ attachFake }
+
+func (f findFake) Run(args ...string) ([]byte, error) {
+	if len(args) > 4 && args[0] == "display-message" && strings.HasPrefix(args[4], "#{search_match}") {
+		return []byte("fix it\t30\t8\n"), nil
+	}
+	return f.attachFake.Run(args...)
+}
+
+func TestStreamFindReplies(t *testing.T) {
+	var fake *tmux.Fake
+	c, _ := pingStreamWith(t, time.Minute, time.Minute, func(f *tmux.Fake) tmux.Exec { fake = f; return findFake{attachFake{f}} })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	b, _ := json.Marshal(api.Control{Type: "find", Text: "  fix it\nand more  "})
+	if err := c.Write(ctx, websocket.MessageText, b); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		typ, data, err := c.Read(ctx)
+		if err != nil {
+			t.Fatalf("no found frame: %v", err)
+		}
+		var m api.Control
+		if typ != websocket.MessageText || json.Unmarshal(data, &m) != nil || m.Type != "found" {
+			continue
+		}
+		if m.Lines != -22 || !m.Found {
+			t.Fatalf("found %+v, want 22 lines back", m)
+		}
+		break
+	}
+	searched := false
+	for _, call := range fake.Calls {
+		if strings.Join(call[len(call)-2:], " ") == "search-backward-text ❯ fix it" {
+			searched = true
+		}
+	}
+	if !searched {
+		t.Fatalf("searched for the first line only: %v", fake.Calls)
+	}
+}
+
+func TestFindText(t *testing.T) {
+	for in, want := range map[string]string{
+		"  /review 12  \nmore": "/review 12",
+		"Yes just latest promt is enough. Can we make it clickable": "Yes just latest promt is",
+		strings.Repeat("é", 40):                                     strings.Repeat("é", maxFind),
+		"a " + strings.Repeat("x", 40):                              "a " + strings.Repeat("x", maxFind-2),
+	} {
+		if got := findText(in); got != want {
+			t.Errorf("findText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

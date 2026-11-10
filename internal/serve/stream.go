@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -211,6 +212,17 @@ func (s *Server) bridge(w http.ResponseWriter, r *http.Request, sid, uuid, label
 						copying.Store(true) // tell the client when Esc, Enter or the bottom leaves it
 					}
 					checkMode()
+				case ctl.Type == "find":
+					lines, found, err := s.App.Tmux.Find(sid, findText(ctl.Text))
+					if err != nil {
+						s.Log("stream %s: find: %v", label, err)
+					}
+					if lines > 0 {
+						copying.Store(true) // as for scroll: tell the client when it is back at live
+					}
+					b, _ := json.Marshal(api.Control{Type: "found", Lines: -lines, Found: found})
+					_ = c.Write(ctx, websocket.MessageText, b)
+					checkMode()
 				case ctl.Type == "page_seen" && uuid != "":
 					s.pageSeen(uuid, st)
 				}
@@ -268,6 +280,28 @@ const modeCheckDelay = 50 * time.Millisecond
 // modePollInterval is how often the server asks tmux whether a scrolled-back pane left
 // copy-mode without a key or scroll on this stream.
 const modePollInterval = 500 * time.Millisecond
+
+// maxFind is the most runes of a prompt a "find" searches for. Claude wraps a prompt at the
+// pane's width, so the search must fit on its first line, after the "❯ " mark, even on a phone.
+const maxFind = 30
+
+// findText is what a "find" frame searches for: the first line of its prompt, trimmed, and cut
+// to maxFind runes at a space when one is not too far back.
+func findText(text string) string {
+	text, _, _ = strings.Cut(strings.TrimSpace(text), "\n")
+	r := []rune(strings.TrimSpace(text))
+	if len(r) <= maxFind {
+		return string(r)
+	}
+	cut := maxFind
+	for i := maxFind; i >= maxFind/2; i-- {
+		if r[i] == ' ' {
+			cut = i
+			break
+		}
+	}
+	return strings.TrimSpace(string(r[:cut]))
+}
 
 // leftMode calls end once when the pane is in copy-mode for the client (copying) and tmux says
 // it no longer is. A failed ask changes nothing; the next one tries again.

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // promptLines is how far into a transcript FirstPrompt and AITitle look. The first prompt is
@@ -72,7 +73,12 @@ func aiTitle(line []byte) string {
 	return strings.Join(strings.Fields(l.AITitle), " ")
 }
 
-func userText(line []byte) string {
+// userText is the prompt on line with its whitespace collapsed, as a title wants it.
+func userText(line []byte) string { return strings.Join(strings.Fields(promptText(line)), " ") }
+
+// promptText is what the user typed on transcript line, trimmed, or "" when the line is not a
+// prompt (see FirstPrompt).
+func promptText(line []byte) string {
 	var l struct {
 		Type    string `json:"type"`
 		IsMeta  bool   `json:"isMeta"`
@@ -101,9 +107,101 @@ func userText(line []byte) string {
 		if a == nil || strings.TrimSpace(a[1]) == "" {
 			return "" // /model, /clear: no prompt yet
 		}
-		text = c[1] + " " + a[1]
+		text = c[1] + " " + strings.TrimSpace(a[1])
 	} else if strings.HasPrefix(text, "<") {
 		return ""
 	}
-	return strings.Join(strings.Fields(text), " ")
+	return strings.TrimSpace(text)
+}
+
+const (
+	tailChunk = 256 << 10 // LastPrompt first reads this much of a transcript's end
+	tailMax   = 16 << 20  // and doubles it up to this while it finds no prompt
+)
+
+// Prompts finds the last prompt of transcripts. It remembers how far it read each one, so the
+// next call reads only what Claude added since. The zero value is ready; it is safe for
+// concurrent use.
+type Prompts struct {
+	mu   sync.Mutex
+	seen map[string]promptSeen
+}
+
+type promptSeen struct {
+	end  int64  // bytes read, up to the end of the last whole line
+	text string // the last prompt in them
+}
+
+// Last returns the last thing the user typed in the transcript at path, trimmed but with its
+// lines kept, or "" when there is none (or none in its last tailMax bytes).
+func (p *Prompts) Last(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	size := fi.Size()
+	p.mu.Lock()
+	s, ok := p.seen[path]
+	p.mu.Unlock()
+	switch {
+	case !ok || size < s.end: // new, or rewritten
+		s = lastFromEnd(f, size)
+	case size > s.end:
+		buf := make([]byte, size-s.end)
+		if _, err := f.ReadAt(buf, s.end); err != nil {
+			return s.text
+		}
+		text, n := lastPrompt(buf, false)
+		s.end += int64(n)
+		if text != "" {
+			s.text = text
+		}
+	}
+	p.mu.Lock()
+	if p.seen == nil {
+		p.seen = map[string]promptSeen{}
+	}
+	p.seen[path] = s
+	p.mu.Unlock()
+	return s.text
+}
+
+// lastFromEnd reads the end of f (size bytes) for its last prompt, from tailChunk bytes and
+// doubling while there is none.
+func lastFromEnd(f *os.File, size int64) promptSeen {
+	for n := int64(tailChunk); ; n *= 2 {
+		start := max(0, size-n)
+		buf := make([]byte, size-start)
+		if _, err := f.ReadAt(buf, start); err != nil {
+			return promptSeen{}
+		}
+		text, used := lastPrompt(buf, start > 0)
+		if text != "" || start == 0 || n >= tailMax {
+			return promptSeen{end: start + int64(used), text: text}
+		}
+	}
+}
+
+// lastPrompt returns the last prompt among the whole lines of buf, and the length of buf up to
+// the end of its last whole line. partial skips the first line, which starts before buf.
+func lastPrompt(buf []byte, partial bool) (string, int) {
+	used := bytes.LastIndexByte(buf, '\n') + 1
+	lines := buf[:used]
+	if partial {
+		i := bytes.IndexByte(lines, '\n')
+		lines = lines[i+1:]
+	}
+	for len(lines) > 0 {
+		i := bytes.LastIndexByte(lines[:len(lines)-1], '\n')
+		if text := promptText(lines[i+1:]); text != "" {
+			return text, used
+		}
+		lines = lines[:i+1]
+	}
+	return "", used
 }

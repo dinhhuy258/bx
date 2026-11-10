@@ -326,6 +326,25 @@ func (a *App) Titles(p *state.Project, agents map[string]claude.Agent) map[int]s
 	return out
 }
 
+// LastPrompts finds the last prompt of every running session, for the web client to keep in
+// view. Sessions without one yet are left out.
+func (a *App) LastPrompts(p *state.Project, agents map[string]claude.Agent) map[int]string {
+	if a.Transcripts == "" {
+		return nil
+	}
+	out := map[int]string{}
+	for n, s := range p.Sessions {
+		ag, live := agents[s.UUID]
+		if !live || ag.Cwd == "" {
+			continue
+		}
+		if t := a.prompts.Last(claude.TranscriptPath(a.Transcripts, ag.Cwd, s.UUID)); t != "" {
+			out[n] = t
+		}
+	}
+	return out
+}
+
 // SetTitles stores titles from Titles on the sessions bx may still name, so a rename in
 // between wins. Reports whether anything changed.
 func (a *App) SetTitles(p *state.Project, titles map[int]string) (bool, error) {

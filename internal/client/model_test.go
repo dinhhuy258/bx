@@ -440,6 +440,7 @@ func (f *fakeBackend) SaveSettings(_ context.Context, values map[string]string) 
 type fakeConn struct {
 	resized  [][2]int
 	scrolled []int
+	found    []string
 	seen     int
 	closed   bool
 }
@@ -450,6 +451,10 @@ func (c *fakeConn) Resize(_ context.Context, cols, rows int) error {
 }
 func (c *fakeConn) Scroll(_ context.Context, lines int) error {
 	c.scrolled = append(c.scrolled, lines)
+	return nil
+}
+func (c *fakeConn) Find(_ context.Context, prompt string) error {
+	c.found = append(c.found, prompt)
 	return nil
 }
 func (c *fakeConn) PageSeen(context.Context) error {
@@ -734,7 +739,7 @@ func TestEnterStreamsTheSessionAndFocusesClaude(t *testing.T) {
 		t.Fatalf("C-q on the open session must not reconnect: %q", h.opened)
 	}
 	h.update(tea.WindowSizeMsg{Width: 140, Height: 40})
-	if got := h.conns[0].resized; len(got) == 0 || got[len(got)-1] != [2]int{140 - ui.ListWidth - 1, 37} {
+	if got := h.conns[0].resized; len(got) == 0 || got[len(got)-1] != [2]int{140 - ui.ListWidth - 1, 40 - 1 - paneHeader} {
 		t.Fatalf("resize not sent: %v", got)
 	}
 }
@@ -2557,6 +2562,62 @@ func TestPageStripOpensFromEitherPane(t *testing.T) {
 	}
 }
 
+func TestPromptStrip(t *testing.T) {
+	h := start(t, 120, 30, "running")
+	h.press("Enter")
+	c := h.conns[0]
+	strip := func() string { return ansi.Strip(h.m.promptStrip()) }
+	if !strings.Contains(strip(), "no prompt yet") {
+		t.Fatalf("before a prompt: %q", strip())
+	}
+	snap := snapshot("home-network", "running")
+	snap.SessionStates = map[int]api.SessionState{1: {State: "running", Prompt: "fix the   login\nredirect too"}}
+	h.update(snapshotMsg{project: "home-network", snap: snap})
+	if got := strip(); !strings.HasPrefix(got, " ❯ fix the login …") || !strings.HasSuffix(got, "click to jump ") {
+		t.Fatalf("strip %q", got)
+	}
+	if !strings.Contains(ansi.Strip(h.m.View().Content), "❯ fix the login") {
+		t.Fatal("the strip is not on screen")
+	}
+	off := ui.ListWidth + 1
+	h.update(tea.MouseClickMsg{X: off - 3, Y: promptRow, Button: tea.MouseLeft}) // on the list
+	h.update(tea.MouseClickMsg{X: off + 5, Y: ruleRow, Button: tea.MouseLeft})   // the rule, no page
+	if len(c.found) != 0 {
+		t.Fatalf("clicks off the strip: %q", c.found)
+	}
+	h.update(tea.MouseClickMsg{X: off + 5, Y: promptRow, Button: tea.MouseLeft})
+	if len(c.found) != 1 || c.found[0] != "fix the   login\nredirect too" {
+		t.Fatalf("click sent %q", c.found)
+	}
+	// the reply: back in history like a scroll, or a flash when it isn't there
+	h.update(foundMsg{conn: c, lines: -22, found: true})
+	if !h.m.scrolling || !h.m.claudeFocused {
+		t.Fatal("found back in history: the pane scrolls")
+	}
+	h.update(copyEndMsg{conn: c})
+	h.update(foundMsg{conn: c, found: false})
+	if h.m.scrolling || !strings.Contains(h.m.flash, "not found") {
+		t.Fatalf("not found: scrolling %v flash %q", h.m.scrolling, h.m.flash)
+	}
+	h.update(foundMsg{conn: &fakeConn{}, lines: -5, found: true}) // an old stream's
+	if h.m.scrolling {
+		t.Fatal("a reply from another stream")
+	}
+	// no key by default; one bound in config works from Claude and names itself on the strip
+	h.m.cfg.Keys.List["jump_prompt"] = []string{"M-y"}
+	h.update(tea.KeyPressMsg{Code: 'y', Mod: tea.ModAlt})
+	if len(c.found) != 2 || !strings.Contains(strip(), config.Pretty("M-y")+" jump") {
+		t.Fatalf("bound key: sent %q, strip %q", c.found, strip())
+	}
+	// it always fits the pane
+	for _, w := range []int{120, 70, 40} {
+		h.update(tea.WindowSizeMsg{Width: w, Height: 30})
+		if got := ansi.StringWidth(h.m.promptStrip()); got != h.m.term.Cols() {
+			t.Errorf("width %d: strip %d cols, pane %d", w, got, h.m.term.Cols())
+		}
+	}
+}
+
 func TestPageStripClicks(t *testing.T) {
 	h := start(t, 120, 30, "idle")
 	var browsed []string
@@ -2571,12 +2632,12 @@ func TestPageStripClicks(t *testing.T) {
 	if h.m.page == nil {
 		t.Fatal("a click off the strip")
 	}
-	h.update(tea.MouseClickMsg{X: off + closeAt, Y: paneHeader - 1, Button: tea.MouseLeft}) // ✕
+	h.update(tea.MouseClickMsg{X: off + closeAt, Y: ruleRow, Button: tea.MouseLeft}) // ✕
 	if h.m.page != nil || len(browsed) != 0 || c.seen != 1 {
 		t.Fatalf("✕: page %v browsed %q seen %d", h.m.page, browsed, c.seen)
 	}
 	h.update(page)
-	h.update(tea.MouseClickMsg{X: off + 6, Y: paneHeader - 1, Button: tea.MouseLeft}) // the name
+	h.update(tea.MouseClickMsg{X: off + 6, Y: ruleRow, Button: tea.MouseLeft}) // the name
 	if h.m.page != nil || len(browsed) != 1 || c.seen != 2 {
 		t.Fatalf("open: page %v browsed %q seen %d", h.m.page, browsed, c.seen)
 	}

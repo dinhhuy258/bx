@@ -113,6 +113,13 @@ function showTerminal(root, project, target) {
     h('span', { class: 'page-ic' }, icon('doc')), h('span', { class: 'page-tx' }, pageName, pageSub), pageOpen,
     h('button', { class: 'ib', 'aria-label': 'Dismiss', onclick: () => seePage() }, '×'));
   const keep = (e) => e.preventDefault(); // tapping a button must not close the keyboard
+  // the session's last prompt, kept in view under the header (sessions only); a tap scrolls the
+  // terminal back to where it was typed
+  let lastPrompt = '';
+  const promptText = h('span', { class: 'sp-text' });
+  const promptBar = h('button', { class: 'sticky-prompt', hidden: true, 'aria-label': 'Jump to your last prompt',
+    onpointerdown: keep, onclick: () => jumpPrompt() },
+    h('span', { class: 'sp-mark', 'aria-hidden': 'true' }, '❯'), promptText, h('span', { class: 'sp-jump' }, 'Jump ↑'));
   const input = h('textarea', { rows: 1, placeholder: shell ? 'Run a command…' : 'Message Claude…', autocapitalize: 'off',
     autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'enter' });
   // ▲/▼ send on pointerdown, then repeat while held; a keyboard-activated click (detail 0) sends too
@@ -147,6 +154,7 @@ function showTerminal(root, project, target) {
   const screen = h('div', { class: 'session' },
     h('header', { class: 'bar sbar' }, h('a', { href: backHref, class: 'ib', 'aria-label': 'Back' }, icon('back')),
       h('h1', { class: 'ttl' }, titleEl, metaEl), copyBtn, escBtn, menuBtn, stateLine),
+    shell ? null : promptBar,
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice, shell ? null : pageChip, shell ? null : slashCommandsEl),
     inputRow, shell ? null : fileInput);
   root.append(screen);
@@ -201,6 +209,7 @@ function showTerminal(root, project, target) {
         let m = null;
         try { m = JSON.parse(e.data); } catch { return; }
         if (m.type === 'copy_end') setScrolled(0);
+        else if (m.type === 'found') found(m);
         else if (m.type === 'page' && m.page && !shell) showPage(m.page, m.new);
         else if (m.type === 'page_seen') hidePage();
         return;
@@ -385,6 +394,28 @@ function showTerminal(root, project, target) {
   // keys typed while scrolled back would go to tmux copy-mode; go back to live first
   function toLive() { if (scrolled) control({ type: 'scroll', lines: 0 }); setScrolled(0); }
   function send(bytes) { toLive(); sendBytes(bytes); }
+  // setPrompt shows the session's last prompt on one paragraph; the bar's height changes the
+  // terminal's, so it lays out again
+  function setPrompt(p) {
+    if (p === lastPrompt) return;
+    lastPrompt = p;
+    promptText.textContent = p.replace(/\s+/g, ' ').trim();
+    promptBar.hidden = !p;
+    layout();
+  }
+  // jumpPrompt asks the server to scroll back to the last prompt; found() takes the reply
+  function jumpPrompt() {
+    if (!lastPrompt) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) { toast('Not connected'); return; }
+    stopGlide();
+    control({ type: 'find', text: lastPrompt });
+  }
+  // found is the server's reply: the pane went back lines (<0) to the prompt, or the prompt is on
+  // screen already (0), or it isn't in the history (pasted text Claude shows as [Pasted text], /clear)
+  function found(m) {
+    if (!m.found) toast('Prompt not found in the terminal history');
+    else if (m.lines < 0) setScrolled(m.lines);
+  }
   // leaving while scrolled back would leave the pane in copy-mode for the next client (see onopen)
   function leaveScroll() { if (scrolled) control({ type: 'scroll', lines: 0 }); }
 
@@ -712,6 +743,7 @@ function showTerminal(root, project, target) {
     const st = (snap.session_states || {})[num] || { state: '' };
     cur = { s, st };
     titleEl.textContent = s.title || `#${num}`;
+    setPrompt(st.prompt || '');
     setState(st.state);
     lastState = st.state;
     if (ended && st.state === 'done') noticeText.textContent = 'Session stopped';

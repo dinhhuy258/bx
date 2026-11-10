@@ -82,6 +82,7 @@ type Backend interface {
 type Conn interface {
 	Resize(ctx context.Context, cols, rows int) error
 	Scroll(ctx context.Context, lines int) error
+	Find(ctx context.Context, prompt string) error
 	PageSeen(ctx context.Context) error
 	Close()
 }
@@ -304,10 +305,11 @@ type Model struct {
 	width, height int
 	narrow        bool
 	claudeFocused bool
-	focusMode     bool          // Claude pane fills the width
-	scrolling     bool          // the Claude pane is back in history in tmux copy-mode: keys go to tmux until it leaves
-	page          *api.Artifact // the page Claude just wrote in the pane's session, until it is opened or dismissed
-	pageNew       bool          // page is the first write of its name: "New page", else "Updated"
+	focusMode     bool                      // Claude pane fills the width
+	scrolling     bool                      // the Claude pane is back in history in tmux copy-mode: keys go to tmux until it leaves
+	page          *api.Artifact             // the page Claude just wrote in the pane's session, until it is opened or dismissed
+	pageNew       bool                      // page is the first write of its name: "New page", else "Updated"
+	prompts       map[string]map[int]string // the last prompt of each running session, by project and number
 	prompt        ui.Prompt
 	seq           string
 	flash         string
@@ -603,6 +605,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.page = nil
 		}
 		return m, nil
+	case foundMsg:
+		if msg.conn == m.conn {
+			m.found(msg)
+		}
+		return m, nil
 	case tea.MouseClickMsg:
 		return m, m.click(msg)
 	case clipboardMsg:
@@ -734,6 +741,16 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 		}
 	}
 	um.SetStates(states)
+	if m.prompts == nil {
+		m.prompts = map[string]map[int]string{}
+	}
+	prompts := map[int]string{}
+	for n, st := range msg.snap.SessionStates {
+		if st.Prompt != "" {
+			prompts[n] = st.Prompt
+		}
+	}
+	m.prompts[msg.project] = prompts
 	if msg.project == m.project {
 		m.m = um
 		if m.pendingSel != 0 {
@@ -1061,6 +1078,10 @@ func (m *Model) runListAction(action string) (tea.Model, tea.Cmd) {
 		if row.Kind == ui.RowStory && row.Story != "" {
 			return m, m.openPR(row.Story, "")
 		}
+	case "jump_prompt": // the session in the pane: back to its last prompt
+		if sess != nil && num == m.target.Num {
+			m.jumpPrompt()
+		}
 	case "artifacts": // the page Claude just made in it, else the list of its pages
 		if sess != nil && num == m.target.Num && m.page != nil {
 			return m, m.openPage()
@@ -1242,12 +1263,48 @@ func (m *Model) scroll(lines int) {
 		return
 	}
 	_ = m.conn.Scroll(m.ctx, lines)
-	if lines < 0 && !m.scrolling {
-		m.scrolling = true
-		if !m.claudeFocused {
-			m.claudeFocused = true
-			m.resizeTerm()
-		}
+	if lines < 0 {
+		m.scrolledBack()
+	}
+}
+
+// scrolledBack notes that the pane went back into history: the keys go to tmux copy-mode, so
+// the Claude pane takes the focus.
+func (m *Model) scrolledBack() {
+	if m.scrolling {
+		return
+	}
+	m.scrolling = true
+	if !m.claudeFocused {
+		m.claudeFocused = true
+		m.resizeTerm()
+	}
+}
+
+// panePrompt is the last prompt of the session in the pane, "" for a shell or none yet.
+func (m *Model) panePrompt() string {
+	if m.target.Zero() || m.target.Shell() {
+		return ""
+	}
+	return m.prompts[m.project][m.target.Num]
+}
+
+// jumpPrompt asks the server to scroll the pane back to where its last prompt was typed; found
+// handles the reply.
+func (m *Model) jumpPrompt() {
+	if p := m.panePrompt(); p != "" && m.conn != nil {
+		_ = m.conn.Find(m.ctx, p)
+	}
+}
+
+// found is the reply to jumpPrompt: the pane is back in history at the prompt, or the prompt
+// was already on screen, or it isn't in the pane's history (pasted text, /clear).
+func (m *Model) found(msg foundMsg) {
+	switch {
+	case !msg.found:
+		m.setFlash("prompt not found in the pane's history")
+	case msg.lines < 0:
+		m.scrolledBack()
 	}
 }
 
@@ -2355,8 +2412,13 @@ func (m *Model) empty() string {
 	return strings.Join(lines, "\n") + "\n" + m.flash
 }
 
-// paneHeader is the rows above the Claude pane: the title line and the rule under it.
-const paneHeader = 2
+// paneHeader is the rows above the Claude pane: the title line, the rule under it (ruleRow) and
+// the line with the session's last prompt (promptRow).
+const (
+	paneHeader = 3
+	ruleRow    = 1
+	promptRow  = 2
+)
 
 // ruleColor draws the rules of the pane without the focus; focusColor the focused one and the separator.
 const ruleColor, focusColor = "#3b4261", "#7aa2f7"
@@ -2377,13 +2439,45 @@ func (m *Model) pane() string {
 		if m.paneClosed { // a shell that ended: its last output, faint
 			screen = ui.Fade(screen)
 		}
-		return m.paneTitle() + "\n" + rule + "\n" + screen
+		return m.paneTitle() + "\n" + rule + "\n" + m.promptStrip() + "\n" + screen
 	}
 	hint := "\n  No session open.\n  Enter on a session shows it here."
 	if key := m.cfg.Keys.First(m.cfg.Keys.List, "new_session"); key != "" {
 		hint += " " + config.Pretty(key) + " starts one."
 	}
-	return strings.Repeat(" ", m.term.Cols()) + "\n" + rule + "\n" + lipgloss.NewStyle().Width(m.term.Cols()).Height(m.term.Rows()).Foreground(lipgloss.Color("#565f89")).Render(hint)
+	return strings.Repeat(" ", m.term.Cols()) + "\n" + rule + "\n" + strings.Repeat(" ", m.term.Cols()) + "\n" + lipgloss.NewStyle().Width(m.term.Cols()).Height(m.term.Rows()).Foreground(lipgloss.Color("#565f89")).Render(hint)
+}
+
+// promptStrip is the line under the rule: " ❯ fix the login redirect…   click to jump ", the
+// first line of the last prompt of the session in the pane. A click on it scrolls back to where
+// the prompt was typed. A shell has a blank line.
+func (m *Model) promptStrip() string {
+	cols := m.term.Cols()
+	bg := lipgloss.NewStyle().Background(lipgloss.Color("#1f2335"))
+	p := m.panePrompt()
+	if p == "" {
+		if m.target.Shell() {
+			return strings.Repeat(" ", cols)
+		}
+		return bg.Foreground(lipgloss.Color("#565f89")).Width(cols).Render(ansi.Truncate(" ❯ no prompt yet", cols, ""))
+	}
+	first, _, more := strings.Cut(p, "\n")
+	first = strings.Join(strings.Fields(first), " ")
+	if more {
+		first += " …"
+	}
+	hint := "  click to jump "
+	if k := m.cfg.Keys.First(m.cfg.Keys.List, "jump_prompt"); k != "" {
+		hint = "  " + config.Pretty(k) + " jump "
+	}
+	if cols < 50 {
+		hint = ""
+	}
+	mark := bg.Foreground(lipgloss.Color("#bb9af7")).Render(" ❯ ")
+	text := ansi.Truncate(first, max(cols-3-ansi.StringWidth(hint), 0), "…")
+	gap := max(cols-3-ansi.StringWidth(text)-ansi.StringWidth(hint), 0)
+	return mark + bg.Foreground(lipgloss.Color("#c0caf5")).Render(text+strings.Repeat(" ", gap)) +
+		bg.Foreground(lipgloss.Color("#565f89")).Render(hint)
 }
 
 // paneTitle is the line above the Claude pane: " project › group › [2] title ··· ○ idle ". It names
@@ -2560,10 +2654,11 @@ func (m *Model) pageStrip(ch, color string) (line string, closeAt int) {
 	return line, closeAt
 }
 
-// click handles a mouse click: on the page strip, ✕ dismisses the page and anywhere else opens it.
+// click handles a mouse click: on the page strip, ✕ dismisses the page and anywhere else opens
+// it; on the prompt strip, it jumps back to the prompt.
 func (m *Model) click(msg tea.MouseClickMsg) tea.Cmd {
-	if m.page == nil || msg.Button != tea.MouseLeft || msg.Y != paneHeader-1 || m.picker != nil || m.switcher != nil ||
-		m.settings != nil || m.showKeys || m.prompt.Active() || m.cleanIDs != nil || m.m == nil {
+	if msg.Button != tea.MouseLeft || (msg.Y != ruleRow || m.page == nil) && msg.Y != promptRow || m.picker != nil || m.switcher != nil ||
+		m.settings != nil || m.review != nil || m.pr != nil || m.showKeys || m.prompt.Active() || m.cleanIDs != nil || m.m == nil {
 		return nil
 	}
 	x := msg.X
@@ -2575,6 +2670,10 @@ func (m *Model) click(msg tea.MouseClickMsg) tea.Cmd {
 		x -= ui.ListWidth + 1
 	}
 	if x < 0 {
+		return nil
+	}
+	if msg.Y == promptRow {
+		m.jumpPrompt()
 		return nil
 	}
 	_, closeAt := m.pageStrip("━", focusColor)

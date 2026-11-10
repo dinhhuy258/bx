@@ -42,11 +42,13 @@ type MCPDoc struct {
 
 // SessionState is the derived state of one session, keyed by session number in Snapshot.
 // State is "starting", "running", "waiting", "idle", "done" or "gone"; Text is the TUI's row
-// label. Unread marks an idle session that finished a turn nobody has opened since.
+// label. Unread marks an idle session that finished a turn nobody has opened since. Prompt is
+// the last thing the user typed in a running session, lines kept.
 type SessionState struct {
 	State  string `json:"state"`
 	Text   string `json:"text"`
 	Unread bool   `json:"unread,omitempty"`
+	Prompt string `json:"prompt,omitempty"`
 }
 
 // ProjectSummary is one row of GET /api/projects.
@@ -206,13 +208,17 @@ type Settings struct {
 
 // Control is a text frame from the client. Binary frames are terminal bytes in both directions.
 type Control struct {
-	// client: "resize", "scroll" (back into history in copy-mode) or "page_seen" (the page was opened
-	// or dismissed); server: "copy_end" (the pane left copy-mode), "page" (Claude wrote a page; also sent when the stream
+	// client: "resize", "scroll" (back into history in copy-mode), "find" (scroll back to the last
+	// line with Text) or "page_seen" (the page was opened or dismissed); server: "found" (the
+	// reply to find), "copy_end" (the pane left copy-mode), "page" (Claude wrote a page; also sent when the stream
 	// opens, until a client sends page_seen) or "page_seen" (another client saw it)
 	Type  string `json:"type"`
 	Cols  int    `json:"cols,omitempty"`
 	Rows  int    `json:"rows,omitempty"`
-	Lines int    `json:"lines,omitempty"` // scroll: <0 back into history, >0 toward live, 0 back to live
+	Lines int    `json:"lines,omitempty"` // scroll: <0 back into history, >0 toward live, 0 back to live; found: how far back (<0)
+	// find: the text to look for back in history; found: whether it was there
+	Text  string `json:"text,omitempty"`
+	Found bool   `json:"found,omitempty"`
 	// page: the page, and whether this is the first write of its name ("New page", else "Updated")
 	Page *Artifact `json:"page,omitempty"`
 	New  bool      `json:"new,omitempty"`

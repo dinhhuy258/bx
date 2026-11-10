@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunnerArgs(t *testing.T) {
@@ -135,6 +137,49 @@ func TestScroll(t *testing.T) {
 	}
 }
 
+func TestFind(t *testing.T) {
+	q := "display-message -p -t $4 #{search_match}\t#{scroll_position}\t#{copy_cursor_y}"
+	for name, c := range map[string]struct {
+		reply, calls string
+		lines        int
+		found        bool
+	}{
+		"back in history": {"fix\tit\t30\t8", "send-keys -t $4 -X -N 8 scroll-down", 22, true},
+		"at the top":      {"fix\t30\t0", "", 30, true},
+		"on the screen":   {"fix\t5\t8", "send-keys -t $4 -X cancel", 0, true},
+		"not found":       {"\t0\t9", "send-keys -t $4 -X cancel", 0, false},
+	} {
+		f := &Fake{Replies: map[string]string{q: c.reply + "\n"}}
+		lines, found, err := New(f).Find("$4", "fix it")
+		if err != nil || lines != c.lines || found != c.found {
+			t.Errorf("%s: %d %v %v", name, lines, found, err)
+		}
+		var calls []string
+		for _, call := range f.Calls {
+			calls = append(calls, strings.Join(call, " "))
+		}
+		// the prompt mark first; text alone only when nothing has the mark
+		needles := []string{"❯ fix it"}
+		if !c.found {
+			needles = []string{"❯ fix it", "> fix it", "fix it"}
+		}
+		var w []string
+		for _, n := range needles {
+			w = append(w, "send-keys -t $4 -X cancel", "copy-mode -e -t $4", "send-keys -t $4 -X search-backward-text "+n, q)
+		}
+		if c.calls != "" {
+			w = append(w, c.calls)
+		}
+		want := strings.Join(w, "|")
+		if got := strings.Join(calls, "|"); got != want {
+			t.Errorf("%s: calls\n%s\nwant\n%s", name, got, want)
+		}
+	}
+	if _, _, err := New(&Fake{Errs: map[string]error{"copy-mode -e -t $4": errors.New("no pane")}}).Find("$4", "x"); err == nil {
+		t.Error("a failed copy-mode is an error")
+	}
+}
+
 func TestPrepareCopy(t *testing.T) {
 	f := &Fake{Replies: map[string]string{"display-message -p -t $4 #{pane_in_mode}": "1\n"}}
 	tm := New(f)
@@ -223,6 +268,28 @@ func TestRealServer(t *testing.T) {
 	}
 	if err := tm.KillSession(id); err != nil {
 		t.Fatal(err)
+	}
+
+	// Find scrolls back to the line and puts it at the top
+	script := `for i in $(seq 1 50); do echo line $i; done; echo "> fix the sticky bar"; seq 51 100; echo "you said fix the sticky bar"; seq 101 120; sleep 30`
+	id, err = tm.NewSession("bx-p-2", dir, "bash -c '"+script+"'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	lines, found, err := tm.Find(id, "fix the sticky")
+	if err != nil || !found || lines <= 0 {
+		t.Fatalf("find: %d %v %v", lines, found, err)
+	}
+	top, _ := exec.Command("tmux", "-S", r.Socket, "capture-pane", "-p", "-t", id, "-S", "-"+strconv.Itoa(lines), "-E", "-"+strconv.Itoa(lines)).Output()
+	if !strings.Contains(string(top), "> fix the sticky") { // the prompt, not the later quote
+		t.Fatalf("top line %q", top)
+	}
+	if lines, found, err := tm.Find(id, "not in there"); err != nil || found || lines != 0 {
+		t.Fatalf("missing: %d %v %v", lines, found, err)
+	}
+	if in, _ := tm.InMode(id); in {
+		t.Fatal("not found leaves the pane live")
 	}
 }
 

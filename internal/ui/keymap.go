@@ -29,6 +29,7 @@ var keymapGroups = []keymapGroup{
 		{"delete_session", "delete · removes uploads and artifacts; transcript stays in ~/.claude"},
 		{"rename", "rename"},
 		{"artifacts", "artifacts · the page it just made, else the pages it made"},
+		{"jump_prompt", "back to its last prompt (or click the ❯ line)"},
 	}},
 	{"SHELL", "the selected $n row", []keymapItem{
 		{"open", "open the shell"},

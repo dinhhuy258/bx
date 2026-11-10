@@ -66,3 +66,61 @@ func TestAITitle(t *testing.T) {
 		t.Error("a missing transcript has no title")
 	}
 }
+
+func TestPromptsLast(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	write := func(s string) {
+		t.Helper()
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var p Prompts
+	if p.Last(path) != "" {
+		t.Fatal("a missing transcript has no prompt")
+	}
+	write(`{"type":"user","message":{"content":"first"}}` + "\n" +
+		`{"type":"user","message":{"content":"  fix the\n  login  "}}` + "\n" +
+		`{"type":"user","message":{"content":[{"type":"tool_result","content":"x"}]}}` + "\n" +
+		`{"type":"assistant","message":{"content":"done"}}` + "\n")
+	if got := p.Last(path); got != "fix the\n  login" {
+		t.Fatalf("got %q: lines kept, ends trimmed, tool results skipped", got)
+	}
+	// a line still being written doesn't count until it is whole
+	write(`{"type":"user","message":{"content":"/build`)
+	if got := p.Last(path); got != "fix the\n  login" {
+		t.Fatalf("half a line: %q", got)
+	}
+	write(`"}}` + "\n")
+	if got := p.Last(path); got != "/build" {
+		t.Fatalf("appended: %q", got)
+	}
+	write(`{"type":"user","message":{"content":"<command-name>/review</command-name>\n<command-args> 12 </command-args>"}}` + "\n")
+	if got := p.Last(path); got != "/review 12" {
+		t.Fatalf("command: %q", got)
+	}
+	// rewritten shorter: read again from the end
+	os.WriteFile(path, []byte(`{"type":"user","message":{"content":"new"}}`+"\n"), 0o644)
+	if got := p.Last(path); got != "new" {
+		t.Fatalf("rewritten: %q", got)
+	}
+
+	// a prompt further back than the first chunk, and one split by the chunk's start
+	far := filepath.Join(t.TempDir(), "far.jsonl")
+	prompt := `{"type":"user","message":{"content":"far back"}}` + "\n"
+	filler := strings.Repeat(`{"type":"assistant","message":{"content":"`+strings.Repeat("x", 1000)+`"}}`+"\n", tailChunk/1000)
+	os.WriteFile(far, []byte(prompt+filler), 0o644)
+	if got := new(Prompts).Last(far); got != "far back" {
+		t.Fatalf("far: %q", got)
+	}
+	split := filepath.Join(t.TempDir(), "split.jsonl")
+	os.WriteFile(split, []byte(prompt+strings.Repeat("y", tailChunk-len(prompt)/2-1)+"\n"), 0o644)
+	if got := new(Prompts).Last(split); got != "far back" {
+		t.Fatalf("split: %q", got)
+	}
+}

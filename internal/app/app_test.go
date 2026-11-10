@@ -513,3 +513,25 @@ func TestCloseStoryRemovesItsReview(t *testing.T) {
 		t.Fatalf("review file kept: %v", err)
 	}
 }
+
+func TestLastPrompts(t *testing.T) {
+	a, f, p := newApp(t)
+	f.Replies[listSessions] = ""
+	num, _ := a.NewChat(p, "")
+	cwd := "/work/home-network"
+	agents := map[string]claude.Agent{"fixed-uuid": {SessionID: "fixed-uuid", Cwd: cwd}}
+	if got := a.LastPrompts(p, agents); got != nil {
+		t.Fatalf("no transcripts folder: %v", got)
+	}
+	a.Transcripts = t.TempDir()
+	path := claude.TranscriptPath(a.Transcripts, cwd, "fixed-uuid")
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte(`{"type":"user","message":{"content":"first"}}
+{"type":"user","message":{"content":"then fix the lease"}}`+"\n"), 0o644)
+	if got := a.LastPrompts(p, map[string]claude.Agent{}); len(got) != 0 {
+		t.Fatalf("a session that is not running is not read: %v", got)
+	}
+	if got := a.LastPrompts(p, agents); len(got) != 1 || got[num] != "then fix the lease" {
+		t.Fatalf("prompts = %v", got)
+	}
+}

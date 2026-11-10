@@ -606,6 +606,12 @@ func (s *Server) getProject(w http.ResponseWriter, r *http.Request) {
 		s.Log("tmux sessions: %v", err)
 	}
 	states := sessionStates(p, live, tm, err == nil)
+	for n, t := range s.App.LastPrompts(p, live.Agents) {
+		if st, ok := states[n]; ok {
+			st.Prompt = t
+			states[n] = st
+		}
+	}
 	shells := []api.Shell{}
 	if all, err := s.App.Shells(p); err != nil {
 		s.Log("tmux shells: %v", err)

@@ -292,6 +292,64 @@ func (t *Tmux) Scroll(sid string, lines int) error {
 	return nil
 }
 
+// promptMarks are what Claude Code draws before a prompt in its history, newest first. Find
+// looks for a prompt with one of them before it, so it doesn't stop where Claude quotes it.
+var promptMarks = []string{"❯ ", "> "}
+
+// Find scrolls a session's view back to the last line where the user typed text (Claude's
+// prompt mark, then text), else to the last line with text anywhere, put at the top, and returns
+// how many lines back that is. A line still on the live screen leaves the pane live (0, true);
+// text not found anywhere also leaves it live (0, false).
+func (t *Tmux) Find(sid, text string) (int, bool, error) {
+	if text == "" {
+		return 0, false, nil
+	}
+	var match string
+	var pos, y int
+	for _, needle := range append([]string{promptMarks[0] + text, promptMarks[1] + text}, text) {
+		_, _ = t.x.Run("send-keys", "-t", sid, "-X", "cancel") // search from live, not from a scroll
+		if _, err := t.x.Run("copy-mode", "-e", "-t", sid); err != nil {
+			return 0, false, err
+		}
+		if _, err := t.x.Run("send-keys", "-t", sid, "-X", "search-backward-text", needle); err != nil {
+			return 0, false, err
+		}
+		out, err := t.run("display-message", "-p", "-t", sid, "#{search_match}\t#{scroll_position}\t#{copy_cursor_y}")
+		if err != nil {
+			return 0, false, err
+		}
+		if match, pos, y = parseFind(out); match != "" {
+			break
+		}
+	}
+	if match == "" || pos <= y { // not there, or on the live screen
+		_, _ = t.x.Run("send-keys", "-t", sid, "-X", "cancel")
+		return 0, match != "", nil
+	}
+	if y > 0 { // the search leaves the line where the cursor landed; put it at the top
+		if _, err := t.x.Run("send-keys", "-t", sid, "-X", "-N", strconv.Itoa(y), "scroll-down"); err != nil {
+			return 0, false, err
+		}
+	}
+	return pos - y, true, nil
+}
+
+// parseFind splits Find's display-message reply: the match, the scroll position and the
+// cursor's row. The match comes first and may itself hold a tab, so the numbers are cut from the end.
+func parseFind(out string) (match string, pos, y int) {
+	i := strings.LastIndexByte(out, '\t')
+	if i < 0 {
+		return "", 0, 0
+	}
+	j := strings.LastIndexByte(out[:i], '\t')
+	if j < 0 {
+		return "", 0, 0
+	}
+	pos, _ = strconv.Atoi(out[j+1 : i])
+	y, _ = strconv.Atoi(out[i+1:])
+	return out[:j], pos, y
+}
+
 // PrepareCopy sets up copy-mode on bx's server: vi keys; v selects, y copies and stays, Enter
 // copies and leaves, q clears the selection and Esc leaves; and a copy sent to the attached clients as OSC 52 so it reaches the clipboard of the machine running bx. It runs
 // before every attach (terminal-features are read when a client attaches) and is idempotent,

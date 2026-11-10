@@ -200,6 +200,11 @@ type (
 		isNew bool
 	}
 	pageSeenMsg struct{ conn Conn } // another client opened or dismissed the page
+	foundMsg    struct {            // the server's reply to Find
+		conn  Conn
+		lines int // how far back the pane now is (<0); 0 when it stayed live
+		found bool
+	}
 )
 
 // Connect dials one session's stream and starts the pumps: one streamOutputMsg per burst of
@@ -251,6 +256,8 @@ func (s *Stream) readLoop(ctx context.Context, send func(tea.Msg)) {
 				send(pageMsg{s, *ctl.Page, ctl.New})
 			case ctl.Type == "page_seen":
 				send(pageSeenMsg{s})
+			case ctl.Type == "found":
+				send(foundMsg{s, ctl.Lines, ctl.Found})
 			}
 		}
 	}
@@ -280,6 +287,12 @@ func (s *Stream) Resize(ctx context.Context, cols, rows int) error {
 // Scroll moves the session's view through its history (see api.Control).
 func (s *Stream) Scroll(ctx context.Context, lines int) error {
 	return s.control(ctx, api.Control{Type: "scroll", Lines: lines})
+}
+
+// Find asks the server to scroll the session back to where the user typed prompt; the reply
+// comes as a foundMsg.
+func (s *Stream) Find(ctx context.Context, prompt string) error {
+	return s.control(ctx, api.Control{Type: "find", Text: prompt})
 }
 
 // PageSeen tells the server the session's page was opened or dismissed.

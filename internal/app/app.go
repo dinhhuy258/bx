@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dinhhuy258/bx/internal/claude"
 	"github.com/dinhhuy258/bx/internal/config"
 	"github.com/dinhhuy258/bx/internal/git"
 	"github.com/dinhhuy258/bx/internal/ports"
@@ -54,9 +55,10 @@ type App struct {
 	// the machine's.
 	Proc ports.Proc
 	// Log records best-effort failures that do not fail the operation; nil is silent.
-	Log    func(format string, args ...any)
-	tok    tokens   // gh tokens of the GitHub accounts, see accounts.go
-	owners ghOwners // the account that reaches each clone owner, see github.go
+	Log     func(format string, args ...any)
+	tok     tokens         // gh tokens of the GitHub accounts, see accounts.go
+	owners  ghOwners       // the account that reaches each clone owner, see github.go
+	prompts claude.Prompts // the last prompt of each transcript, see LastPrompts
 }
 
 // logf calls Log when it is set.
