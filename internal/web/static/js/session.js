@@ -117,7 +117,7 @@ function showTerminal(root, project, target) {
   // terminal back to where it was typed
   let lastPrompt = '';
   const promptText = h('span', { class: 'sp-text' });
-  const promptBar = h('button', { class: 'sticky-prompt', hidden: true, 'aria-label': 'Jump to your last prompt',
+  const promptBar = shell ? null : h('button', { class: 'sticky-prompt', hidden: true, 'aria-label': 'Jump to your last prompt',
     onpointerdown: keep, onclick: () => jumpPrompt() },
     h('span', { class: 'sp-mark', 'aria-hidden': 'true' }, '❯'), promptText, h('span', { class: 'sp-jump' }, 'Jump ↑'));
   const input = h('textarea', { rows: 1, placeholder: shell ? 'Run a command…' : 'Message Claude…', autocapitalize: 'off',
@@ -154,7 +154,7 @@ function showTerminal(root, project, target) {
   const screen = h('div', { class: 'session' },
     h('header', { class: 'bar sbar' }, h('a', { href: backHref, class: 'ib', 'aria-label': 'Back' }, icon('back')),
       h('h1', { class: 'ttl' }, titleEl, metaEl), copyBtn, escBtn, menuBtn, stateLine),
-    shell ? null : promptBar,
+    promptBar,
     h('div', { class: 'term-wrap' }, termEl, liveBtn, notice, shell ? null : pageChip, shell ? null : slashCommandsEl),
     inputRow, shell ? null : fileInput);
   root.append(screen);

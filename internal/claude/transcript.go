@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 // promptLines is how far into a transcript FirstPrompt and AITitle look. The first prompt is
@@ -115,25 +116,34 @@ func promptText(line []byte) string {
 }
 
 const (
-	tailChunk = 256 << 10 // LastPrompt first reads this much of a transcript's end
+	tailChunk = 256 << 10 // Prompts.Last first reads this much of a transcript's end
 	tailMax   = 16 << 20  // and doubles it up to this while it finds no prompt
+	// promptMax is the most runes of a prompt Prompts.Last keeps: the clients show two lines of
+	// it at most, and it goes out in every snapshot
+	promptMax = 500
+	// promptIdle is how long Prompts remembers a transcript nobody asked about, e.g. of a
+	// session that ended
+	promptIdle = time.Hour
 )
 
 // Prompts finds the last prompt of transcripts. It remembers how far it read each one, so the
-// next call reads only what Claude added since. The zero value is ready; it is safe for
-// concurrent use.
+// next call reads only what Claude added since, and forgets a transcript not asked about for
+// promptIdle. The zero value is ready; it is safe for concurrent use.
 type Prompts struct {
-	mu   sync.Mutex
-	seen map[string]promptSeen
+	mu    sync.Mutex
+	seen  map[string]promptSeen
+	swept time.Time // the last time idle transcripts were forgotten
 }
 
 type promptSeen struct {
-	end  int64  // bytes read, up to the end of the last whole line
-	text string // the last prompt in them
+	end  int64     // bytes read, up to the end of the last whole line
+	text string    // the last prompt in them
+	used time.Time // the last call for it
 }
 
 // Last returns the last thing the user typed in the transcript at path, trimmed but with its
-// lines kept, or "" when there is none (or none in its last tailMax bytes).
+// lines kept and cut to promptMax runes, or "" when there is none (or none in its last tailMax
+// bytes).
 func (p *Prompts) Last(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -149,7 +159,7 @@ func (p *Prompts) Last(path string) string {
 	s, ok := p.seen[path]
 	p.mu.Unlock()
 	switch {
-	case !ok || size < s.end: // new, or rewritten
+	case !ok || size < s.end || size-s.end > tailMax: // new, rewritten, or too much added to read it all
 		s = lastFromEnd(f, size)
 	case size > s.end:
 		buf := make([]byte, size-s.end)
@@ -162,13 +172,29 @@ func (p *Prompts) Last(path string) string {
 			s.text = text
 		}
 	}
+	p.remember(path, s, time.Now())
+	return s.text
+}
+
+// remember stores what Last read of path at now, and forgets the transcripts idle for
+// promptIdle, looking at most once per promptIdle.
+func (p *Prompts) remember(path string, s promptSeen, now time.Time) {
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.seen == nil {
 		p.seen = map[string]promptSeen{}
 	}
+	s.used = now
 	p.seen[path] = s
-	p.mu.Unlock()
-	return s.text
+	if now.Sub(p.swept) < promptIdle {
+		return
+	}
+	p.swept = now
+	for k, v := range p.seen {
+		if now.Sub(v.used) >= promptIdle {
+			delete(p.seen, k)
+		}
+	}
 }
 
 // lastFromEnd reads the end of f (size bytes) for its last prompt, from tailChunk bytes and
@@ -181,7 +207,7 @@ func lastFromEnd(f *os.File, size int64) promptSeen {
 			return promptSeen{}
 		}
 		text, used := lastPrompt(buf, start > 0)
-		if text != "" || start == 0 || n >= tailMax {
+		if text != "" || start == 0 || n >= tailMax { // tailMax: give up rather than read it all
 			return promptSeen{end: start + int64(used), text: text}
 		}
 	}
@@ -199,6 +225,9 @@ func lastPrompt(buf []byte, partial bool) (string, int) {
 	for len(lines) > 0 {
 		i := bytes.LastIndexByte(lines[:len(lines)-1], '\n')
 		if text := promptText(lines[i+1:]); text != "" {
+			if r := []rune(text); len(r) > promptMax {
+				text = strings.TrimSpace(string(r[:promptMax]))
+			}
 			return text, used
 		}
 		lines = lines[:i+1]

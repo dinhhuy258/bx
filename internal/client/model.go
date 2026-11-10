@@ -324,7 +324,7 @@ type Model struct {
 // it is still open).
 func NewModel(cfg *config.Config, be Backend, project string) *Model {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, term: NewTerm(80, 24), tick: tick, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, runsDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
+	return &Model{cfg: cfg, be: be, project: project, opened: loadOpened(cfg.Root), models: map[string]*ui.Model{}, prompts: map[string]map[int]string{}, term: NewTerm(80, 24), tick: tick, browse: openBrowser, edit: openEditor, clipboard: readClipboard, mcpDrafts: map[string]mcpDraft{}, runsDrafts: map[string]mcpDraft{}, ctx: ctx, cancel: cancel}
 }
 
 // SetStreamer sets how a session stream is opened.
@@ -741,9 +741,6 @@ func (m *Model) gotSnapshot(msg snapshotMsg) {
 		}
 	}
 	um.SetStates(states)
-	if m.prompts == nil {
-		m.prompts = map[string]map[int]string{}
-	}
 	prompts := map[int]string{}
 	for n, st := range msg.snap.SessionStates {
 		if st.Prompt != "" {
@@ -2657,7 +2654,8 @@ func (m *Model) pageStrip(ch, color string) (line string, closeAt int) {
 // click handles a mouse click: on the page strip, ✕ dismisses the page and anywhere else opens
 // it; on the prompt strip, it jumps back to the prompt.
 func (m *Model) click(msg tea.MouseClickMsg) tea.Cmd {
-	if msg.Button != tea.MouseLeft || (msg.Y != ruleRow || m.page == nil) && msg.Y != promptRow || m.picker != nil || m.switcher != nil ||
+	onStrip := msg.Y == promptRow || msg.Y == ruleRow && m.page != nil
+	if msg.Button != tea.MouseLeft || !onStrip || m.picker != nil || m.switcher != nil ||
 		m.settings != nil || m.review != nil || m.pr != nil || m.showKeys || m.prompt.Active() || m.cleanIDs != nil || m.m == nil {
 		return nil
 	}

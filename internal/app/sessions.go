@@ -326,8 +326,8 @@ func (a *App) Titles(p *state.Project, agents map[string]claude.Agent) map[int]s
 	return out
 }
 
-// LastPrompts finds the last prompt of every running session, for the web client to keep in
-// view. Sessions without one yet are left out.
+// LastPrompts finds the last prompt of every running session, which the web and TUI clients
+// keep in view. Sessions without one yet are left out.
 func (a *App) LastPrompts(p *state.Project, agents map[string]claude.Agent) map[int]string {
 	if a.Transcripts == "" {
 		return nil

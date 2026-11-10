@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTranscriptPath(t *testing.T) {
@@ -122,5 +123,38 @@ func TestPromptsLast(t *testing.T) {
 	os.WriteFile(split, []byte(prompt+strings.Repeat("y", tailChunk-len(prompt)/2-1)+"\n"), 0o644)
 	if got := new(Prompts).Last(split); got != "far back" {
 		t.Fatalf("split: %q", got)
+	}
+}
+
+func TestPromptsLastCapsAndFallsBack(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	long := strings.Repeat("é", promptMax+50)
+	os.WriteFile(path, []byte(`{"type":"user","message":{"content":"`+long+`"}}`+"\n"), 0o644)
+	var p Prompts
+	if got := p.Last(path); got != strings.Repeat("é", promptMax) {
+		t.Fatalf("cut to %d runes, want %d", len([]rune(got)), promptMax)
+	}
+	// more than tailMax added since the last call: read from the end, not all of it
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	f.WriteString(`{"type":"user","message":{"content":"buried"}}` + "\n")
+	f.WriteString(strings.Repeat(`{"type":"assistant"}`+"\n", tailMax/20+1))
+	f.WriteString(`{"type":"user","message":{"content":"latest"}}` + "\n")
+	f.Close()
+	if got := p.Last(path); got != "latest" {
+		t.Fatalf("after a big append: %q", got)
+	}
+}
+
+func TestPromptsForgetIdleTranscripts(t *testing.T) {
+	var p Prompts
+	t0 := time.Now()
+	p.remember("a", promptSeen{text: "a"}, t0)
+	p.remember("b", promptSeen{text: "b"}, t0.Add(promptIdle/2))
+	if len(p.seen) != 2 {
+		t.Fatalf("seen %v", p.seen)
+	}
+	p.remember("b", promptSeen{text: "b"}, t0.Add(promptIdle+time.Minute)) // a is idle, b was asked about
+	if _, ok := p.seen["a"]; ok || len(p.seen) != 1 {
+		t.Fatalf("idle a kept: %v", p.seen)
 	}
 }

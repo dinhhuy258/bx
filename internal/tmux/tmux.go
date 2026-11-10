@@ -304,9 +304,14 @@ func (t *Tmux) Find(sid, text string) (int, bool, error) {
 	if text == "" {
 		return 0, false, nil
 	}
+	needles := make([]string, 0, len(promptMarks)+1)
+	for _, mark := range promptMarks {
+		needles = append(needles, mark+text)
+	}
+	needles = append(needles, text)
 	var match string
 	var pos, y int
-	for _, needle := range append([]string{promptMarks[0] + text, promptMarks[1] + text}, text) {
+	for _, needle := range needles {
 		_, _ = t.x.Run("send-keys", "-t", sid, "-X", "cancel") // search from live, not from a scroll
 		if _, err := t.x.Run("copy-mode", "-e", "-t", sid); err != nil {
 			return 0, false, err
